@@ -1,0 +1,50 @@
+name: Japan Flight Price Monitor
+
+on:
+  schedule:
+    - cron: "0 0 * * *"   # 매일 09:00 KST
+  workflow_dispatch:
+
+jobs:
+  check-prices:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Ensure data dir
+        run: mkdir -p data
+
+      # 이전 DB 복원 (없으면 경고만 출력, 실패 아님)
+      - name: Download previous DB artifact
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          workflow: daily_check.yml
+          name: flights-db
+          path: data
+          if_no_artifact_found: warn
+
+      - name: Run flight monitor
+        env:
+          AMADEUS_CLIENT_ID:     ${{ secrets.AMADEUS_CLIENT_ID }}
+          AMADEUS_CLIENT_SECRET: ${{ secrets.AMADEUS_CLIENT_SECRET }}
+          CALLMEBOT_API_KEY:     ${{ secrets.CALLMEBOT_API_KEY }}
+          CALLMEBOT_PHONE:       ${{ secrets.CALLMEBOT_PHONE }}
+          GMAIL_ADDRESS:         ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD:    ${{ secrets.GMAIL_APP_PASSWORD }}
+          ALERT_EMAIL:           ${{ secrets.ALERT_EMAIL }}
+        run: python main.py
+
+      # retention-days 90 (30이면 artifact 소실 위험)
+      - name: Upload DB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: flights-db
+          path: data/flights.db
+          retention-days: 90
