@@ -5,13 +5,17 @@ from datetime import datetime, timedelta
 import os
 from .config import ORIGIN, JAPAN_AIRPORTS, SEARCH_CONFIG
 
-amadeus = Client(
-    client_id=os.environ["AMADEUS_CLIENT_ID"],
-    client_secret=os.environ["AMADEUS_CLIENT_SECRET"],
-)
+
+def _get_amadeus_client() -> Client:
+    """Lazy init — env vars이 없어도 import 시 크래시하지 않음"""
+    return Client(
+        client_id=os.environ["AMADEUS_CLIENT_ID"],
+        client_secret=os.environ["AMADEUS_CLIENT_SECRET"],
+    )
 
 
 def fetch_fsc_offers() -> list[dict]:
+    amadeus = _get_amadeus_client()
     results = []
     today = datetime.now()
     request_count = 0
