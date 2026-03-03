@@ -144,11 +144,14 @@ def should_notify(offer: dict) -> bool:
 
 def record_alert(offer: dict):
     key = make_alert_key(offer)
+    # datetime.now().isoformat() 사용 — should_notify의 datetime.now()와 동일 기준
+    # SQLite datetime('now')는 UTC이므로 로컬 시간(KST)과 비교 시 9시간 오차 발생
+    now_str = datetime.now().isoformat()
     with get_conn() as conn:
         conn.execute("""
             INSERT INTO alert_state (alert_key, last_price, last_sent_at)
-            VALUES (?, ?, datetime('now'))
+            VALUES (?, ?, ?)
             ON CONFLICT(alert_key) DO UPDATE SET
                 last_price   = excluded.last_price,
                 last_sent_at = excluded.last_sent_at
-        """, (key, offer["price"]))
+        """, (key, offer["price"], now_str))
