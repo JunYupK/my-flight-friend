@@ -8,8 +8,11 @@ from email.mime.multipart import MIMEMultipart
 
 
 def send_whatsapp(message: str):
-    phone   = os.environ["CALLMEBOT_PHONE"]
-    api_key = os.environ["CALLMEBOT_API_KEY"]
+    phone   = os.environ.get("CALLMEBOT_PHONE")
+    api_key = os.environ.get("CALLMEBOT_API_KEY")
+    if not phone or not api_key:
+        print("[알림] WhatsApp 환경변수 없음, 건너뜀")
+        return
     requests.get(
         "https://api.callmebot.com/whatsapp.php",
         params={"phone": phone, "text": message, "apikey": api_key},
@@ -18,14 +21,20 @@ def send_whatsapp(message: str):
 
 
 def send_email(subject: str, body: str):
+    gmail   = os.environ.get("GMAIL_ADDRESS")
+    pw      = os.environ.get("GMAIL_APP_PASSWORD")
+    to      = os.environ.get("ALERT_EMAIL")
+    if not gmail or not pw or not to:
+        print("[알림] 이메일 환경변수 없음, 건너뜀")
+        return
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
-    msg["From"]    = os.environ["GMAIL_ADDRESS"]
-    msg["To"]      = os.environ["ALERT_EMAIL"]
+    msg["From"]    = gmail
+    msg["To"]      = to
     msg.attach(MIMEText(body, "html"))
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-        server.login(os.environ["GMAIL_ADDRESS"], os.environ["GMAIL_APP_PASSWORD"])
-        server.sendmail(os.environ["GMAIL_ADDRESS"], os.environ["ALERT_EMAIL"], msg.as_string())
+        server.login(gmail, pw)
+        server.sendmail(gmail, to, msg.as_string())
 
 
 def notify(offer: dict, target_price: int):
