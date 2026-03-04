@@ -32,7 +32,6 @@ FORM_SELECTORS = {
     "date_input":     'input[aria-label*="출발일"], input[placeholder*="출발일"]',
     "first_option":   '[role="listbox"] [role="option"]:first-child',
     "search_btn":     'button[aria-label*="검색"], button[type="submit"]',
-    "price_loaded":   'text:원',
 }
 
 
@@ -139,8 +138,8 @@ def _parse_prices(markdown: str) -> list[int]:
                 prices.append(p)
         except ValueError:
             continue
-    # "123,456원" 형식도 시도
-    for m in re.findall(r'([\d]{2,3},[\d]{3})원', markdown):
+    # "1,234,000원" 형식도 시도 (자릿수 제한 없음)
+    for m in re.findall(r'([\d,]+)원', markdown):
         try:
             p = int(m.replace(',', ''))
             if _PRICE_MIN < p < _PRICE_MAX:
@@ -164,7 +163,7 @@ async def _fetch_one_way(
             config=CrawlerRunConfig(
                 magic=True,
                 js_code=js,
-                wait_for=FORM_SELECTORS["price_loaded"],
+                wait_for="js:() => document.body.innerText.includes('원')",
                 delay_before_return_html=4.0,
                 cache_mode="bypass",
             ),
