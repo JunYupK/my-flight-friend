@@ -15,6 +15,9 @@ def _get_amadeus_client() -> Client:
 
 
 def fetch_fsc_offers() -> list[dict]:
+    if not os.environ.get("AMADEUS_CLIENT_ID") or not os.environ.get("AMADEUS_CLIENT_SECRET"):
+        print("[Amadeus] 환경변수 없음, 건너뜀")
+        return []
     amadeus = _get_amadeus_client()
     results = []
     today = datetime.now()

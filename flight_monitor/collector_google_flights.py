@@ -1,43 +1,50 @@
 # flight_monitor/collector_google_flights.py
 #
 # crawl4ai 기반 Google Flights 크롤러.
-# collector_lcc.py와 동일한 출력 포맷(list[dict])을 반환한다.
+# JS injection으로 항공편 카드를 개별 파싱해 노선별 정확한 데이터를 추출한다.
 #
 # 구조:
 #   - 날짜를 URL hash fragment(#flt=)에 직접 포함해 결과 페이지로 직접 진입
-#   - JS로 무한 스크롤 처리 (높이 변화 없을 때까지 최대 5회)
+#   - JS로 무한 스크롤 처리 후, DOM에서 카드 단위로 구조화된 데이터 추출
 #   - 편도(outbound + return) 각각 수집 후 왕복 조합
-#   - 가격 파싱: 렌더링된 마크다운에서 ₩/원 포함 금액 추출
 
 import asyncio
+import base64
+import json
 import re
 import calendar
 from collections import defaultdict
 from datetime import datetime, timedelta
+from html import unescape
 
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig
 
 from .config import ORIGIN, JAPAN_AIRPORTS, SEARCH_CONFIG
 
-GOOGLE_FLIGHTS_BASE = "https://www.google.com/travel/flights?hl=ko&curr=KRW"
+# 노선별 tfs 템플릿 — Google Flights search?tfs= URL용
+# 날짜 부분(YYYY-MM-DD)만 바이트 교체해서 다른 날짜 URL을 생성한다.
+# 새 노선 추가 시: 구글 플라이트에서 해당 노선 검색 후 URL의 tfs= 값을 붙여넣기.
+_TFS_BASE_DATE = "2026-05-01"
+_TFS_TEMPLATES: dict[tuple[str, str], str] = {
+    ("ICN", "TYO"): "CBwQAhojEgoyMDI2LTA1LTAxagcIARIDSUNOcgwIAxIIL20vMDdkZmtAAUgBcAGCAQsI____________AZgBAg",
+    ("TYO", "ICN"): "CBwQAhojEgoyMDI2LTA1LTAxagwIAxIIL20vMDdkZmtyBwgBEgNJQ05AAUgBcAGCAQsI____________AZgBAg",
+    # 다른 공항 추가 시: 구글 플라이트 ICN→공항 검색 후 tfs= 값 붙여넣기
+    # ("ICN", "OSA"): "",
+}
 
 
-def _build_url(dep: str, arr: str, date_str: str) -> str:
-    """날짜가 포함된 편도 검색 URL 반환. date_str 형식: YYYY-MM-DD
-    Google Flights hash fragment로 날짜를 직접 전달해 calendar picker 조작을 우회한다."""
-    return (
-        f"https://www.google.com/travel/flights"
-        f"#flt={dep}.{arr}.{date_str};c:KRW;e:1;sd:1;t:f"
-    )
-
+def _build_tfs_url(dep: str, arr: str, date_str: str) -> str | None:
+    """노선+날짜 조합의 Google Flights 검색 URL 반환. 템플릿 없으면 None."""
+    template = _TFS_TEMPLATES.get((dep, arr))
+    if not template:
+        return None
+    raw = base64.urlsafe_b64decode(template + "==")
+    raw = raw.replace(_TFS_BASE_DATE.encode(), date_str.encode())
+    tfs = base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+    return f"https://www.google.com/travel/flights/search?tfs={tfs}"
 
 
 def _make_scroll_js() -> str:
-    """
-    검색 결과 페이지에서 추가 항공편을 로드하는 스크롤 스크립트.
-    Google Flights는 무한 스크롤로 결과를 점진 로딩하므로,
-    페이지 높이 변화가 없을 때까지 반복 스크롤한다 (최대 5회).
-    """
     return """
 (async () => {
     const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -46,55 +53,112 @@ def _make_scroll_js() -> str:
         window.scrollTo(0, document.body.scrollHeight);
         await sleep(1500);
         const curr = document.body.scrollHeight;
-        if (curr === prev) break;   // 새 결과 없으면 중단
+        if (curr === prev) break;
         prev = curr;
     }
 })();
 """
 
 
-# 항공권 가격 범위 (원화 기준 최소/최대)
-_PRICE_MIN = 20_000
-_PRICE_MAX = 3_000_000
+def _extract_js() -> str:
+    """
+    li.pIav2d 카드 셀렉터 기반으로 항공편 데이터를 추출해
+    #__fl__ div에 JSON으로 주입한다.
+    """
+    return """(function() {
+    function toHHMM(text) {
+        if (!text) return null;
+        var m = text.match(/(오전|오후)\\s*(\\d+):(\\d+)/);
+        if (!m) return text.trim();
+        var h = parseInt(m[2]);
+        if (m[1] === '오후' && h !== 12) h += 12;
+        if (m[1] === '오전' && h === 12) h = 0;
+        return String(h).padStart(2, '0') + ':' + m[3];
+    }
+
+    var results = [];
+    var cards = Array.from(document.querySelectorAll('li.pIav2d'));
+
+    for (var i = 0; i < cards.length; i++) {
+        var card = cards[i];
+
+        // 가격: aria-label="250436 대한민국 원"
+        var priceEl = card.querySelector('.YMlIz.FpEdX.jLMuyc > span[aria-label]')
+                   || card.querySelector('.YMlIz.FpEdX span[aria-label]');
+        if (!priceEl) continue;
+        var priceLabel = priceEl.getAttribute('aria-label') || '';
+        var priceM = priceLabel.match(/^([\d,]+)/);
+        if (!priceM) continue;
+        var price = parseInt(priceM[1].replace(/,/g, ''));
+        if (price < 20000 || price > 3000000) continue;
+
+        // 출발/도착 시간
+        var depEl = card.querySelector('.wtdjmc.YMlIz');
+        var arrEl = card.querySelector('.XWcVob.YMlIz');
+
+        // 직항 여부 / 경유 횟수
+        var stopsEl = card.querySelector('.VG3hNb');
+        var stopsText = stopsEl ? stopsEl.textContent.trim() : '';
+        var stops = stopsText === '직항' ? 0 : (parseInt(stopsText) || null);
+
+        // 비행시간 (aria-label: "총 비행 시간은 2시간 20분입니다.")
+        var durEl = card.querySelector('.gvkrdb');
+        var durText = durEl ? (durEl.getAttribute('aria-label') || durEl.textContent || '') : '';
+        var durM = durText.match(/(\\d+)시간(?:\\s*(\\d+)분)?/);
+        var duration_min = durM ? parseInt(durM[1]) * 60 + parseInt(durM[2] || 0) : null;
+
+        // 항공사
+        var airlineEl = card.querySelector('.h1fkLb span');
+        var airline = airlineEl ? airlineEl.textContent.trim() : '';
+
+        results.push({
+            price: price,
+            dep_time: toHHMM(depEl ? depEl.textContent : null),
+            arr_time: toHHMM(arrEl ? arrEl.textContent : null),
+            stops: stops,
+            duration_min: duration_min,
+            airline: airline
+        });
+    }
+
+    var el = document.getElementById('__fl__');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = '__fl__';
+        el.style.display = 'none';
+        document.body.appendChild(el);
+    }
+    el.textContent = JSON.stringify(results);
+})();"""
 
 
-def _parse_prices(markdown: str) -> list[int]:
-    """렌더링된 마크다운에서 원화 가격 목록 추출."""
-    prices = []
-    for m in re.findall(r'₩\s*([\d,]+)', markdown):
-        try:
-            p = int(m.replace(',', ''))
-            if _PRICE_MIN < p < _PRICE_MAX:
-                prices.append(p)
-        except ValueError:
-            continue
-    # "1,234,000원" 형식도 시도 (자릿수 제한 없음)
-    for m in re.findall(r'([\d,]+)원', markdown):
-        try:
-            p = int(m.replace(',', ''))
-            if _PRICE_MIN < p < _PRICE_MAX:
-                prices.append(p)
-        except ValueError:
-            continue
-    return sorted(set(prices))
+def _parse_flight_cards(raw_html: str) -> list[dict]:
+    """JS가 주입한 #__fl__ div에서 구조화된 항공편 데이터를 추출."""
+    m = re.search(r'id="__fl__"[^>]*>(.*?)</div>', raw_html, re.DOTALL)
+    if not m:
+        return []
+    try:
+        return json.loads(unescape(m.group(1).strip()))
+    except (json.JSONDecodeError, ValueError):
+        return []
 
 
 async def _fetch_one_way(
     crawler: AsyncWebCrawler,
     dep: str, arr: str, date_str: str,
 ) -> list[dict]:
-    """편도 항공편 크롤링. date_str 형식: YYYYMMDD
-    날짜는 URL hash fragment에 직접 포함해 calendar picker 조작 없이 결과 페이지로 진입.
-    """
+    """편도 항공편 크롤링. date_str 형식: YYYYMMDD"""
     date_formatted = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
-    url = _build_url(dep, arr, date_formatted)
+    url = _build_tfs_url(dep, arr, date_formatted)
+    if url is None:
+        return []
 
     try:
         result = await crawler.arun(
             url=url,
             config=CrawlerRunConfig(
                 magic=True,
-                js_code=_make_scroll_js(),
+                js_code=[_make_scroll_js(), _extract_js()],
                 wait_for="js:() => document.body.innerText.includes('원')",
                 delay_before_return_html=4.0,
                 cache_mode="bypass",
@@ -108,18 +172,20 @@ async def _fetch_one_way(
         print(f"[GoogleFlights FAIL] {dep}-{arr} {date_formatted}: {result.error_message}")
         return []
 
-    prices = _parse_prices(result.markdown or "")
-    return [
-        {"date": date_formatted, "airline": "", "price": p}
-        for p in prices[:SEARCH_CONFIG["lcc_topk_per_date"]]
-    ]
+    flights = _parse_flight_cards(result.html or "")
+    if not flights:
+        print(f"[GoogleFlights WARN] 카드 추출 0건 {dep}-{arr} {date_formatted}")
+        return []
+
+    flights.sort(key=lambda x: x["price"])
+    return [{"date": date_formatted, **f} for f in flights[:SEARCH_CONFIG["lcc_topk_per_date"]]]
 
 
 def _combine_roundtrips(
     out_flights: list[dict], in_flights: list[dict],
     dep_airport: str, arr_airport: str, arr_name: str,
 ) -> list[dict]:
-    """편도 왕/복편 조합으로 왕복 오퍼 생성. collector_lcc.py와 동일 로직."""
+    """편도 왕/복편 조합으로 왕복 오퍼 생성."""
     topk = SEARCH_CONFIG["lcc_topk_per_date"]
 
     out_idx: dict[str, list] = defaultdict(list)
@@ -144,21 +210,31 @@ def _combine_roundtrips(
                 continue
             for out in outs:
                 for ret in ins:
+                    out_al = out.get("airline", "")
+                    in_al  = ret.get("airline", "")
                     results.append({
-                        "source": "google_flights",
-                        "trip_type": "round_trip",
-                        "origin": dep_airport,
-                        "destination": arr_airport,
+                        "source":           "google_flights",
+                        "trip_type":        "round_trip",
+                        "origin":           dep_airport,
+                        "destination":      arr_airport,
                         "destination_name": arr_name,
-                        "departure_date": dep_date,
-                        "return_date": ret_date,
-                        "stay_nights": stay,
-                        "price": out["price"] + ret["price"],
-                        "currency": "KRW",
-                        "out_airline": "",
-                        "in_airline": "",
-                        "is_mixed_airline": False,
-                        "checked_at": datetime.now().isoformat(),
+                        "departure_date":   dep_date,
+                        "return_date":      ret_date,
+                        "stay_nights":      stay,
+                        "price":            out["price"] + ret["price"],
+                        "currency":         "KRW",
+                        "out_airline":      out_al,
+                        "in_airline":       in_al,
+                        "is_mixed_airline": bool(out_al and in_al and out_al != in_al),
+                        "out_dep_time":     out.get("dep_time"),
+                        "out_arr_time":     out.get("arr_time"),
+                        "out_duration_min": out.get("duration_min"),
+                        "out_stops":        out.get("stops"),
+                        "in_dep_time":      ret.get("dep_time"),
+                        "in_arr_time":      ret.get("arr_time"),
+                        "in_duration_min":  ret.get("duration_min"),
+                        "in_stops":         ret.get("stops"),
+                        "checked_at":       datetime.now().isoformat(),
                     })
 
     results.sort(key=lambda x: x["price"])
@@ -171,10 +247,11 @@ async def _fetch_route(
     year: int, month: int,
 ) -> list[dict]:
     days_in_month = calendar.monthrange(year, month)[1]
+    max_days = SEARCH_CONFIG.get("lcc_max_days") or days_in_month
     out_flights, in_flights = [], []
     delay = SEARCH_CONFIG["request_delay"]
 
-    for day in range(1, days_in_month + 1):
+    for day in range(1, min(max_days, days_in_month) + 1):
         date_str = f"{year}{month:02d}{day:02d}"
 
         outs = await _fetch_one_way(crawler, ORIGIN, airport_code, date_str)

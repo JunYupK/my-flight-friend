@@ -38,9 +38,34 @@ def init_db():
                 out_airline      TEXT,
                 in_airline       TEXT,
                 is_mixed_airline INTEGER,
-                checked_at       TEXT
+                checked_at       TEXT,
+                out_dep_time     TEXT,
+                out_arr_time     TEXT,
+                out_duration_min INTEGER,
+                out_stops        INTEGER,
+                in_dep_time      TEXT,
+                in_arr_time      TEXT,
+                in_duration_min  INTEGER,
+                in_stops         INTEGER
             )
         """)
+
+        # 기존 DB 마이그레이션: 신규 컬럼 추가 (이미 있으면 무시)
+        new_cols = [
+            ("out_dep_time",     "TEXT"),
+            ("out_arr_time",     "TEXT"),
+            ("out_duration_min", "INTEGER"),
+            ("out_stops",        "INTEGER"),
+            ("in_dep_time",      "TEXT"),
+            ("in_arr_time",      "TEXT"),
+            ("in_duration_min",  "INTEGER"),
+            ("in_stops",         "INTEGER"),
+        ]
+        for col, col_type in new_cols:
+            try:
+                conn.execute(f"ALTER TABLE price_history ADD COLUMN {col} {col_type}")
+            except Exception:
+                pass  # 컬럼이 이미 존재함
 
         # alert_state (쿨다운/재알림 기준)
         conn.execute("""
@@ -65,10 +90,10 @@ def init_db():
             ON alert_state(alert_key)
         """)
 
-        # v_best_observed 뷰 (최저 관측 + 최근 관측)
-        # destination_name을 GROUP BY에 포함 (표준 SQL 준수)
+        # v_best_observed 뷰 — 스키마 변경 시 항상 재생성
+        conn.execute("DROP VIEW IF EXISTS v_best_observed")
         conn.execute("""
-            CREATE VIEW IF NOT EXISTS v_best_observed AS
+            CREATE VIEW v_best_observed AS
             SELECT
                 destination,
                 destination_name,
@@ -79,28 +104,47 @@ def init_db():
                 out_airline,
                 in_airline,
                 is_mixed_airline,
+                out_dep_time,
+                out_arr_time,
+                out_duration_min,
+                out_stops,
+                in_dep_time,
+                in_arr_time,
+                in_duration_min,
+                in_stops,
                 MIN(price)      AS min_price,
                 MAX(checked_at) AS last_checked_at
             FROM price_history
             GROUP BY
                 destination, destination_name,
                 departure_date, return_date, stay_nights,
-                source, out_airline, in_airline, is_mixed_airline
+                source, out_airline, in_airline, is_mixed_airline,
+                out_dep_time, out_arr_time, out_duration_min, out_stops,
+                in_dep_time, in_arr_time, in_duration_min, in_stops
         """)
 
 
 def save_prices(offers: list[dict]):
+    rows = [
+        (
+            o["source"], o["trip_type"], o["origin"], o["destination"], o["destination_name"],
+            o["departure_date"], o["return_date"], o["stay_nights"], o["price"], o["currency"],
+            o["out_airline"], o["in_airline"], o["is_mixed_airline"], o["checked_at"],
+            o.get("out_dep_time"), o.get("out_arr_time"), o.get("out_duration_min"), o.get("out_stops"),
+            o.get("in_dep_time"),  o.get("in_arr_time"),  o.get("in_duration_min"),  o.get("in_stops"),
+        )
+        for o in offers
+    ]
     with get_conn() as conn:
         conn.executemany("""
             INSERT INTO price_history
             (source, trip_type, origin, destination, destination_name,
              departure_date, return_date, stay_nights, price, currency,
-             out_airline, in_airline, is_mixed_airline, checked_at)
-            VALUES
-            (:source, :trip_type, :origin, :destination, :destination_name,
-             :departure_date, :return_date, :stay_nights, :price, :currency,
-             :out_airline, :in_airline, :is_mixed_airline, :checked_at)
-        """, offers)
+             out_airline, in_airline, is_mixed_airline, checked_at,
+             out_dep_time, out_arr_time, out_duration_min, out_stops,
+             in_dep_time,  in_arr_time,  in_duration_min,  in_stops)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """, rows)
 
 
 def make_alert_key(offer: dict) -> str:
