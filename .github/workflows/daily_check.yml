@@ -18,6 +18,9 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Setup crawl4ai (Playwright 브라우저 설치)
+        run: crawl4ai-setup
+
       - name: Ensure data dir
         run: mkdir -p data
 
