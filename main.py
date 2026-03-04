@@ -1,8 +1,8 @@
-from flight_monitor.collector_amadeus import fetch_fsc_offers
-from flight_monitor.collector_lcc    import fetch_lcc_offers
-from flight_monitor.storage          import init_db, save_prices, should_notify, record_alert
-from flight_monitor.notifier         import notify
-from flight_monitor.config           import SEARCH_CONFIG
+from flight_monitor.collector_amadeus        import fetch_fsc_offers
+from flight_monitor.collector_google_flights import fetch_google_flights_offers
+from flight_monitor.storage                  import init_db, save_prices, should_notify, record_alert
+from flight_monitor.notifier                 import notify
+from flight_monitor.config                   import SEARCH_CONFIG
 
 
 def main():
@@ -10,10 +10,10 @@ def main():
     init_db()
 
     fsc_offers = fetch_fsc_offers()
-    lcc_offers = fetch_lcc_offers()
-    all_offers = fsc_offers + lcc_offers
+    gf_offers  = fetch_google_flights_offers()
+    all_offers = fsc_offers + gf_offers
     save_prices(all_offers)
-    print(f"[수집] FSC {len(fsc_offers)}건 / LCC {len(lcc_offers)}건")
+    print(f"[수집] FSC {len(fsc_offers)}건 / GoogleFlights {len(gf_offers)}건")
 
     target = SEARCH_CONFIG["target_price_krw"]
     for offer in [o for o in all_offers if o["price"] <= target]:
