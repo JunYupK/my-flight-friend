@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.venv/Scripts/playwright install:*)",
+      "Bash(.venv/Scripts/python:*)",
+      "Bash(PYTHONUTF8=1 .venv/Scripts/python:*)",
+      "Bash(rm:*)",
+      "Bash(sqlite3:*)",
+      "Bash(python:*)"
+    ]
+  }
+}
