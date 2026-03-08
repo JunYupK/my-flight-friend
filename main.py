@@ -1,3 +1,7 @@
+import sys
+sys.stdout.reconfigure(encoding="utf-8")
+sys.stderr.reconfigure(encoding="utf-8")
+
 from dotenv import load_dotenv
 load_dotenv()
 import flight_monitor.config  # noqa: F401 — sys.modules에 먼저 올려두기
