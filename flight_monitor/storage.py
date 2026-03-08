@@ -56,7 +56,9 @@ def init_db():
                 in_dep_time      TEXT,
                 in_arr_time      TEXT,
                 in_duration_min  INTEGER,
-                in_stops         INTEGER
+                in_stops         INTEGER,
+                out_arr_airport  TEXT,
+                in_dep_airport   TEXT
             )
         """)
 
@@ -77,10 +79,28 @@ def init_db():
             ON price_history(checked_at)
         """)
 
+        # 기존 테이블에 공항 컬럼 추가 (없을 때만)
+        for col in ("out_arr_airport", "in_dep_airport"):
+            cur.execute("SAVEPOINT pre_alter")
+            try:
+                cur.execute(f"ALTER TABLE price_history ADD COLUMN {col} TEXT")
+            except Exception:
+                cur.execute("ROLLBACK TO SAVEPOINT pre_alter")
+            else:
+                cur.execute("RELEASE SAVEPOINT pre_alter")
+
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS app_config (
+                key   TEXT PRIMARY KEY,
+                value JSONB NOT NULL
+            )
+        """)
+
         cur.execute("DROP VIEW IF EXISTS v_best_observed")
         cur.execute("""
             CREATE VIEW v_best_observed AS
             SELECT
+                origin,
                 destination,
                 destination_name,
                 departure_date,
@@ -98,15 +118,18 @@ def init_db():
                 in_arr_time,
                 in_duration_min,
                 in_stops,
+                out_arr_airport,
+                in_dep_airport,
                 MIN(price)      AS min_price,
                 MAX(checked_at) AS last_checked_at
             FROM price_history
             GROUP BY
-                destination, destination_name,
+                origin, destination, destination_name,
                 departure_date, return_date, stay_nights,
                 source, out_airline, in_airline, is_mixed_airline,
                 out_dep_time, out_arr_time, out_duration_min, out_stops,
-                in_dep_time, in_arr_time, in_duration_min, in_stops
+                in_dep_time, in_arr_time, in_duration_min, in_stops,
+                out_arr_airport, in_dep_airport
         """)
 
 
@@ -115,9 +138,10 @@ def save_prices(offers: list[dict]):
         (
             o["source"], o["trip_type"], o["origin"], o["destination"], o["destination_name"],
             o["departure_date"], o["return_date"], o["stay_nights"], o["price"], o["currency"],
-            o["out_airline"], o["in_airline"], o["is_mixed_airline"], o["checked_at"],
+            o["out_airline"], o["in_airline"], int(o["is_mixed_airline"]), o["checked_at"],
             o.get("out_dep_time"), o.get("out_arr_time"), o.get("out_duration_min"), o.get("out_stops"),
             o.get("in_dep_time"),  o.get("in_arr_time"),  o.get("in_duration_min"),  o.get("in_stops"),
+            o.get("out_arr_airport"), o.get("in_dep_airport"),
         )
         for o in offers
     ]
@@ -129,8 +153,9 @@ def save_prices(offers: list[dict]):
              departure_date, return_date, stay_nights, price, currency,
              out_airline, in_airline, is_mixed_airline, checked_at,
              out_dep_time, out_arr_time, out_duration_min, out_stops,
-             in_dep_time,  in_arr_time,  in_duration_min,  in_stops)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+             in_dep_time,  in_arr_time,  in_duration_min,  in_stops,
+             out_arr_airport, in_dep_airport)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """, rows)
 
 

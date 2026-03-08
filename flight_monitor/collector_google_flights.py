@@ -19,25 +19,25 @@ from html import unescape
 
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig
 
-from .config import ORIGIN, JAPAN_AIRPORTS, SEARCH_CONFIG
+from .config import ORIGIN, JAPAN_AIRPORTS, SEARCH_CONFIG, TFS_TEMPLATES
 
-# 노선별 tfs 템플릿 — Google Flights search?tfs= URL용
-# 날짜 부분(YYYY-MM-DD)만 바이트 교체해서 다른 날짜 URL을 생성한다.
-# 새 노선 추가 시: 구글 플라이트에서 해당 노선 검색 후 URL의 tfs= 값을 붙여넣기.
 _TFS_BASE_DATE = "2026-05-01"
-_TFS_TEMPLATES: dict[tuple[str, str], str] = {
-    ("ICN", "TYO"): "CBwQAhojEgoyMDI2LTA1LTAxagcIARIDSUNOcgwIAxIIL20vMDdkZmtAAUgBcAGCAQsI____________AZgBAg",
-    ("TYO", "ICN"): "CBwQAhojEgoyMDI2LTA1LTAxagwIAxIIL20vMDdkZmtyBwgBEgNJQ05AAUgBcAGCAQsI____________AZgBAg",
-    # 다른 공항 추가 시: 구글 플라이트 ICN→공항 검색 후 tfs= 값 붙여넣기
-    # ("ICN", "OSA"): "",
-}
 
 
 def _build_tfs_url(dep: str, arr: str, date_str: str) -> str | None:
-    """노선+날짜 조합의 Google Flights 검색 URL 반환. 템플릿 없으면 None."""
-    template = _TFS_TEMPLATES.get((dep, arr))
+    """노선+날짜 조합의 Google Flights 검색 URL 반환. 템플릿 없으면 None.
+    tfs 값은 base64 문자열 또는 전체 URL 모두 허용."""
+    template = TFS_TEMPLATES.get(f"{dep}_{arr}")
     if not template:
         return None
+    # 전체 URL이 입력된 경우 tfs= 파라미터만 추출
+    if template.startswith("http"):
+        from urllib.parse import urlparse, parse_qs
+        qs = parse_qs(urlparse(template).query)
+        tfs_list = qs.get("tfs")
+        if not tfs_list:
+            return None
+        template = tfs_list[0]
     raw = base64.urlsafe_b64decode(template + "==")
     raw = raw.replace(_TFS_BASE_DATE.encode(), date_str.encode())
     tfs = base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
@@ -111,13 +111,32 @@ def _extract_js() -> str:
         var airlineEl = card.querySelector('.h1fkLb span');
         var airline = airlineEl ? airlineEl.textContent.trim() : '';
 
+        // 공항 코드 — IATA 3자리 대문자. .iCvNQ 또는 fallback으로 전체 텍스트 노드 스캔
+        var depAirport = null, arrAirport = null;
+        var airportEls = card.querySelectorAll('.iCvNQ');
+        if (airportEls.length >= 2) {
+            depAirport = airportEls[0].textContent.trim();
+            arrAirport = airportEls[airportEls.length - 1].textContent.trim();
+        } else {
+            // fallback: 카드 내 모든 텍스트 노드에서 IATA 패턴 검색
+            var walker = document.createTreeWalker(card, NodeFilter.SHOW_TEXT);
+            var codes = [];
+            while (walker.nextNode()) {
+                var t = walker.currentNode.textContent.trim();
+                if (/^[A-Z]{3}$/.test(t) && codes.indexOf(t) === -1) codes.push(t);
+            }
+            if (codes.length >= 2) { depAirport = codes[0]; arrAirport = codes[1]; }
+        }
+
         results.push({
             price: price,
             dep_time: toHHMM(depEl ? depEl.textContent : null),
             arr_time: toHHMM(arrEl ? arrEl.textContent : null),
             stops: stops,
             duration_min: duration_min,
-            airline: airline
+            airline: airline,
+            dep_airport: depAirport,
+            arr_airport: arrAirport
         });
     }
 
@@ -234,6 +253,8 @@ def _combine_roundtrips(
                         "in_arr_time":      ret.get("arr_time"),
                         "in_duration_min":  ret.get("duration_min"),
                         "in_stops":         ret.get("stops"),
+                        "out_arr_airport":  out.get("arr_airport"),
+                        "in_dep_airport":   ret.get("dep_airport"),
                         "checked_at":       datetime.now().isoformat(),
                     })
 
