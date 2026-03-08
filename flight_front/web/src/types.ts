@@ -17,8 +17,13 @@ export interface SearchConfig {
 
 export interface ConfigData {
   search_config: SearchConfig;
-  japan_airports: Record<string, string>;
-  tfs_templates: Record<string, string>;  // "ICN_TYO", "TYO_ICN" 형식
+}
+
+export interface Airport {
+  code: string;
+  name: string;
+  tfs_out: string;
+  tfs_in: string;
 }
 
 export interface RunStatus {
@@ -48,6 +53,8 @@ export interface Deal {
   in_stops: number | null;
   out_arr_airport: string | null;
   in_dep_airport: string | null;
+  out_url: string | null;
+  in_url: string | null;
   min_price: number;
   last_checked_at: string;
   rank: number;

@@ -1,4 +1,4 @@
-import type { ConfigData, RunStatus, DestinationGroup } from "./types";
+import type { ConfigData, RunStatus, DestinationGroup, Airport } from "./types";
 
 export async function fetchConfig(): Promise<ConfigData> {
   const res = await fetch("/api/config");
@@ -13,6 +13,26 @@ export async function saveConfig(data: ConfigData): Promise<void> {
     body: JSON.stringify(data),
   });
   if (!res.ok) throw new Error("Failed to save config");
+}
+
+export async function fetchAirports(): Promise<Airport[]> {
+  const res = await fetch("/api/airports");
+  if (!res.ok) throw new Error("Failed to fetch airports");
+  return res.json();
+}
+
+export async function upsertAirport(airport: Airport): Promise<void> {
+  const res = await fetch("/api/airports", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(airport),
+  });
+  if (!res.ok) throw new Error("Failed to save airport");
+}
+
+export async function deleteAirport(code: string): Promise<void> {
+  const res = await fetch(`/api/airports/${code}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to delete airport");
 }
 
 export async function startRun(): Promise<void> {

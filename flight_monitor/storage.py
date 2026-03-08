@@ -58,7 +58,9 @@ def init_db():
                 in_duration_min  INTEGER,
                 in_stops         INTEGER,
                 out_arr_airport  TEXT,
-                in_dep_airport   TEXT
+                in_dep_airport   TEXT,
+                out_url          TEXT,
+                in_url           TEXT
             )
         """)
 
@@ -79,8 +81,8 @@ def init_db():
             ON price_history(checked_at)
         """)
 
-        # 기존 테이블에 공항 컬럼 추가 (없을 때만)
-        for col in ("out_arr_airport", "in_dep_airport"):
+        # 기존 테이블에 컬럼 추가 (없을 때만)
+        for col in ("out_arr_airport", "in_dep_airport", "out_url", "in_url"):
             cur.execute("SAVEPOINT pre_alter")
             try:
                 cur.execute(f"ALTER TABLE price_history ADD COLUMN {col} TEXT")
@@ -93,6 +95,15 @@ def init_db():
             CREATE TABLE IF NOT EXISTS app_config (
                 key   TEXT PRIMARY KEY,
                 value JSONB NOT NULL
+            )
+        """)
+
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS airports (
+                code    TEXT PRIMARY KEY,
+                name    TEXT NOT NULL,
+                tfs_out TEXT,
+                tfs_in  TEXT
             )
         """)
 
@@ -121,7 +132,9 @@ def init_db():
                 out_arr_airport,
                 in_dep_airport,
                 MIN(price)      AS min_price,
-                MAX(checked_at) AS last_checked_at
+                MAX(checked_at) AS last_checked_at,
+                MAX(out_url)    AS out_url,
+                MAX(in_url)     AS in_url
             FROM price_history
             GROUP BY
                 origin, destination, destination_name,
@@ -133,6 +146,13 @@ def init_db():
         """)
 
 
+def get_airports() -> list[dict]:
+    with get_conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("SELECT code, name, tfs_out, tfs_in FROM airports ORDER BY code")
+        return [dict(r) for r in cur.fetchall()]
+
+
 def save_prices(offers: list[dict]):
     rows = [
         (
@@ -142,6 +162,7 @@ def save_prices(offers: list[dict]):
             o.get("out_dep_time"), o.get("out_arr_time"), o.get("out_duration_min"), o.get("out_stops"),
             o.get("in_dep_time"),  o.get("in_arr_time"),  o.get("in_duration_min"),  o.get("in_stops"),
             o.get("out_arr_airport"), o.get("in_dep_airport"),
+            o.get("out_url"), o.get("in_url"),
         )
         for o in offers
     ]
@@ -154,8 +175,9 @@ def save_prices(offers: list[dict]):
              out_airline, in_airline, is_mixed_airline, checked_at,
              out_dep_time, out_arr_time, out_duration_min, out_stops,
              in_dep_time,  in_arr_time,  in_duration_min,  in_stops,
-             out_arr_airport, in_dep_airport)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+             out_arr_airport, in_dep_airport,
+             out_url, in_url)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """, rows)
 
 

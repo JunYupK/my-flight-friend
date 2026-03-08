@@ -1,4 +1,5 @@
 # flight_front/api/main.py
+import os
 import subprocess
 import sys
 import threading
@@ -17,7 +18,7 @@ from pydantic import BaseModel
 import psycopg2.extras
 
 from flight_monitor.config_db import read_config, write_config
-from flight_monitor.storage import init_db, get_conn
+from flight_monitor.storage import init_db, get_conn, get_airports
 
 from . import run_state
 
@@ -40,29 +41,70 @@ def startup():
 
 class ConfigPayload(BaseModel):
     search_config: dict
-    japan_airports: dict
-    tfs_templates: dict = {}
 
 
 @app.get("/api/config")
 def get_config():
-    sc, ja, tfs = read_config()
-    return {"search_config": sc, "japan_airports": ja, "tfs_templates": tfs}
+    return {"search_config": read_config()}
 
 
 @app.put("/api/config")
 def put_config(payload: ConfigPayload):
-    write_config(payload.search_config, payload.japan_airports, payload.tfs_templates)
+    write_config(payload.search_config)
     return {"ok": True}
 
 
+# ── Airports ──────────────────────────────────────────────
+
+class AirportPayload(BaseModel):
+    code: str
+    name: str
+    tfs_out: str = ""
+    tfs_in: str = ""
+
+
+@app.get("/api/airports")
+def list_airports():
+    return get_airports()
+
+
+@app.post("/api/airports")
+def upsert_airport(payload: AirportPayload):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO airports (code, name, tfs_out, tfs_in)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (code) DO UPDATE SET
+                name    = EXCLUDED.name,
+                tfs_out = EXCLUDED.tfs_out,
+                tfs_in  = EXCLUDED.tfs_in
+            """,
+            (payload.code.upper(), payload.name, payload.tfs_out, payload.tfs_in),
+        )
+    return {"ok": True}
+
+
+@app.delete("/api/airports/{code}")
+def delete_airport(code: str):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM airports WHERE code = %s", (code.upper(),))
+    return {"ok": True}
+
+
+# ── Run ───────────────────────────────────────────────────
+
 def _run_collector():
     proc = subprocess.Popen(
-        [sys.executable, "main.py"],
+        [sys.executable, "-u", "main.py"],
         cwd=str(PROJECT_ROOT),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
+        encoding="utf-8",
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
     )
     run_state.set_running(proc.pid)
     for line in proc.stdout:
@@ -101,7 +143,6 @@ async def ws_run(websocket: WebSocket):
         loop.call_soon_threadsafe(queue.put_nowait, msg)
 
     run_state.subscribe(on_message)
-    # 접속 시 지금까지 쌓인 output 즉시 전송
     state = run_state.get()
     if state["output"]:
         await websocket.send_text(state["output"])
@@ -117,9 +158,11 @@ async def ws_run(websocket: WebSocket):
         run_state.unsubscribe(on_message)
 
 
+# ── Results ───────────────────────────────────────────────
+
 @app.get("/api/results")
 def get_results():
-    """여행지별 최저가 Top 5, 여행지 기준으로 그룹핑해서 반환."""
+    """여행지별 최저가 Top 5."""
     with get_conn() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cur.execute("""
@@ -136,7 +179,6 @@ def get_results():
         """)
         rows = cur.fetchall()
 
-    # 여행지별로 그룹핑
     groups: dict = {}
     for row in rows:
         dest = row["destination"]
