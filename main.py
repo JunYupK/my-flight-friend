@@ -1,3 +1,9 @@
+from dotenv import load_dotenv
+load_dotenv()
+import flight_monitor.config  # noqa: F401 — sys.modules에 먼저 올려두기
+from flight_monitor.config_db import apply_db_config
+apply_db_config()
+
 from flight_monitor.collector_amadeus        import fetch_fsc_offers
 from flight_monitor.collector_google_flights import fetch_google_flights_offers
 from flight_monitor.storage                  import init_db, save_prices, should_notify, record_alert

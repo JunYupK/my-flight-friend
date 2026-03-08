@@ -2,17 +2,12 @@
 
 ORIGIN = "ICN"
 
-JAPAN_AIRPORTS = {
-    "TYO": "도쿄 (나리타/하네다)",
-    # "OSA": "오사카 (간사이/이타미)",
-    #"FUK": "후쿠오카",
-    # "CTS": "삿포로 (신치토세)",
-    # "OKA": "오키나와 (나하)",
-    # "NGO": "나고야 (중부)",
-    # "HIJ": "히로시마",
-    # "SDJ": "센다이",
-    # "KIJ": "니가타",
-}
+JAPAN_AIRPORTS: dict[str, str] = {}
+
+# Google Flights tfs= 파라미터 템플릿. 웹 UI에서 입력.
+# key: "ICN_TYO" 형식 (출발_도착), value: base64 tfs= 값
+# 구글 플라이트에서 해당 노선 검색 후 URL의 tfs= 값을 붙여넣기.
+TFS_TEMPLATES: dict[str, str] = {}
 
 SEARCH_CONFIG = {
     # 공통
