@@ -72,6 +72,8 @@ def fetch_fsc_offers() -> list[dict]:
                         "out_airline": airline,
                         "in_airline": airline,
                         "is_mixed_airline": False,
+                        "out_url": None,
+                        "in_url": None,
                         "checked_at": datetime.now().isoformat(),
                     })
 

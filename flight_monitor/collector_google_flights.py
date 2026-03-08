@@ -197,7 +197,7 @@ async def _fetch_one_way(
         return []
 
     flights.sort(key=lambda x: x["price"])
-    return [{"date": date_formatted, **f} for f in flights[:SEARCH_CONFIG["lcc_topk_per_date"]]]
+    return [{"date": date_formatted, "search_url": url, **f} for f in flights[:SEARCH_CONFIG["lcc_topk_per_date"]]]
 
 
 def _combine_roundtrips(
@@ -255,6 +255,8 @@ def _combine_roundtrips(
                         "in_stops":         ret.get("stops"),
                         "out_arr_airport":  out.get("arr_airport"),
                         "in_dep_airport":   ret.get("dep_airport"),
+                        "out_url":          out.get("search_url"),
+                        "in_url":           ret.get("search_url"),
                         "checked_at":       datetime.now().isoformat(),
                     })
 

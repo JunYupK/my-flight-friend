@@ -107,6 +107,32 @@ function DealCard({ deal, rank }: { deal: Deal; rank: number }) {
           {deal.source === "google_flights" ? "Google" : deal.source}
         </span>
       </div>
+
+      {/* 바로가기 링크 */}
+      {(deal.out_url || deal.in_url) && (
+        <div className="flex gap-2 pt-1">
+          {deal.out_url && (
+            <a
+              href={deal.out_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-1 text-center text-xs py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 font-medium transition-colors"
+            >
+              출발편 검색 ↗
+            </a>
+          )}
+          {deal.in_url && (
+            <a
+              href={deal.in_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-1 text-center text-xs py-1.5 rounded-lg bg-gray-50 text-gray-500 hover:bg-gray-100 font-medium transition-colors"
+            >
+              복귀편 검색 ↗
+            </a>
+          )}
+        </div>
+      )}
     </div>
   );
 }

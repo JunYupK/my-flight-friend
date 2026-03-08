@@ -5,58 +5,58 @@ import sys
 from .storage import get_conn
 
 
-_ALL_KEYS = ("search_config", "japan_airports", "tfs_templates")
-
-
 def apply_db_config():
-    """main.py 시작 시 1회 호출. SEARCH_CONFIG / JAPAN_AIRPORTS / TFS_TEMPLATES를 DB값으로 in-place 패치."""
+    """main.py 시작 시 1회 호출. SEARCH_CONFIG를 DB값으로, JAPAN_AIRPORTS/TFS_TEMPLATES를 airports 테이블로 패치."""
     config_mod = sys.modules.get("flight_monitor.config")
     if not config_mod:
         return
     try:
         with get_conn() as conn:
             cur = conn.cursor()
-            cur.execute(f"SELECT key, value FROM app_config WHERE key IN {_ALL_KEYS}")
-            for key, value in cur.fetchall():
-                if key == "search_config":
-                    config_mod.SEARCH_CONFIG.update(value)
-                elif key == "japan_airports":
-                    config_mod.JAPAN_AIRPORTS.clear()
-                    config_mod.JAPAN_AIRPORTS.update(value)
-                elif key == "tfs_templates":
-                    config_mod.TFS_TEMPLATES.clear()
-                    config_mod.TFS_TEMPLATES.update(value)
+
+            # search_config
+            cur.execute("SELECT value FROM app_config WHERE key = 'search_config'")
+            row = cur.fetchone()
+            if row:
+                config_mod.SEARCH_CONFIG.update(row[0])
+
+            # airports 테이블 → JAPAN_AIRPORTS, TFS_TEMPLATES
+            cur.execute("SELECT code, name, tfs_out, tfs_in FROM airports")
+            rows = cur.fetchall()
+            if rows:
+                config_mod.JAPAN_AIRPORTS.clear()
+                config_mod.TFS_TEMPLATES.clear()
+                for code, name, tfs_out, tfs_in in rows:
+                    config_mod.JAPAN_AIRPORTS[code] = name
+                    if tfs_out:
+                        config_mod.TFS_TEMPLATES[f"ICN_{code}"] = tfs_out
+                    if tfs_in:
+                        config_mod.TFS_TEMPLATES[f"{code}_ICN"] = tfs_in
     except Exception as e:
         print(f"[config_db] DB 읽기 실패, 기본값 사용: {e}")
 
 
-def read_config() -> tuple[dict, dict, dict]:
+def read_config() -> dict:
     config_mod = sys.modules.get("flight_monitor.config")
     try:
         with get_conn() as conn:
             cur = conn.cursor()
-            cur.execute(f"SELECT key, value FROM app_config WHERE key IN {_ALL_KEYS}")
-            rows = {k: v for k, v in cur.fetchall()}
+            cur.execute("SELECT value FROM app_config WHERE key = 'search_config'")
+            row = cur.fetchone()
+            if row:
+                return row[0]
     except Exception:
-        rows = {}
-    sc  = rows.get("search_config")  or (config_mod.SEARCH_CONFIG.copy()  if config_mod else {})
-    ja  = rows.get("japan_airports") or (config_mod.JAPAN_AIRPORTS.copy() if config_mod else {})
-    tfs = rows.get("tfs_templates")  or (config_mod.TFS_TEMPLATES.copy()  if config_mod else {})
-    return sc, ja, tfs
+        pass
+    return config_mod.SEARCH_CONFIG.copy() if config_mod else {}
 
 
-def write_config(search_config: dict, japan_airports: dict, tfs_templates: dict):
+def write_config(search_config: dict):
     with get_conn() as conn:
         cur = conn.cursor()
-        for key, value in [
-            ("search_config",  search_config),
-            ("japan_airports", japan_airports),
-            ("tfs_templates",  tfs_templates),
-        ]:
-            cur.execute(
-                """
-                INSERT INTO app_config (key, value) VALUES (%s, %s::jsonb)
-                ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
-                """,
-                (key, json.dumps(value)),
-            )
+        cur.execute(
+            """
+            INSERT INTO app_config (key, value) VALUES ('search_config', %s::jsonb)
+            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+            """,
+            (json.dumps(search_config),),
+        )
