@@ -13,6 +13,7 @@ import flight_monitor.config  # noqa: F401 — sys.modules에 먼저 올려두�
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import psycopg2.extras
@@ -191,3 +192,10 @@ def get_results():
         groups[dest]["deals"].append(dict(row))
 
     return list(groups.values())
+
+
+# ── Static (React SPA) ────────────────────────────────────
+# API 라우트가 모두 등록된 뒤에 마운트해야 우선순위 보장
+_DIST = PROJECT_ROOT / "flight_front" / "web" / "dist"
+if _DIST.exists():
+    app.mount("/", StaticFiles(directory=str(_DIST), html=True), name="static")

@@ -8,6 +8,22 @@ on:
 jobs:
   check-prices:
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: flights
+          POSTGRES_USER: flight_user
+          POSTGRES_PASSWORD: flight_pass
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
     steps:
       - uses: actions/checkout@v4
 
@@ -21,20 +37,27 @@ jobs:
       - name: Setup crawl4ai (Playwright 브라우저 설치)
         run: crawl4ai-setup
 
-      - name: Ensure data dir
-        run: mkdir -p data
-
-      # 이전 DB 복원 (없으면 경고만 출력, 실패 아님)
-      - name: Download previous DB artifact
+      # 이전 DB 덤프 복원 (없으면 경고만 출력, 실패 아님)
+      - name: Download previous DB dump
         uses: dawidd6/action-download-artifact@v6
         with:
           workflow: daily_check.yml
-          name: flights-db
-          path: data
+          name: flights-db-dump
+          path: /tmp/db-dump
           if_no_artifact_found: warn
+
+      - name: Restore DB from dump
+        run: |
+          if [ -f /tmp/db-dump/flights.sql ]; then
+            echo "이전 덤프 복원 중..."
+            PGPASSWORD=flight_pass psql -h localhost -U flight_user -d flights -f /tmp/db-dump/flights.sql
+          else
+            echo "이전 덤프 없음, 새로 시작"
+          fi
 
       - name: Run flight monitor
         env:
+          DATABASE_URL: postgresql://flight_user:flight_pass@localhost:5432/flights
           AMADEUS_CLIENT_ID:     ${{ secrets.AMADEUS_CLIENT_ID }}
           AMADEUS_CLIENT_SECRET: ${{ secrets.AMADEUS_CLIENT_SECRET }}
           CALLMEBOT_API_KEY:     ${{ secrets.CALLMEBOT_API_KEY }}
@@ -44,10 +67,14 @@ jobs:
           ALERT_EMAIL:           ${{ secrets.ALERT_EMAIL }}
         run: python main.py
 
-      # retention-days 90 (30이면 artifact 소실 위험)
-      - name: Upload DB artifact
+      - name: Dump DB
+        run: |
+          mkdir -p /tmp/db-dump
+          PGPASSWORD=flight_pass pg_dump -h localhost -U flight_user -d flights > /tmp/db-dump/flights.sql
+
+      - name: Upload DB dump
         uses: actions/upload-artifact@v4
         with:
-          name: flights-db
-          path: data/flights.db
+          name: flights-db-dump
+          path: /tmp/db-dump/flights.sql
           retention-days: 90

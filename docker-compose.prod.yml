@@ -1,0 +1,32 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: flights
+      POSTGRES_USER: flight_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-flight_pass}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # 외부 포트 미노출 — app 컨테이너에서만 접근
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flight_user -d flights"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://flight_user:${DB_PASSWORD:-flight_pass}@db:5432/flights
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
