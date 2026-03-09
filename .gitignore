@@ -1,5 +1,9 @@
 __pycache__/
 *.pyc
 *.pyo
-data/flights.db
 .env
+.venv/
+
+# 프론트엔드
+flight_front/web/node_modules/
+flight_front/web/dist/
