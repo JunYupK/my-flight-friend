@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { fetchResults } from "../api";
 import type { Deal, DestinationGroup } from "../types";
+import PriceChart from "./PriceChart";
 
 function formatDuration(min: number | null) {
   if (min == null) return "-";
@@ -34,6 +35,40 @@ function StopsBadge({ stops }: { stops: number | null }) {
   );
 }
 
+/** last_checked_at 기준 신선도 뱃지 */
+function FreshnessBadge({ checkedAt }: { checkedAt: string }) {
+  const diffMs = Date.now() - new Date(checkedAt).getTime();
+  const diffH = diffMs / (1000 * 60 * 60);
+
+  if (diffH <= 24) {
+    return (
+      <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
+        방금 확인
+      </span>
+    );
+  }
+  const days = Math.floor(diffH / 24);
+  if (diffH <= 72) {
+    return (
+      <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full font-medium">
+        {days}일 전
+      </span>
+    );
+  }
+  return (
+    <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-medium">
+      {days}일 전 · 오래됨
+    </span>
+  );
+}
+
+const FRESHNESS_OPTIONS: { label: string; hours?: number }[] = [
+  { label: "전체" },
+  { label: "24시간", hours: 24 },
+  { label: "48시간", hours: 48 },
+  { label: "7일", hours: 168 },
+];
+
 function DealCard({ deal, rank }: { deal: Deal; rank: number }) {
   const airline =
     deal.out_airline === deal.in_airline
@@ -50,6 +85,11 @@ function DealCard({ deal, rank }: { deal: Deal; rank: number }) {
             {Math.round(deal.min_price).toLocaleString()}
           </p>
           <p className="text-sm text-gray-400 mt-1">원 · 왕복</p>
+          {deal.last_checked_at && (
+            <div className="mt-1">
+              <FreshnessBadge checkedAt={deal.last_checked_at} />
+            </div>
+          )}
         </div>
       </div>
 
@@ -137,8 +177,21 @@ function DealCard({ deal, rank }: { deal: Deal; rank: number }) {
   );
 }
 
+/** 현재 월 기준 ±3개월 목록 생성 */
+function getMonthOptions(): string[] {
+  const months: string[] = [];
+  const now = new Date();
+  for (let offset = 0; offset <= 6; offset++) {
+    const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+    months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+  }
+  return months;
+}
+
 function DestinationSection({ group }: { group: DestinationGroup }) {
   const minPrice = Math.min(...group.deals.map((d) => d.min_price));
+  const [showChart, setShowChart] = useState(false);
+  const [chartMonth, setChartMonth] = useState(() => getMonthOptions()[0]);
 
   return (
     <section>
@@ -154,6 +207,33 @@ function DestinationSection({ group }: { group: DestinationGroup }) {
           <DealCard key={i} deal={deal} rank={i + 1} />
         ))}
       </div>
+
+      {/* 가격 추이 차트 */}
+      <div className="mt-4">
+        <button
+          onClick={() => setShowChart((v) => !v)}
+          className="text-sm text-blue-500 hover:text-blue-700 font-medium"
+        >
+          {showChart ? "가격 추이 접기 ▲" : "가격 추이 ▼"}
+        </button>
+        {showChart && (
+          <div className="mt-3 space-y-3">
+            <div className="flex items-center gap-2">
+              <label className="text-sm text-gray-500">월 선택</label>
+              <select
+                value={chartMonth}
+                onChange={(e) => setChartMonth(e.target.value)}
+                className="text-sm border border-gray-200 rounded-lg px-2 py-1"
+              >
+                {getMonthOptions().map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+            </div>
+            <PriceChart destination={group.destination} month={chartMonth} />
+          </div>
+        )}
+      </div>
     </section>
   );
 }
@@ -162,17 +242,23 @@ export default function Results() {
   const [groups, setGroups] = useState<DestinationGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [activeHours, setActiveHours] = useState<number | undefined>(undefined);
 
-  const load = () => {
+  const load = (hours?: number) => {
     setLoading(true);
     setError("");
-    fetchResults()
+    fetchResults(hours)
       .then(setGroups)
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   };
 
   useEffect(() => { load(); }, []);
+
+  const handleFilter = (hours?: number) => {
+    setActiveHours(hours);
+    load(hours);
+  };
 
   if (loading)
     return <div className="flex items-center justify-center py-20 text-gray-400 text-lg">로딩 중…</div>;
@@ -181,7 +267,7 @@ export default function Results() {
     return (
       <div className="flex flex-col items-center py-20 gap-4 text-red-500">
         <p className="text-base">{error}</p>
-        <button onClick={load} className="px-4 py-2 bg-red-50 rounded-lg text-sm hover:bg-red-100">재시도</button>
+        <button onClick={() => load(activeHours)} className="px-4 py-2 bg-red-50 rounded-lg text-sm hover:bg-red-100">재시도</button>
       </div>
     );
 
@@ -196,9 +282,25 @@ export default function Results() {
 
   return (
     <div className="space-y-12">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-gray-400">{groups.length}개 여행지 · 여행지별 최저가 Top 5</p>
-        <button onClick={load} className="text-sm text-blue-500 hover:text-blue-700">새로고침</button>
+        <div className="flex items-center gap-2">
+          {/* 신선도 필터 칩 */}
+          {FRESHNESS_OPTIONS.map((opt) => (
+            <button
+              key={opt.label}
+              onClick={() => handleFilter(opt.hours)}
+              className={`text-sm px-3 py-1 rounded-full font-medium transition-colors ${
+                activeHours === opt.hours
+                  ? "bg-blue-500 text-white"
+                  : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+          <button onClick={() => load(activeHours)} className="text-sm text-blue-500 hover:text-blue-700 ml-2">새로고침</button>
+        </div>
       </div>
       {groups.map((g) => (
         <DestinationSection key={g.destination} group={g} />
