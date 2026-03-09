@@ -17,7 +17,11 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from html import unescape
 
-from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig
+try:
+    from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig
+    _CRAWL4AI_AVAILABLE = True
+except ImportError:
+    _CRAWL4AI_AVAILABLE = False
 
 from .config import ORIGIN, JAPAN_AIRPORTS, SEARCH_CONFIG, TFS_TEMPLATES
 
@@ -289,10 +293,19 @@ async def _fetch_route(
 
 
 async def _fetch_all() -> list[dict]:
+    if not _CRAWL4AI_AVAILABLE:
+        print("[GoogleFlights] crawl4ai 미설치, 수집 스킵")
+        return []
+
     browser_config = BrowserConfig(
         headless=True,
         viewport={"width": 1920, "height": 1080},
-        extra_args=["--disable-blink-features=AutomationControlled"],
+        extra_args=[
+            "--disable-blink-features=AutomationControlled",
+            "--no-sandbox",           # Docker/CI에서 root 실행 시 필수
+            "--disable-dev-shm-usage",  # Docker /dev/shm 64MB 제한 우회
+            "--disable-gpu",           # 서버 환경 GPU 없음
+        ],
     )
 
     all_results = []
