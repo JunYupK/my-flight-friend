@@ -292,7 +292,12 @@ async def _fetch_all() -> list[dict]:
     browser_config = BrowserConfig(
         headless=True,
         viewport={"width": 1920, "height": 1080},
-        extra_args=["--disable-blink-features=AutomationControlled"],
+        extra_args=[
+            "--disable-blink-features=AutomationControlled",
+            "--no-sandbox",           # Docker/CI에서 root 실행 시 필수
+            "--disable-dev-shm-usage",  # Docker /dev/shm 64MB 제한 우회
+            "--disable-gpu",           # 서버 환경 GPU 없음
+        ],
     )
 
     all_results = []
