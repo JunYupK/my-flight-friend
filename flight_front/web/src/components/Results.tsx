@@ -85,12 +85,12 @@ function DealCard({ deal, rank }: { deal: Deal; rank: number }) {
         ].map((leg, i) => (
           <React.Fragment key={i}>
             {i === 1 && <div className="border-t border-dashed border-gray-100" />}
-            <div className="grid items-center gap-x-2" style={{ gridTemplateColumns: "2.5rem 1fr auto auto" }}>
-              <span className="text-xs text-gray-400">{leg.label}</span>
-              <span className="text-sm font-semibold text-gray-800 whitespace-nowrap">
+            <div className="flex items-center gap-x-2 min-w-0">
+              <span className="text-xs text-gray-400 w-10 shrink-0">{leg.label}</span>
+              <span className="text-sm font-semibold text-gray-800 whitespace-nowrap flex-1 min-w-0">
                 {normalizeTime(leg.dep)} → {normalizeTime(leg.arr)}
               </span>
-              <span className="text-xs text-gray-400 whitespace-nowrap">{formatDuration(leg.dur)}</span>
+              <span className="text-xs text-gray-400 whitespace-nowrap shrink-0">{formatDuration(leg.dur)}</span>
               <StopsBadge stops={leg.stops} />
             </div>
           </React.Fragment>
@@ -142,14 +142,14 @@ function DestinationSection({ group }: { group: DestinationGroup }) {
 
   return (
     <section>
-      <div className="flex items-baseline gap-3 mb-4">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-4">
         <h2 className="text-2xl font-bold text-gray-800">{group.destination_name}</h2>
         <span className="text-base text-gray-400">{group.destination}</span>
-        <span className="ml-auto text-base font-semibold text-blue-500">
+        <span className="ml-auto text-base font-semibold text-blue-500 whitespace-nowrap">
           최저 {Math.round(minPrice).toLocaleString()}원~
         </span>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
         {group.deals.map((deal, i) => (
           <DealCard key={i} deal={deal} rank={i + 1} />
         ))}
