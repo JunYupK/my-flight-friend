@@ -65,3 +65,15 @@ export interface DestinationGroup {
   destination_name: string;
   deals: Deal[];
 }
+
+export interface PriceHistoryPoint {
+  departure_date?: string;  // calendar 모드
+  check_date?: string;      // timeline 모드
+  source: string;
+  min_price: number;
+}
+
+export interface PriceHistoryResponse {
+  mode: "calendar" | "timeline";
+  data: PriceHistoryPoint[];
+}

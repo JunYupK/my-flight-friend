@@ -1,4 +1,4 @@
-import type { ConfigData, RunStatus, DestinationGroup, Airport } from "./types";
+import type { ConfigData, RunStatus, DestinationGroup, Airport, PriceHistoryResponse } from "./types";
 
 export async function fetchConfig(): Promise<ConfigData> {
   const res = await fetch("/api/config");
@@ -49,8 +49,29 @@ export async function fetchRunStatus(): Promise<RunStatus> {
   return res.json();
 }
 
-export async function fetchResults(): Promise<DestinationGroup[]> {
-  const res = await fetch("/api/results");
+export async function fetchResults(hours?: number): Promise<DestinationGroup[]> {
+  const url = hours != null ? `/api/results?hours=${hours}` : "/api/results";
+  const res = await fetch(url);
   if (!res.ok) throw new Error("Failed to fetch results");
+  return res.json();
+}
+
+export async function fetchPriceHistory(params: {
+  destination: string;
+  mode?: "calendar" | "timeline";
+  month?: string;
+  stay_nights?: number;
+  departure_date?: string;
+  return_date?: string;
+}): Promise<PriceHistoryResponse> {
+  const qs = new URLSearchParams();
+  qs.set("destination", params.destination);
+  if (params.mode) qs.set("mode", params.mode);
+  if (params.month) qs.set("month", params.month);
+  if (params.stay_nights != null) qs.set("stay_nights", String(params.stay_nights));
+  if (params.departure_date) qs.set("departure_date", params.departure_date);
+  if (params.return_date) qs.set("return_date", params.return_date);
+  const res = await fetch(`/api/price-history?${qs}`);
+  if (!res.ok) throw new Error("Failed to fetch price history");
   return res.json();
 }
