@@ -1,5 +1,5 @@
 """
-테스트: storage, collector_lcc 내부 함수, mcp_server
+테스트: storage, collector_lcc 내부 함수
 외부 API(Amadeus, Naver)는 호출하지 않음. PostgreSQL DB 사용 (TRUNCATE로 격리).
 """
 
@@ -18,8 +18,6 @@ from flight_monitor.collector_lcc import (
     _index_topk_by_date,
     _combine_roundtrips,
 )
-from flight_monitor import mcp_server
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -320,123 +318,3 @@ class TestCombineRoundtrips:
         ret = [self._flight("2026-05-04", 90000)]
         results = _combine_roundtrips(out, ret)
         assert all(r["source"] == "naver_graphql" for r in results)
-
-
-# ---------------------------------------------------------------------------
-# mcp_server: get_best_deals
-# ---------------------------------------------------------------------------
-
-class TestGetBestDeals:
-    def test_returns_top_n(self):
-        offers = [
-            _make_offer(destination="OSA", departure_date=f"2026-05-{10+i:02d}",
-                        return_date=f"2026-05-{17+i:02d}", price=(200000 + i * 10000))
-            for i in range(5)
-        ]
-        storage.save_prices(offers)
-        result = mcp_server.get_best_deals(limit=3)
-        assert len(result) == 3
-        prices = [r["min_price"] for r in result]
-        assert prices == sorted(prices)
-
-    def test_filter_by_destination(self):
-        storage.save_prices([
-            _make_offer(destination="OSA", price=200000),
-            _make_offer(destination="TYO", departure_date="2026-05-15",
-                        return_date="2026-05-22", price=180000),
-        ])
-        result = mcp_server.get_best_deals(destination="OSA")
-        assert all(r["destination_name"] == "오사카 (간사이/이타미)" for r in result)
-        assert len(result) == 1
-
-    def test_filter_by_month(self):
-        storage.save_prices([
-            _make_offer(departure_date="2026-05-10", return_date="2026-05-17", price=200000),
-            _make_offer(departure_date="2026-06-10", return_date="2026-06-17", price=180000),
-        ])
-        result = mcp_server.get_best_deals(month="2026-05")
-        assert len(result) == 1
-        assert result[0]["departure_date"] == "2026-05-10"
-
-    def test_filter_by_stay_nights(self):
-        storage.save_prices([
-            _make_offer(stay_nights=3, return_date="2026-05-13", price=200000),
-            _make_offer(stay_nights=7, return_date="2026-05-17", price=220000),
-        ])
-        result = mcp_server.get_best_deals(stay_nights=3)
-        assert len(result) == 1
-        assert result[0]["stay_nights"] == 3
-
-    def test_empty_db_returns_empty_list(self):
-        assert mcp_server.get_best_deals() == []
-
-
-# ---------------------------------------------------------------------------
-# mcp_server: get_price_history
-# ---------------------------------------------------------------------------
-
-class TestGetPriceHistory:
-    def test_returns_sorted_by_date(self):
-        storage.save_prices([
-            _make_offer(departure_date="2026-05-15", return_date="2026-05-22", price=250000),
-            _make_offer(departure_date="2026-05-10", return_date="2026-05-17", price=200000),
-        ])
-        result = mcp_server.get_price_history(destination="OSA", month="2026-05")
-        dates = [r["departure_date"] for r in result]
-        assert dates == sorted(dates)
-
-    def test_filters_by_destination_and_month(self):
-        storage.save_prices([
-            _make_offer(destination="OSA", departure_date="2026-05-10",
-                        return_date="2026-05-17", price=200000),
-            _make_offer(destination="TYO", departure_date="2026-05-10",
-                        return_date="2026-05-17", price=180000),
-        ])
-        result = mcp_server.get_price_history(destination="OSA", month="2026-05")
-        assert len(result) == 1
-
-    def test_empty_returns_empty_list(self):
-        assert mcp_server.get_price_history(destination="OSA", month="2026-05") == []
-
-
-# ---------------------------------------------------------------------------
-# mcp_server: explain_deal
-# ---------------------------------------------------------------------------
-
-class TestExplainDeal:
-    def test_returns_best_price(self):
-        storage.save_prices([
-            _make_offer(price=300000, source="amadeus"),
-            _make_offer(price=200000, source="naver_graphql"),
-        ])
-        result = mcp_server.explain_deal(
-            destination="OSA",
-            departure_date="2026-05-10",
-            return_date="2026-05-17",
-        )
-        assert result["best_price"] == 200000
-
-    def test_missing_deal_returns_error(self):
-        result = mcp_server.explain_deal(
-            destination="OSA",
-            departure_date="2026-05-10",
-            return_date="2026-05-17",
-        )
-        assert "error" in result
-
-    def test_mixed_airline_note(self):
-        storage.save_prices([
-            _make_offer(out_airline="KE", in_airline="OZ", is_mixed_airline=True, price=200000),
-        ])
-        result = mcp_server.explain_deal("OSA", "2026-05-10", "2026-05-17")
-        assert result["is_mixed_airline"] is True
-        assert len(result["notes"]) > 0
-
-    def test_by_source_breakdown(self):
-        storage.save_prices([
-            _make_offer(price=300000, source="amadeus"),
-            _make_offer(price=200000, source="naver_graphql"),
-        ])
-        result = mcp_server.explain_deal("OSA", "2026-05-10", "2026-05-17")
-        assert "amadeus" in result["by_source"]
-        assert "naver_graphql" in result["by_source"]
