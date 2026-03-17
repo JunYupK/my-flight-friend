@@ -8,6 +8,8 @@
 #   - JS로 무한 스크롤 처리 후, DOM에서 카드 단위로 구조화된 데이터 추출
 #   - 편도(outbound + return) 각각 수집 후 왕복 조합
 
+from __future__ import annotations
+
 import asyncio
 import base64
 import json
@@ -16,9 +18,13 @@ import calendar
 from collections import defaultdict
 from datetime import datetime, timedelta
 from html import unescape
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from crawl4ai import AsyncWebCrawler
 
 try:
-    from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig
+    from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig  # noqa: F811
     _CRAWL4AI_AVAILABLE = True
 except ImportError:
     _CRAWL4AI_AVAILABLE = False
