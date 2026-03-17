@@ -1,13 +1,12 @@
 """
 테스트: storage, collector_lcc 내부 함수, mcp_server
-외부 API(Amadeus, Naver)는 호출하지 않음. DB는 tmp 경로 사용.
+외부 API(Amadeus, Naver)는 호출하지 않음. PostgreSQL DB 사용 (TRUNCATE로 격리).
 """
 
 import os
 import sys
-import sqlite3
-import tempfile
 import pytest
+import psycopg2.extras
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
@@ -27,15 +26,13 @@ from flight_monitor import mcp_server
 # ---------------------------------------------------------------------------
 
 @pytest.fixture(autouse=True)
-def tmp_db(tmp_path, monkeypatch):
-    """각 테스트마다 격리된 임시 DB를 사용.
-    get_conn()은 런타임에 storage.DB_PATH를 참조하므로
-    storage.DB_PATH 하나만 패치하면 mcp_server도 동일 경로 사용.
-    """
-    db_file = str(tmp_path / "test_flights.db")
-    monkeypatch.setattr(storage, "DB_PATH", db_file)
+def clean_db():
+    """각 테스트마다 테이블을 초기화. init_db()로 테이블 보장 후 TRUNCATE."""
     storage.init_db()
-    return db_file
+    yield
+    with storage.get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("TRUNCATE price_history, alert_state RESTART IDENTITY CASCADE")
 
 
 def _make_offer(**kwargs) -> dict:
@@ -65,21 +62,25 @@ def _make_offer(**kwargs) -> dict:
 # ---------------------------------------------------------------------------
 
 class TestInitDb:
-    def test_tables_created(self, tmp_db):
-        conn = sqlite3.connect(tmp_db)
-        tables = {r[0] for r in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'"
-        ).fetchall()}
-        conn.close()
+    def test_tables_created(self):
+        with storage.get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT table_name FROM information_schema.tables
+                WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+            """)
+            tables = {r[0] for r in cur.fetchall()}
         assert "price_history" in tables
         assert "alert_state" in tables
 
-    def test_view_created(self, tmp_db):
-        conn = sqlite3.connect(tmp_db)
-        views = {r[0] for r in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='view'"
-        ).fetchall()}
-        conn.close()
+    def test_view_created(self):
+        with storage.get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT table_name FROM information_schema.views
+                WHERE table_schema = 'public'
+            """)
+            views = {r[0] for r in cur.fetchall()}
         assert "v_best_observed" in views
 
     def test_init_idempotent(self):
@@ -93,34 +94,37 @@ class TestInitDb:
 # ---------------------------------------------------------------------------
 
 class TestSavePrices:
-    def test_basic_insert(self, tmp_db):
-        offer = _make_offer()
-        storage.save_prices([offer])
-        conn = sqlite3.connect(tmp_db)
-        count = conn.execute("SELECT COUNT(*) FROM price_history").fetchone()[0]
-        conn.close()
+    def test_basic_insert(self):
+        storage.save_prices([_make_offer()])
+        with storage.get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT COUNT(*) FROM price_history")
+            count = cur.fetchone()[0]
         assert count == 1
 
-    def test_multiple_insert(self, tmp_db):
+    def test_multiple_insert(self):
         offers = [_make_offer(price=200000 + i * 1000) for i in range(5)]
         storage.save_prices(offers)
-        conn = sqlite3.connect(tmp_db)
-        count = conn.execute("SELECT COUNT(*) FROM price_history").fetchone()[0]
-        conn.close()
+        with storage.get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT COUNT(*) FROM price_history")
+            count = cur.fetchone()[0]
         assert count == 5
 
-    def test_price_stored_correctly(self, tmp_db):
+    def test_price_stored_correctly(self):
         storage.save_prices([_make_offer(price=199999.0)])
-        conn = sqlite3.connect(tmp_db)
-        row = conn.execute("SELECT price FROM price_history").fetchone()
-        conn.close()
+        with storage.get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT price FROM price_history")
+            row = cur.fetchone()
         assert row[0] == 199999.0
 
-    def test_is_mixed_airline_stored_as_int(self, tmp_db):
+    def test_is_mixed_airline_stored_as_int(self):
         storage.save_prices([_make_offer(is_mixed_airline=True)])
-        conn = sqlite3.connect(tmp_db)
-        row = conn.execute("SELECT is_mixed_airline FROM price_history").fetchone()
-        conn.close()
+        with storage.get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT is_mixed_airline FROM price_history")
+            row = cur.fetchone()
         assert row[0] == 1
 
 
@@ -197,8 +201,9 @@ class TestShouldNotify:
         past = (datetime.now() - timedelta(hours=13)).isoformat()
         key = storage.make_alert_key(offer)
         with storage.get_conn() as conn:
-            conn.execute(
-                "UPDATE alert_state SET last_sent_at = ? WHERE alert_key = ?",
+            cur = conn.cursor()
+            cur.execute(
+                "UPDATE alert_state SET last_sent_at = %s WHERE alert_key = %s",
                 (past, key),
             )
         assert storage.should_notify(offer) is True
@@ -210,10 +215,12 @@ class TestShouldNotify:
         storage.record_alert(offer_low)  # 업데이트
         key = storage.make_alert_key(offer_low)
         with storage.get_conn() as conn:
-            row = conn.execute(
-                "SELECT last_price FROM alert_state WHERE alert_key = ?", (key,)
-            ).fetchone()
-        assert row[0] == 200000
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cur.execute(
+                "SELECT last_price FROM alert_state WHERE alert_key = %s", (key,)
+            )
+            row = cur.fetchone()
+        assert row["last_price"] == 200000
 
 
 # ---------------------------------------------------------------------------
@@ -320,23 +327,20 @@ class TestCombineRoundtrips:
 # ---------------------------------------------------------------------------
 
 class TestGetBestDeals:
-    def _insert_offers(self, offers):
-        storage.save_prices(offers)
-
     def test_returns_top_n(self):
         offers = [
             _make_offer(destination="OSA", departure_date=f"2026-05-{10+i:02d}",
                         return_date=f"2026-05-{17+i:02d}", price=(200000 + i * 10000))
             for i in range(5)
         ]
-        self._insert_offers(offers)
+        storage.save_prices(offers)
         result = mcp_server.get_best_deals(limit=3)
         assert len(result) == 3
         prices = [r["min_price"] for r in result]
         assert prices == sorted(prices)
 
     def test_filter_by_destination(self):
-        self._insert_offers([
+        storage.save_prices([
             _make_offer(destination="OSA", price=200000),
             _make_offer(destination="TYO", departure_date="2026-05-15",
                         return_date="2026-05-22", price=180000),
@@ -346,7 +350,7 @@ class TestGetBestDeals:
         assert len(result) == 1
 
     def test_filter_by_month(self):
-        self._insert_offers([
+        storage.save_prices([
             _make_offer(departure_date="2026-05-10", return_date="2026-05-17", price=200000),
             _make_offer(departure_date="2026-06-10", return_date="2026-06-17", price=180000),
         ])
@@ -355,7 +359,7 @@ class TestGetBestDeals:
         assert result[0]["departure_date"] == "2026-05-10"
 
     def test_filter_by_stay_nights(self):
-        self._insert_offers([
+        storage.save_prices([
             _make_offer(stay_nights=3, return_date="2026-05-13", price=200000),
             _make_offer(stay_nights=7, return_date="2026-05-17", price=220000),
         ])

@@ -3,6 +3,7 @@
 # 로컬 모드: Claude Desktop + 로컬 실행
 # 원격 모드: 별도 호스팅 필요
 
+import psycopg2.extras
 from .storage import get_conn
 
 
@@ -22,27 +23,29 @@ def get_best_deals(
     params = []
 
     if destination:
-        conditions.append("destination = ?")
+        conditions.append("destination = %s")
         params.append(destination)
     if month:
-        conditions.append("strftime('%Y-%m', departure_date) = ?")
+        conditions.append("LEFT(departure_date, 7) = %s")
         params.append(month)
     if stay_nights is not None:
-        conditions.append("stay_nights = ?")
+        conditions.append("stay_nights = %s")
         params.append(stay_nights)
 
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     params.append(limit)
 
     with get_conn() as conn:
-        rows = conn.execute(f"""
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute(f"""
             SELECT destination_name, departure_date, return_date, stay_nights,
                    out_airline, in_airline, is_mixed_airline, min_price, last_checked_at
             FROM v_best_observed
             {where}
             ORDER BY min_price ASC
-            LIMIT ?
-        """, params).fetchall()
+            LIMIT %s
+        """, params)
+        rows = cur.fetchall()
 
     return [dict(r) for r in rows]
 
@@ -57,24 +60,26 @@ def get_price_history(
     반환 필드: departure_date, min_price, out_airline, in_airline, last_checked_at
     """
     conditions = [
-        "destination = ?",
-        "strftime('%Y-%m', departure_date) = ?",
+        "destination = %s",
+        "LEFT(departure_date, 7) = %s",
     ]
     params = [destination, month]
 
     if stay_nights is not None:
-        conditions.append("stay_nights = ?")
+        conditions.append("stay_nights = %s")
         params.append(stay_nights)
 
     where = "WHERE " + " AND ".join(conditions)
 
     with get_conn() as conn:
-        rows = conn.execute(f"""
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute(f"""
             SELECT departure_date, min_price, out_airline, in_airline, last_checked_at
             FROM v_best_observed
             {where}
             ORDER BY departure_date ASC
-        """, params).fetchall()
+        """, params)
+        rows = cur.fetchall()
 
     return [dict(r) for r in rows]
 
@@ -90,25 +95,29 @@ def explain_deal(
                소스별 최저가 비교 (amadeus vs naver_graphql)
     """
     with get_conn() as conn:
-        rows = conn.execute("""
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("""
             SELECT source, out_airline, in_airline, is_mixed_airline,
                    MIN(price) AS min_price, MAX(checked_at) AS last_checked_at
             FROM price_history
-            WHERE destination = ?
-              AND departure_date = ?
-              AND return_date = ?
+            WHERE destination = %s
+              AND departure_date = %s
+              AND return_date = %s
             GROUP BY source, out_airline, in_airline, is_mixed_airline
             ORDER BY min_price ASC
-        """, (destination, departure_date, return_date)).fetchall()
+        """, (destination, departure_date, return_date))
+        rows = cur.fetchall()
 
     if not rows:
         return {"error": "딜 정보 없음"}
+
+    rows = [dict(r) for r in rows]
 
     by_source = {}
     for r in rows:
         src = r["source"]
         if src not in by_source or r["min_price"] < by_source[src]["min_price"]:
-            by_source[src] = dict(r)
+            by_source[src] = r
 
     best = min(rows, key=lambda r: r["min_price"])
     notes = []
