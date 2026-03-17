@@ -5,10 +5,11 @@ services:
     environment:
       POSTGRES_DB: flights
       POSTGRES_USER: flight_user
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-flight_pass}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
     volumes:
       - pgdata:/var/lib/postgresql/data
-    # 외부 포트 미노출 — app 컨테이너에서만 접근
+    networks:
+      - backend
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U flight_user -d flights"]
       interval: 10s
@@ -18,15 +19,57 @@ services:
   app:
     build: .
     restart: unless-stopped
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
     environment:
-      DATABASE_URL: postgresql://flight_user:${DB_PASSWORD:-flight_pass}@db:5432/flights
+      DATABASE_URL: postgresql://flight_user:${DB_PASSWORD:?DB_PASSWORD must be set}@db:5432/flights
     env_file:
       - .env
+    networks:
+      - frontend
+      - backend
     depends_on:
       db:
         condition: service_healthy
 
+  collector:
+    build:
+      context: .
+      dockerfile: Dockerfile.collector
+    profiles: [collect]
+    environment:
+      DATABASE_URL: postgresql://flight_user:${DB_PASSWORD:?DB_PASSWORD must be set}@db:5432/flights
+    env_file:
+      - .env
+    networks:
+      - backend
+    depends_on:
+      db:
+        condition: service_healthy
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN must be set}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - frontend
+    depends_on:
+      - app
+
+networks:
+  frontend:
+  backend:
+
 volumes:
   pgdata:
+  caddy_data:
+  caddy_config:

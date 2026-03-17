@@ -1,5 +1,6 @@
 .git
 .env
+.env.example
 __pycache__
 *.pyc
 .venv
@@ -7,3 +8,17 @@ __pycache__
 # React 빌드 산출물 — Dockerfile Stage 1에서 새로 빌드함
 flight_front/web/node_modules
 flight_front/web/dist
+
+# CI/CD, 스크립트 — 컨테이너에 불필요
+.github
+scripts
+backups
+Caddyfile
+docker-compose*.yml
+Dockerfile*
+CLAUDE.md
+ISSUES.md
+readme.md
+tests
+.claude
+.pytest_cache

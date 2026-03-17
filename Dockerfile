@@ -11,7 +11,7 @@ FROM python:3.11-slim
 WORKDIR /app
 
 COPY requirements.txt .
-# crawl4ai 제외 (서버에서는 수집 안 함, GitHub Actions에서 실행)
+# crawl4ai 제외 — 수집은 Dockerfile.collector에서 담당
 RUN pip install --no-cache-dir $(grep -v 'crawl4ai' requirements.txt | tr '\n' ' ')
 
 COPY . .

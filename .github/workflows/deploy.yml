@@ -1,0 +1,42 @@
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [master]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push'
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+            cd ~/my-flight-friend
+
+            git pull origin master
+
+            # app 이미지만 리빌드 (경량, ~1분)
+            docker compose -f docker-compose.prod.yml build app
+
+            # 무중단 재시작
+            docker compose -f docker-compose.prod.yml up -d app
+
+            # 헬스체크 (Caddy 경유)
+            sleep 5
+            curl -sf http://localhost/api/config > /dev/null \
+              && echo "Deploy OK" \
+              || (echo "Health check failed" && exit 1)
+
+            # 미사용 이미지 정리
+            docker image prune -f

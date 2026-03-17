@@ -1,0 +1,12 @@
+FROM python:3.11-slim
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Playwright가 필요한 시스템 의존성 + Chromium을 자동 설치
+RUN playwright install --with-deps chromium
+
+COPY . .
+
+CMD ["python", "-u", "main.py"]
