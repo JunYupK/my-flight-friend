@@ -11,8 +11,9 @@ load_dotenv()
 
 import flight_monitor.config  # noqa: F401 — sys.modules에 먼저 올려두기
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import psycopg2.extras
@@ -161,10 +162,14 @@ async def ws_run(websocket: WebSocket):
 # ── Results ───────────────────────────────────────────────
 
 @app.get("/api/results")
-def get_results():
+def get_results(hours: int | None = Query(None)):
     """여행지별 최저가 Top 5."""
     with get_conn() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        if hours is not None:
+            cutoff = f"{hours} hours"
+        else:
+            cutoff = None
         cur.execute("""
             SELECT * FROM (
                 SELECT *,
@@ -172,11 +177,32 @@ def get_results():
                         PARTITION BY destination
                         ORDER BY min_price ASC
                     ) AS rank
-                FROM v_best_observed
+                FROM (
+                    SELECT
+                        origin, destination, destination_name,
+                        departure_date, return_date, stay_nights,
+                        source, out_airline, in_airline, is_mixed_airline,
+                        out_dep_time, out_arr_time, out_duration_min, out_stops,
+                        in_dep_time, in_arr_time, in_duration_min, in_stops,
+                        out_arr_airport, in_dep_airport,
+                        MIN(price) AS min_price,
+                        MAX(checked_at) AS last_checked_at,
+                        MAX(out_url) AS out_url,
+                        MAX(in_url) AS in_url
+                    FROM price_history
+                    WHERE (%s IS NULL OR checked_at >= NOW() - interval %s)
+                    GROUP BY
+                        origin, destination, destination_name,
+                        departure_date, return_date, stay_nights,
+                        source, out_airline, in_airline, is_mixed_airline,
+                        out_dep_time, out_arr_time, out_duration_min, out_stops,
+                        in_dep_time, in_arr_time, in_duration_min, in_stops,
+                        out_arr_airport, in_dep_airport
+                ) sub
             ) ranked
             WHERE rank <= 5
             ORDER BY destination, min_price ASC
-        """)
+        """, (cutoff, cutoff))
         rows = cur.fetchall()
 
     groups: dict = {}
@@ -191,3 +217,59 @@ def get_results():
         groups[dest]["deals"].append(dict(row))
 
     return list(groups.values())
+
+
+# ── Price History ─────────────────────────────────────────
+
+@app.get("/api/price-history")
+def get_price_history(
+    destination: str = Query(...),
+    mode: str = Query("calendar"),
+    month: str | None = Query(None),
+    stay_nights: int | None = Query(None),
+    departure_date: str | None = Query(None),
+    return_date: str | None = Query(None),
+):
+    """가격 히스토리 조회. calendar(출발일별 최저가) / timeline(수집 시점별 추이)."""
+    with get_conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        if mode == "timeline":
+            if not departure_date or not return_date:
+                raise HTTPException(400, "timeline mode requires departure_date and return_date")
+            cur.execute("""
+                SELECT
+                    DATE(checked_at)::text AS check_date,
+                    source,
+                    MIN(price) AS min_price
+                FROM price_history
+                WHERE destination = %s
+                  AND departure_date = %s
+                  AND return_date = %s
+                GROUP BY DATE(checked_at), source
+                ORDER BY check_date
+            """, (destination.upper(), departure_date, return_date))
+        else:
+            if not month:
+                raise HTTPException(400, "calendar mode requires month parameter")
+            cur.execute("""
+                SELECT
+                    departure_date,
+                    source,
+                    MIN(price) AS min_price
+                FROM price_history
+                WHERE destination = %s
+                  AND departure_date LIKE %s
+                  AND (stay_nights = %s OR %s IS NULL)
+                GROUP BY departure_date, source
+                ORDER BY departure_date
+            """, (destination.upper(), f"{month}%", stay_nights, stay_nights))
+
+        return {"mode": mode, "data": [dict(r) for r in cur.fetchall()]}
+
+
+# ── Static (React SPA) ────────────────────────────────────
+# API 라우트가 모두 등록된 뒤에 마운트해야 우선순위 보장
+_DIST = PROJECT_ROOT / "flight_front" / "web" / "dist"
+if _DIST.exists():
+    app.mount("/", StaticFiles(directory=str(_DIST), html=True), name="static")
