@@ -196,17 +196,34 @@ function DealCard({ deal, rank }: { deal: Deal; rank: number }) {
   );
 }
 
+/** 현재 월 기준 +12개월 목록 */
+function getMonthOptions(): string[] {
+  const months: string[] = [];
+  const now = new Date();
+  for (let offset = 0; offset <= 12; offset++) {
+    const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+    months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+  }
+  return months;
+}
+
+/** "2026-03" → "3월" */
+function formatMonth(m: string) {
+  return `${parseInt(m.split("-")[1])}월`;
+}
+
 export default function Results() {
   const [groups, setGroups] = useState<DestinationGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [activeDest, setActiveDest] = useState<string | null>(null);
   const [activeTripType, setActiveTripType] = useState<string | undefined>(undefined);
+  const [activeMonth, setActiveMonth] = useState<string>(() => getMonthOptions()[0]);
 
-  const load = () => {
+  const load = (month?: string) => {
     setLoading(true);
     setError("");
-    fetchResults()
+    fetchResults({ month })
       .then((data) => {
         setGroups(data);
         if (data.length > 0 && (!activeDest || !data.find((g) => g.destination === activeDest))) {
@@ -217,7 +234,7 @@ export default function Results() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(activeMonth); }, [activeMonth]);
 
   if (loading)
     return <div className="flex items-center justify-center py-20 text-gray-400 text-lg">로딩 중…</div>;
@@ -226,16 +243,20 @@ export default function Results() {
     return (
       <div className="flex flex-col items-center py-20 gap-4 text-red-500">
         <p className="text-base">{error}</p>
-        <button onClick={() => load()} className="px-4 py-2 bg-red-50 rounded-lg text-sm hover:bg-red-100">재시도</button>
+        <button onClick={() => load(activeMonth)} className="px-4 py-2 bg-red-50 rounded-lg text-sm hover:bg-red-100">재시도</button>
       </div>
     );
 
   if (groups.length === 0)
     return (
-      <div className="flex flex-col items-center py-20 gap-3 text-gray-400">
-        <p className="text-5xl">✈</p>
-        <p className="text-lg">수집된 항공권 데이터가 없습니다.</p>
-        <p className="text-sm">설정에서 수집을 실행해주세요.</p>
+      <div className="space-y-6">
+        {/* 월 필터는 데이터 없어도 표시 */}
+        <MonthFilter activeMonth={activeMonth} onChange={setActiveMonth} />
+        <div className="flex flex-col items-center py-20 gap-3 text-gray-400">
+          <p className="text-5xl">✈</p>
+          <p className="text-lg">해당 월의 항공권 데이터가 없습니다.</p>
+          <p className="text-sm">다른 월을 선택하거나 수집을 실행해주세요.</p>
+        </div>
       </div>
     );
 
@@ -246,16 +267,24 @@ export default function Results() {
     ? activeGroup.deals.filter((d) => d.trip_type === activeTripType)
     : activeGroup.deals;
 
+  // 상위 5개: 오늘의 최저가
+  const topDeals = filteredDeals.slice(0, 5);
+  // 나머지: 모든 항공권 조합
+  const restDeals = filteredDeals.slice(5);
+
   const minPrice = filteredDeals.length > 0
     ? Math.min(...filteredDeals.map((d) => d.min_price))
     : 0;
 
   return (
     <div className="space-y-6">
+      {/* 월 필터 */}
+      <MonthFilter activeMonth={activeMonth} onChange={setActiveMonth} />
+
       {/* 헤더 */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-gray-400">{groups.length}개 여행지</p>
-        <button onClick={() => load()} className="text-sm text-blue-500 hover:text-blue-700">새로고침</button>
+        <button onClick={() => load(activeMonth)} className="text-sm text-blue-500 hover:text-blue-700">새로고침</button>
       </div>
 
       {/* 목적지 탭 */}
@@ -308,16 +337,54 @@ export default function Results() {
         </div>
       </div>
 
-      {/* 딜 카드 그리드 */}
       {filteredDeals.length === 0 ? (
         <div className="text-center py-10 text-gray-400 text-sm">해당 조건의 항공권이 없습니다.</div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
-          {filteredDeals.map((deal, i) => (
-            <DealCard key={i} deal={deal} rank={i + 1} />
-          ))}
-        </div>
+        <>
+          {/* 오늘의 최저가 섹션 */}
+          <section>
+            <h3 className="text-lg font-bold text-gray-700 mb-3">오늘의 최저가</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
+              {topDeals.map((deal, i) => (
+                <DealCard key={i} deal={deal} rank={i + 1} />
+              ))}
+            </div>
+          </section>
+
+          {/* 모든 항공권 조합 섹션 */}
+          {restDeals.length > 0 && (
+            <section>
+              <h3 className="text-lg font-bold text-gray-700 mb-3">모든 항공권 조합</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
+                {restDeals.map((deal, i) => (
+                  <DealCard key={i} deal={deal} rank={i + 6} />
+                ))}
+              </div>
+            </section>
+          )}
+        </>
       )}
+    </div>
+  );
+}
+
+function MonthFilter({ activeMonth, onChange }: { activeMonth: string; onChange: (m: string) => void }) {
+  const months = getMonthOptions();
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {months.map((m) => (
+        <button
+          key={m}
+          onClick={() => onChange(m)}
+          className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors ${
+            activeMonth === m
+              ? "bg-blue-600 text-white"
+              : "bg-white border border-gray-200 text-gray-600 hover:border-blue-300"
+          }`}
+        >
+          {formatMonth(m)}
+        </button>
+      ))}
     </div>
   );
 }

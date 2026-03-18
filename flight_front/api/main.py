@@ -162,47 +162,51 @@ async def ws_run(websocket: WebSocket):
 # ── Results ───────────────────────────────────────────────
 
 @app.get("/api/results")
-def get_results(hours: int | None = Query(None)):
-    """여행지별 최저가 Top 5."""
+def get_results(
+    hours: int | None = Query(None),
+    month: str | None = Query(None),
+):
+    """여행지별 항공권 조회. month=YYYY-MM 으로 출발월 필터."""
     try:
         with get_conn() as conn:
             cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            where_clause = ""
-            params: tuple = ()
+            conditions: list[str] = []
+            params: list = []
             if hours is not None:
-                where_clause = "WHERE checked_at >= NOW() - %s::interval"
-                params = (f"{hours} hours",)
+                conditions.append("checked_at >= NOW() - %s::interval")
+                params.append(f"{hours} hours")
+            if month is not None:
+                conditions.append("departure_date LIKE %s")
+                params.append(f"{month}%")
+            where_clause = ("WHERE " + " AND ".join(conditions)) if conditions else ""
             cur.execute(f"""
-                SELECT * FROM (
-                    SELECT *,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY destination
-                            ORDER BY min_price ASC
-                        ) AS rn
-                    FROM (
-                        SELECT
-                            origin, destination, destination_name,
-                            departure_date, return_date, stay_nights,
-                            trip_type, source, out_airline, in_airline, is_mixed_airline,
-                            out_dep_time, out_arr_time, out_duration_min, out_stops,
-                            in_dep_time, in_arr_time, in_duration_min, in_stops,
-                            out_arr_airport, in_dep_airport,
-                            MIN(price) AS min_price,
-                            MAX(checked_at) AS last_checked_at,
-                            MAX(out_url) AS out_url,
-                            MAX(in_url) AS in_url
-                        FROM price_history
-                        {where_clause}
-                        GROUP BY
-                            origin, destination, destination_name,
-                            departure_date, return_date, stay_nights,
-                            trip_type, source, out_airline, in_airline, is_mixed_airline,
-                            out_dep_time, out_arr_time, out_duration_min, out_stops,
-                            in_dep_time, in_arr_time, in_duration_min, in_stops,
-                            out_arr_airport, in_dep_airport
-                    ) sub
-                ) ranked
-                WHERE rn <= 5
+                SELECT *,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY destination
+                        ORDER BY min_price ASC
+                    ) AS rn
+                FROM (
+                    SELECT
+                        origin, destination, destination_name,
+                        departure_date, return_date, stay_nights,
+                        trip_type, source, out_airline, in_airline, is_mixed_airline,
+                        out_dep_time, out_arr_time, out_duration_min, out_stops,
+                        in_dep_time, in_arr_time, in_duration_min, in_stops,
+                        out_arr_airport, in_dep_airport,
+                        MIN(price) AS min_price,
+                        MAX(checked_at) AS last_checked_at,
+                        MAX(out_url) AS out_url,
+                        MAX(in_url) AS in_url
+                    FROM price_history
+                    {where_clause}
+                    GROUP BY
+                        origin, destination, destination_name,
+                        departure_date, return_date, stay_nights,
+                        trip_type, source, out_airline, in_airline, is_mixed_airline,
+                        out_dep_time, out_arr_time, out_duration_min, out_stops,
+                        in_dep_time, in_arr_time, in_duration_min, in_stops,
+                        out_arr_airport, in_dep_airport
+                ) sub
                 ORDER BY destination, min_price ASC
             """, params)
             rows = cur.fetchall()
