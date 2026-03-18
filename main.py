@@ -20,9 +20,12 @@ def main():
     init_db()
 
     fsc_offers = fetch_fsc_offers()
-    gf_offers  = fetch_google_flights_offers()
+    if fsc_offers:
+        save_prices(fsc_offers)
+        print(f"[수집] FSC {len(fsc_offers)}건 저장")
+
+    gf_offers = fetch_google_flights_offers(on_route_done=save_prices)
     all_offers = fsc_offers + gf_offers
-    save_prices(all_offers)
     print(f"[수집] FSC {len(fsc_offers)}건 / GoogleFlights {len(gf_offers)}건")
 
     target = SEARCH_CONFIG["target_price_krw"]

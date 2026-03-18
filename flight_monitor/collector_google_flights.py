@@ -298,7 +298,7 @@ async def _fetch_route(
     return _combine_roundtrips(out_flights, in_flights, ORIGIN, airport_code, airport_name)
 
 
-async def _fetch_all() -> list[dict]:
+async def _fetch_all(on_route_done=None) -> list[dict]:
     if not _CRAWL4AI_AVAILABLE:
         print("[GoogleFlights] crawl4ai 미설치, 수집 스킵")
         return []
@@ -321,11 +321,14 @@ async def _fetch_all() -> list[dict]:
             for airport_code, airport_name in JAPAN_AIRPORTS.items():
                 offers = await _fetch_route(crawler, airport_code, airport_name, year, month)
                 all_results.extend(offers)
+                if on_route_done and offers:
+                    on_route_done(offers)
                 print(f"[GoogleFlights] {airport_code} {month_str}: {len(offers)}건")
 
     return all_results
 
 
-def fetch_google_flights_offers() -> list[dict]:
-    """Google Flights 크롤링으로 항공권 최저가 수집 (동기 래퍼)."""
-    return asyncio.run(_fetch_all())
+def fetch_google_flights_offers(on_route_done=None) -> list[dict]:
+    """Google Flights 크롤링으로 항공권 최저가 수집 (동기 래퍼).
+    on_route_done: 노선별 수집 완료 시 호출되는 콜백 (offers 리스트 전달)."""
+    return asyncio.run(_fetch_all(on_route_done=on_route_done))
