@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { fetchResults } from "../api";
 import type { Deal, DestinationGroup } from "../types";
-import PriceChart from "./PriceChart";
 
 function formatDuration(min: number | null) {
   if (min == null) return "-";
@@ -69,6 +68,27 @@ const FRESHNESS_OPTIONS: { label: string; hours?: number }[] = [
   { label: "7일", hours: 168 },
 ];
 
+const TRIP_TYPE_OPTIONS: { label: string; value?: string }[] = [
+  { label: "전체" },
+  { label: "왕복 검색", value: "round_trip" },
+  { label: "편도 조합", value: "oneway_combo" },
+];
+
+function TripTypeBadge({ tripType }: { tripType: string }) {
+  if (tripType === "oneway_combo") {
+    return (
+      <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-medium">
+        편도+편도
+      </span>
+    );
+  }
+  return (
+    <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">
+      왕복
+    </span>
+  );
+}
+
 function DealCard({ deal, rank }: { deal: Deal; rank: number }) {
   const airline =
     deal.out_airline === deal.in_airline
@@ -84,7 +104,10 @@ function DealCard({ deal, rank }: { deal: Deal; rank: number }) {
           <p className="text-3xl font-extrabold text-blue-600 leading-none">
             {Math.round(deal.min_price).toLocaleString()}
           </p>
-          <p className="text-sm text-gray-400 mt-1">원 · 왕복</p>
+          <div className="flex items-center gap-1.5 mt-1 justify-end">
+            <span className="text-sm text-gray-400">원 · 왕복</span>
+            <TripTypeBadge tripType={deal.trip_type} />
+          </div>
           {deal.last_checked_at && (
             <div className="mt-1">
               <FreshnessBadge checkedAt={deal.last_checked_at} />
@@ -99,7 +122,7 @@ function DealCard({ deal, rank }: { deal: Deal; rank: number }) {
           <span className="text-xs font-bold text-blue-500">
             {deal.origin}
           </span>
-          <span className="text-xs text-gray-300">✈</span>
+          <span className="text-xs text-gray-300">→</span>
           <span className="text-xs font-bold text-blue-500">
             {deal.out_arr_airport ?? deal.destination}
           </span>
@@ -177,78 +200,25 @@ function DealCard({ deal, rank }: { deal: Deal; rank: number }) {
   );
 }
 
-/** 현재 월 기준 ±3개월 목록 생성 */
-function getMonthOptions(): string[] {
-  const months: string[] = [];
-  const now = new Date();
-  for (let offset = 0; offset <= 6; offset++) {
-    const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
-    months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
-  }
-  return months;
-}
-
-function DestinationSection({ group }: { group: DestinationGroup }) {
-  const minPrice = Math.min(...group.deals.map((d) => d.min_price));
-  const [showChart, setShowChart] = useState(false);
-  const [chartMonth, setChartMonth] = useState(() => getMonthOptions()[0]);
-
-  return (
-    <section>
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-4">
-        <h2 className="text-2xl font-bold text-gray-800">{group.destination_name}</h2>
-        <span className="text-base text-gray-400">{group.destination}</span>
-        <span className="ml-auto text-base font-semibold text-blue-500 whitespace-nowrap">
-          최저 {Math.round(minPrice).toLocaleString()}원~
-        </span>
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
-        {group.deals.map((deal, i) => (
-          <DealCard key={i} deal={deal} rank={i + 1} />
-        ))}
-      </div>
-
-      {/* 가격 추이 차트 */}
-      <div className="mt-4">
-        <button
-          onClick={() => setShowChart((v) => !v)}
-          className="text-sm text-blue-500 hover:text-blue-700 font-medium"
-        >
-          {showChart ? "가격 추이 접기 ▲" : "가격 추이 ▼"}
-        </button>
-        {showChart && (
-          <div className="mt-3 space-y-3">
-            <div className="flex items-center gap-2">
-              <label className="text-sm text-gray-500">월 선택</label>
-              <select
-                value={chartMonth}
-                onChange={(e) => setChartMonth(e.target.value)}
-                className="text-sm border border-gray-200 rounded-lg px-2 py-1"
-              >
-                {getMonthOptions().map((m) => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-              </select>
-            </div>
-            <PriceChart destination={group.destination} month={chartMonth} />
-          </div>
-        )}
-      </div>
-    </section>
-  );
-}
-
 export default function Results() {
   const [groups, setGroups] = useState<DestinationGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [activeHours, setActiveHours] = useState<number | undefined>(undefined);
+  const [activeDest, setActiveDest] = useState<string | null>(null);
+  const [activeTripType, setActiveTripType] = useState<string | undefined>(undefined);
 
   const load = (hours?: number) => {
     setLoading(true);
     setError("");
     fetchResults(hours)
-      .then(setGroups)
+      .then((data) => {
+        setGroups(data);
+        // 처음 로드 시 또는 선택된 목적지가 사라진 경우 첫 번째 목적지 선택
+        if (data.length > 0 && (!activeDest || !data.find((g) => g.destination === activeDest))) {
+          setActiveDest(data[0].destination);
+        }
+      })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   };
@@ -280,12 +250,23 @@ export default function Results() {
       </div>
     );
 
+  const activeGroup = groups.find((g) => g.destination === activeDest) ?? groups[0];
+
+  // trip_type 필터 적용
+  const filteredDeals = activeTripType
+    ? activeGroup.deals.filter((d) => d.trip_type === activeTripType)
+    : activeGroup.deals;
+
+  const minPrice = filteredDeals.length > 0
+    ? Math.min(...filteredDeals.map((d) => d.min_price))
+    : 0;
+
   return (
-    <div className="space-y-12">
+    <div className="space-y-6">
+      {/* 필터 바 */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-gray-400">{groups.length}개 여행지 · 여행지별 최저가 Top 5</p>
+        <p className="text-sm text-gray-400">{groups.length}개 여행지</p>
         <div className="flex items-center gap-2">
-          {/* 신선도 필터 칩 */}
           {FRESHNESS_OPTIONS.map((opt) => (
             <button
               key={opt.label}
@@ -302,9 +283,67 @@ export default function Results() {
           <button onClick={() => load(activeHours)} className="text-sm text-blue-500 hover:text-blue-700 ml-2">새로고침</button>
         </div>
       </div>
-      {groups.map((g) => (
-        <DestinationSection key={g.destination} group={g} />
-      ))}
+
+      {/* 목적지 탭 */}
+      <div className="flex flex-wrap gap-2">
+        {groups.map((g) => {
+          const gMin = Math.min(...g.deals.map((d) => d.min_price));
+          const isActive = g.destination === activeGroup.destination;
+          return (
+            <button
+              key={g.destination}
+              onClick={() => setActiveDest(g.destination)}
+              className={`flex flex-col items-start px-4 py-2.5 rounded-xl text-left transition-all ${
+                isActive
+                  ? "bg-blue-600 text-white shadow-md"
+                  : "bg-white border border-gray-200 text-gray-700 hover:border-blue-300 hover:shadow-sm"
+              }`}
+            >
+              <span className="text-sm font-bold">{g.destination_name}</span>
+              <span className={`text-xs ${isActive ? "text-blue-100" : "text-gray-400"}`}>
+                {g.destination} · {Math.round(gMin).toLocaleString()}원~
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* 선택된 목적지 헤더 + trip_type 필터 */}
+      <div className="flex flex-wrap items-center gap-3">
+        <h2 className="text-2xl font-bold text-gray-800">{activeGroup.destination_name}</h2>
+        <span className="text-base text-gray-400">{activeGroup.destination}</span>
+        {minPrice > 0 && (
+          <span className="text-base font-semibold text-blue-500 whitespace-nowrap">
+            최저 {Math.round(minPrice).toLocaleString()}원~
+          </span>
+        )}
+        <div className="ml-auto flex gap-1.5">
+          {TRIP_TYPE_OPTIONS.map((opt) => (
+            <button
+              key={opt.label}
+              onClick={() => setActiveTripType(opt.value)}
+              className={`text-xs px-3 py-1 rounded-full font-medium transition-colors ${
+                activeTripType === opt.value
+                  ? "bg-purple-500 text-white"
+                  : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 딜 카드 그리드 */}
+      {filteredDeals.length === 0 ? (
+        <div className="text-center py-10 text-gray-400 text-sm">해당 조건의 항공권이 없습니다.</div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
+          {filteredDeals.map((deal, i) => (
+            <DealCard key={i} deal={deal} rank={i + 1} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

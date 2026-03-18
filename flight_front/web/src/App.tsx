@@ -5,8 +5,15 @@ import AirportList from "./components/AirportList";
 import SearchConfigForm from "./components/SearchConfig";
 import RunControl from "./components/RunControl";
 import Results from "./components/Results";
+import Trends from "./components/Trends";
 
-type Tab = "results" | "settings";
+type Tab = "results" | "trends" | "settings";
+
+const TAB_LABELS: Record<Tab, string> = {
+  results: "오늘의 최저가",
+  trends: "가격 추이",
+  settings: "설정",
+};
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("results");
@@ -38,10 +45,10 @@ export default function App() {
       <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="max-w-6xl mx-auto px-4">
           <div className="flex items-center h-14 gap-2 sm:gap-6">
-            <span className="font-bold text-gray-800 text-base shrink-0">✈ Flight Friend</span>
+            <span className="font-bold text-gray-800 text-base shrink-0">Flight Friend</span>
 
             <nav className="flex gap-1">
-              {(["results", "settings"] as Tab[]).map((t) => (
+              {(["results", "trends", "settings"] as Tab[]).map((t) => (
                 <button
                   key={t}
                   onClick={() => setTab(t)}
@@ -51,7 +58,7 @@ export default function App() {
                       : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
                   }`}
                 >
-                  {t === "results" ? "수집 결과" : "설정"}
+                  {TAB_LABELS[t]}
                 </button>
               ))}
             </nav>
@@ -79,6 +86,8 @@ export default function App() {
 
       <main className="max-w-6xl mx-auto px-4 py-8">
         {tab === "results" && <Results />}
+
+        {tab === "trends" && <Trends />}
 
         {tab === "settings" && (
           <div className="space-y-6">

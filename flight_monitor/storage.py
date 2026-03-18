@@ -129,6 +129,7 @@ def init_db():
                 departure_date,
                 return_date,
                 stay_nights,
+                trip_type,
                 source,
                 out_airline,
                 in_airline,
@@ -151,6 +152,7 @@ def init_db():
             GROUP BY
                 origin, destination, destination_name,
                 departure_date, return_date, stay_nights,
+                trip_type,
                 source, out_airline, in_airline, is_mixed_airline,
                 out_dep_time, out_arr_time, out_duration_min, out_stops,
                 in_dep_time, in_arr_time, in_duration_min, in_stops,
