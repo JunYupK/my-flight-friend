@@ -164,7 +164,7 @@ async def ws_run(websocket: WebSocket):
 @app.get("/api/results")
 def get_results(
     hours: int | None = Query(None),
-    month: str | None = Query(None),
+    month: str | None = Query(None, regex=r"^\d{4}-\d{2}$"),
 ):
     """여행지별 항공권 조회. month=YYYY-MM 으로 출발월 필터."""
     try:
@@ -177,7 +177,7 @@ def get_results(
                 params.append(f"{hours} hours")
             if month is not None:
                 conditions.append("departure_date LIKE %s")
-                params.append(f"{month}%")
+                params.append(f"{month}-%")
             where_clause = ("WHERE " + " AND ".join(conditions)) if conditions else ""
             cur.execute(f"""
                 SELECT *,
