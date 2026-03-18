@@ -48,7 +48,7 @@ def init_db():
                 out_airline      TEXT,
                 in_airline       TEXT,
                 is_mixed_airline INTEGER,
-                checked_at       TEXT,
+                checked_at       TIMESTAMP,
                 out_dep_time     TEXT,
                 out_arr_time     TEXT,
                 out_duration_min INTEGER,
@@ -80,6 +80,18 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_price_history_checked_at
             ON price_history(checked_at)
         """)
+
+        # checked_at TEXT → TIMESTAMP 마이그레이션 (기존 테이블)
+        cur.execute("SAVEPOINT pre_ts")
+        try:
+            cur.execute("""
+                ALTER TABLE price_history
+                ALTER COLUMN checked_at TYPE TIMESTAMP USING checked_at::TIMESTAMP
+            """)
+        except Exception:
+            cur.execute("ROLLBACK TO SAVEPOINT pre_ts")
+        else:
+            cur.execute("RELEASE SAVEPOINT pre_ts")
 
         # 기존 테이블에 컬럼 추가 (없을 때만)
         for col in ("out_arr_airport", "in_dep_airport", "out_url", "in_url"):
@@ -117,6 +129,7 @@ def init_db():
                 departure_date,
                 return_date,
                 stay_nights,
+                trip_type,
                 source,
                 out_airline,
                 in_airline,
@@ -139,6 +152,7 @@ def init_db():
             GROUP BY
                 origin, destination, destination_name,
                 departure_date, return_date, stay_nights,
+                trip_type,
                 source, out_airline, in_airline, is_mixed_airline,
                 out_dep_time, out_arr_time, out_duration_min, out_stops,
                 in_dep_time, in_arr_time, in_duration_min, in_stops,

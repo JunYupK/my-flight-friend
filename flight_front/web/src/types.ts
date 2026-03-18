@@ -39,6 +39,7 @@ export interface Deal {
   departure_date: string;
   return_date: string;
   stay_nights: number;
+  trip_type: string;
   source: string;
   out_airline: string;
   in_airline: string;

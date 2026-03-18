@@ -51,7 +51,7 @@ def _build_tfs_url(dep: str, arr: str, date_str: str) -> str | None:
     raw = base64.urlsafe_b64decode(template + "==")
     raw = raw.replace(_TFS_BASE_DATE.encode(), date_str.encode())
     tfs = base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
-    return f"https://www.google.com/travel/flights/search?tfs={tfs}"
+    return f"https://www.google.com/travel/flights/search?tfs={tfs}&curr=KRW&hl=ko"
 
 
 def _make_scroll_js() -> str:
@@ -188,7 +188,7 @@ async def _fetch_one_way(
             config=CrawlerRunConfig(
                 magic=True,
                 js_code=[_make_scroll_js(), _extract_js()],
-                wait_for="js:() => document.body.innerText.includes('원')",
+                wait_for="js:() => !!document.querySelector('li.pIav2d')",
                 delay_before_return_html=4.0,
                 cache_mode="bypass",
             ),

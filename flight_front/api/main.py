@@ -13,7 +13,7 @@ import flight_monitor.config  # noqa: F401 — sys.modules에 먼저 올려두�
 
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 import psycopg2.extras
@@ -181,7 +181,7 @@ def get_results(hours: int | None = Query(None)):
                     SELECT
                         origin, destination, destination_name,
                         departure_date, return_date, stay_nights,
-                        source, out_airline, in_airline, is_mixed_airline,
+                        trip_type, source, out_airline, in_airline, is_mixed_airline,
                         out_dep_time, out_arr_time, out_duration_min, out_stops,
                         in_dep_time, in_arr_time, in_duration_min, in_stops,
                         out_arr_airport, in_dep_airport,
@@ -190,11 +190,11 @@ def get_results(hours: int | None = Query(None)):
                         MAX(out_url) AS out_url,
                         MAX(in_url) AS in_url
                     FROM price_history
-                    WHERE (%s IS NULL OR checked_at::timestamp >= NOW() - %s::interval)
+                    WHERE (%s IS NULL OR checked_at >= NOW() - %s::interval)
                     GROUP BY
                         origin, destination, destination_name,
                         departure_date, return_date, stay_nights,
-                        source, out_airline, in_airline, is_mixed_airline,
+                        trip_type, source, out_airline, in_airline, is_mixed_airline,
                         out_dep_time, out_arr_time, out_duration_min, out_stops,
                         in_dep_time, in_arr_time, in_duration_min, in_stops,
                         out_arr_airport, in_dep_airport
@@ -235,20 +235,33 @@ def get_price_history(
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
         if mode == "timeline":
-            if not departure_date or not return_date:
-                raise HTTPException(400, "timeline mode requires departure_date and return_date")
-            cur.execute("""
-                SELECT
-                    DATE(checked_at)::text AS check_date,
-                    source,
-                    MIN(price) AS min_price
-                FROM price_history
-                WHERE destination = %s
-                  AND departure_date = %s
-                  AND return_date = %s
-                GROUP BY DATE(checked_at), source
-                ORDER BY check_date
-            """, (destination.upper(), departure_date, return_date))
+            if not departure_date:
+                raise HTTPException(400, "timeline mode requires departure_date")
+            if return_date:
+                cur.execute("""
+                    SELECT
+                        DATE(checked_at)::text AS check_date,
+                        source,
+                        MIN(price) AS min_price
+                    FROM price_history
+                    WHERE destination = %s
+                      AND departure_date = %s
+                      AND return_date = %s
+                    GROUP BY DATE(checked_at), source
+                    ORDER BY check_date
+                """, (destination.upper(), departure_date, return_date))
+            else:
+                cur.execute("""
+                    SELECT
+                        DATE(checked_at)::text AS check_date,
+                        source,
+                        MIN(price) AS min_price
+                    FROM price_history
+                    WHERE destination = %s
+                      AND departure_date = %s
+                    GROUP BY DATE(checked_at), source
+                    ORDER BY check_date
+                """, (destination.upper(), departure_date))
         else:
             if not month:
                 raise HTTPException(400, "calendar mode requires month parameter")
@@ -272,4 +285,10 @@ def get_price_history(
 # API 라우트가 모두 등록된 뒤에 마운트해야 우선순위 보장
 _DIST = PROJECT_ROOT / "flight_front" / "web" / "dist"
 if _DIST.exists():
-    app.mount("/", StaticFiles(directory=str(_DIST), html=True), name="static")
+    # SPA fallback: 클라이언트 라우트(/deals, /trends 등)에서 새로고침 시 index.html 반환
+    @app.get("/{path:path}")
+    def spa_fallback(path: str):
+        file_path = (_DIST / path).resolve()
+        if file_path.is_relative_to(_DIST) and file_path.is_file():
+            return FileResponse(file_path)
+        return FileResponse(_DIST / "index.html")
