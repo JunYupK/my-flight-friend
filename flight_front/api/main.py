@@ -285,4 +285,12 @@ def get_price_history(
 # API 라우트가 모두 등록된 뒤에 마운트해야 우선순위 보장
 _DIST = PROJECT_ROOT / "flight_front" / "web" / "dist"
 if _DIST.exists():
-    app.mount("/", StaticFiles(directory=str(_DIST), html=True), name="static")
+    from fastapi.responses import FileResponse
+
+    # SPA fallback: 클라이언트 라우트(/deals, /trends 등)에서 새로고침 시 index.html 반환
+    @app.get("/{path:path}")
+    def spa_fallback(path: str):
+        file_path = _DIST / path
+        if file_path.is_file():
+            return FileResponse(file_path)
+        return FileResponse(_DIST / "index.html")
