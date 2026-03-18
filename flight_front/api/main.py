@@ -164,46 +164,50 @@ async def ws_run(websocket: WebSocket):
 @app.get("/api/results")
 def get_results(hours: int | None = Query(None)):
     """여행지별 최저가 Top 5."""
-    with get_conn() as conn:
-        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        if hours is not None:
-            cutoff = f"{hours} hours"
-        else:
-            cutoff = None
-        cur.execute("""
-            SELECT * FROM (
-                SELECT *,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY destination
-                        ORDER BY min_price ASC
-                    ) AS rank
-                FROM (
-                    SELECT
-                        origin, destination, destination_name,
-                        departure_date, return_date, stay_nights,
-                        trip_type, source, out_airline, in_airline, is_mixed_airline,
-                        out_dep_time, out_arr_time, out_duration_min, out_stops,
-                        in_dep_time, in_arr_time, in_duration_min, in_stops,
-                        out_arr_airport, in_dep_airport,
-                        MIN(price) AS min_price,
-                        MAX(checked_at) AS last_checked_at,
-                        MAX(out_url) AS out_url,
-                        MAX(in_url) AS in_url
-                    FROM price_history
-                    WHERE (%s IS NULL OR checked_at >= NOW() - %s::interval)
-                    GROUP BY
-                        origin, destination, destination_name,
-                        departure_date, return_date, stay_nights,
-                        trip_type, source, out_airline, in_airline, is_mixed_airline,
-                        out_dep_time, out_arr_time, out_duration_min, out_stops,
-                        in_dep_time, in_arr_time, in_duration_min, in_stops,
-                        out_arr_airport, in_dep_airport
-                ) sub
-            ) ranked
-            WHERE rank <= 5
-            ORDER BY destination, min_price ASC
-        """, (cutoff, cutoff))
-        rows = cur.fetchall()
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            where_clause = ""
+            params: tuple = ()
+            if hours is not None:
+                where_clause = "WHERE checked_at >= NOW() - %s::interval"
+                params = (f"{hours} hours",)
+            cur.execute(f"""
+                SELECT * FROM (
+                    SELECT *,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY destination
+                            ORDER BY min_price ASC
+                        ) AS rn
+                    FROM (
+                        SELECT
+                            origin, destination, destination_name,
+                            departure_date, return_date, stay_nights,
+                            trip_type, source, out_airline, in_airline, is_mixed_airline,
+                            out_dep_time, out_arr_time, out_duration_min, out_stops,
+                            in_dep_time, in_arr_time, in_duration_min, in_stops,
+                            out_arr_airport, in_dep_airport,
+                            MIN(price) AS min_price,
+                            MAX(checked_at) AS last_checked_at,
+                            MAX(out_url) AS out_url,
+                            MAX(in_url) AS in_url
+                        FROM price_history
+                        {where_clause}
+                        GROUP BY
+                            origin, destination, destination_name,
+                            departure_date, return_date, stay_nights,
+                            trip_type, source, out_airline, in_airline, is_mixed_airline,
+                            out_dep_time, out_arr_time, out_duration_min, out_stops,
+                            in_dep_time, in_arr_time, in_duration_min, in_stops,
+                            out_arr_airport, in_dep_airport
+                    ) sub
+                ) ranked
+                WHERE rn <= 5
+                ORDER BY destination, min_price ASC
+            """, params)
+            rows = cur.fetchall()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
     groups: dict = {}
     for row in rows:
