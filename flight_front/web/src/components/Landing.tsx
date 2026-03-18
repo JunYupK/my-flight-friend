@@ -23,14 +23,12 @@ const ACCENT = {
     border: "border-blue-200",
     text: "text-blue-700",
     btn: "bg-blue-600 hover:bg-blue-700",
-    icon: "bg-blue-100 text-blue-600",
   },
   purple: {
     bg: "bg-purple-50",
     border: "border-purple-200",
     text: "text-purple-700",
     btn: "bg-purple-600 hover:bg-purple-700",
-    icon: "bg-purple-100 text-purple-600",
   },
 };
 
