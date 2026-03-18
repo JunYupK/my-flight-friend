@@ -94,7 +94,7 @@ def init_db():
             cur.execute("RELEASE SAVEPOINT pre_ts")
 
         # 기존 테이블에 컬럼 추가 (없을 때만)
-        for col in ("out_arr_airport", "in_dep_airport", "out_url", "in_url"):
+        for col in ("trip_type", "out_arr_airport", "in_dep_airport", "out_url", "in_url"):
             cur.execute("SAVEPOINT pre_alter")
             try:
                 cur.execute(f"ALTER TABLE price_history ADD COLUMN {col} TEXT")

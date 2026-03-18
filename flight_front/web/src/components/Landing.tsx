@@ -41,7 +41,7 @@ export default function Landing() {
           Flight Friend
         </h1>
         <p className="mt-4 text-lg text-gray-500 max-w-xl mx-auto leading-relaxed">
-          ICN 출발 일본 항공권 최저가를 매일 추적합니다.<br />
+          항공권 최저가를 매일 추적합니다.<br />
           복수 소스에서 수집한 데이터로 최적의 예약 타이밍을 찾아보세요.
         </p>
       </section>
@@ -54,10 +54,10 @@ export default function Landing() {
             <Link
               key={f.link}
               to={f.link}
-              className={`block ${c.bg} border ${c.border} rounded-2xl p-8 hover:shadow-lg transition-shadow group`}
+              className={`flex flex-col ${c.bg} border ${c.border} rounded-2xl p-8 hover:shadow-lg transition-shadow group`}
             >
               <h2 className={`text-2xl font-bold ${c.text}`}>{f.title}</h2>
-              <p className="mt-3 text-sm text-gray-600 leading-relaxed">{f.desc}</p>
+              <p className="mt-3 text-sm text-gray-600 leading-relaxed flex-1">{f.desc}</p>
               <span
                 className={`inline-block mt-6 px-5 py-2 ${c.btn} text-white text-sm font-medium rounded-lg transition-colors`}
               >
