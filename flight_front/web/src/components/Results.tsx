@@ -25,6 +25,80 @@ function normalizeTime(t: string | null) {
   return `${String(h).padStart(2, "0")}:${min}`;
 }
 
+/** 시간 문자열에서 hour 추출 (normalizeTime 결과 기준) */
+function extractHour(t: string | null): number | null {
+  const norm = normalizeTime(t);
+  if (norm === "??:??") return null;
+  const h = parseInt(norm.split(":")[0]);
+  return isNaN(h) ? null : h;
+}
+
+/** hour → 시간대 버킷 */
+function timeBucket(hour: number | null): string {
+  if (hour == null) return "unknown";
+  if (hour < 9) return "early";    // 05-09
+  if (hour < 12) return "morning"; // 09-12
+  if (hour < 17) return "afternoon"; // 12-17
+  return "evening";                // 17-22+
+}
+
+/** 시간대 다양성 기반으로 deals에서 ~15개 선별 */
+function selectDiverseDeals(deals: Deal[]): Deal[] {
+  const bucketMap = new Map<string, Deal[]>();
+  const noTime: Deal[] = [];
+
+  for (const deal of deals) {
+    const outH = extractHour(deal.out_dep_time);
+    const inH = extractHour(deal.in_dep_time);
+    if (outH == null && inH == null) {
+      noTime.push(deal);
+      continue;
+    }
+    const key = `${timeBucket(outH)}_${timeBucket(inH)}`;
+    if (!bucketMap.has(key)) bucketMap.set(key, []);
+    bucketMap.get(key)!.push(deal);
+  }
+
+  const result: Deal[] = [];
+  const seen = new Set<number>();
+
+  // 각 버킷에서 최저가 1개씩
+  for (const [, bucket] of bucketMap) {
+    for (const d of bucket) {
+      if (!seen.has(deals.indexOf(d))) {
+        seen.add(deals.indexOf(d));
+        result.push(d);
+        break;
+      }
+    }
+  }
+
+  // 15개 미만이면 각 버킷에서 다음 미선택 항목 추가
+  if (result.length < 15) {
+    for (const [, bucket] of bucketMap) {
+      if (result.length >= 15) break;
+      for (const d of bucket) {
+        const idx = deals.indexOf(d);
+        if (!seen.has(idx)) {
+          seen.add(idx);
+          result.push(d);
+          break;
+        }
+      }
+    }
+  }
+
+  // 시간 정보 없는 deal 추가 (최대 3개)
+  for (const d of noTime) {
+    if (result.length >= 15) break;
+    result.push(d);
+  }
+
+  // 가격순 정렬
+  result.sort((a, b) => a.min_price - b.min_price);
+  return result;
+}
+
 function StopsBadge({ stops }: { stops: number | null }) {
   if (stops == null) return null;
   return stops === 0 ? (
@@ -269,8 +343,8 @@ export default function Results() {
 
   // 상위 5개: 오늘의 최저가
   const topDeals = filteredDeals.slice(0, 5);
-  // 나머지: 모든 항공권 조합
-  const restDeals = filteredDeals.slice(5);
+  // 나머지에서 시간대 다양성 기반 ~15개 선별
+  const restDeals = selectDiverseDeals(filteredDeals.slice(5));
 
   const minPrice = filteredDeals.length > 0
     ? Math.min(...filteredDeals.map((d) => d.min_price))
@@ -354,7 +428,7 @@ export default function Results() {
           {/* 모든 항공권 조합 섹션 */}
           {restDeals.length > 0 && (
             <section>
-              <h3 className="text-lg font-bold text-gray-700 mb-3">모든 항공권 조합</h3>
+              <h3 className="text-lg font-bold text-gray-700 mb-3">시간대별 추천</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
                 {restDeals.map((deal, i) => (
                   <DealCard key={i} deal={deal} rank={i + 6} />
