@@ -69,6 +69,22 @@ function TripTypeBadge({ tripType }: { tripType: string }) {
   );
 }
 
+const SOURCE_LABELS: Record<string, { label: string; color: string }> = {
+  google_flights: { label: "Google Flights", color: "bg-blue-500 text-white" },
+  amadeus:        { label: "Amadeus",        color: "bg-amber-500 text-white" },
+  naver:          { label: "네이버 항공권",    color: "bg-green-500 text-white" },
+  skyscanner:     { label: "Skyscanner",     color: "bg-sky-500 text-white" },
+};
+
+function SourceBadge({ source }: { source: string }) {
+  const info = SOURCE_LABELS[source] ?? { label: source, color: "bg-gray-500 text-white" };
+  return (
+    <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${info.color}`}>
+      {info.label}
+    </span>
+  );
+}
+
 function DealCard({ deal, rank }: { deal: Deal; rank: number }) {
   const airline =
     deal.out_airline === deal.in_airline
@@ -77,9 +93,10 @@ function DealCard({ deal, rank }: { deal: Deal; rank: number }) {
 
   return (
     <div className="bg-white border border-gray-200 rounded-2xl p-5 hover:shadow-lg transition-shadow flex flex-col gap-4">
-      {/* 순위 + 가격 */}
+      {/* 순위 + 출처 + 가격 */}
       <div className="flex items-start justify-between">
         <span className="text-sm font-bold text-gray-300">#{rank}</span>
+        <SourceBadge source={deal.source} />
         <div className="text-right">
           <p className="text-3xl font-extrabold text-blue-600 leading-none">
             {Math.round(deal.min_price).toLocaleString()}
@@ -142,14 +159,11 @@ function DealCard({ deal, rank }: { deal: Deal; rank: number }) {
         ))}
       </div>
 
-      {/* 항공사 + 출처 */}
-      <div className="flex items-center justify-between pt-1 border-t border-gray-100">
-        <span className={`text-sm font-medium leading-snug ${deal.is_mixed_airline ? "text-orange-500" : "text-gray-600"}`}>
+      {/* 항공사 */}
+      <div className="pt-1 border-t border-gray-100">
+        <span className={`text-sm font-medium leading-snug ${!!deal.is_mixed_airline ? "text-orange-500" : "text-gray-600"}`}>
           {airline}
           {!!deal.is_mixed_airline && <span className="ml-1 text-xs text-orange-400">(혼합)</span>}
-        </span>
-        <span className="text-xs text-gray-300 shrink-0 ml-2">
-          {deal.source === "google_flights" ? "Google" : deal.source}
         </span>
       </div>
 
