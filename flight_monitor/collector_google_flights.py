@@ -243,7 +243,7 @@ def _combine_roundtrips(
                     in_al  = ret.get("airline", "")
                     results.append({
                         "source":           "google_flights",
-                        "trip_type":        "round_trip",
+                        "trip_type":        "oneway_combo",
                         "origin":           dep_airport,
                         "destination":      arr_airport,
                         "destination_name": arr_name,

@@ -34,39 +34,19 @@ function StopsBadge({ stops }: { stops: number | null }) {
   );
 }
 
-/** last_checked_at 기준 신선도 뱃지 */
-function FreshnessBadge({ checkedAt }: { checkedAt: string }) {
-  const diffMs = Date.now() - new Date(checkedAt).getTime();
-  const diffH = diffMs / (1000 * 60 * 60);
-
-  if (diffH <= 24) {
-    return (
-      <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
-        방금 확인
-      </span>
-    );
-  }
-  const days = Math.floor(diffH / 24);
-  if (diffH <= 72) {
-    return (
-      <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full font-medium">
-        {days}일 전
-      </span>
-    );
-  }
+/** 수집 일시를 "MM.DD HH:mm 수집" 형태로 표시 */
+function CheckedAtLabel({ checkedAt }: { checkedAt: string }) {
+  const d = new Date(checkedAt);
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mi = String(d.getMinutes()).padStart(2, "0");
   return (
-    <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-medium">
-      {days}일 전 · 오래됨
+    <span className="text-xs text-gray-400">
+      {mm}.{dd} {hh}:{mi} 수집
     </span>
   );
 }
-
-const FRESHNESS_OPTIONS: { label: string; hours?: number }[] = [
-  { label: "전체" },
-  { label: "24시간", hours: 24 },
-  { label: "48시간", hours: 48 },
-  { label: "7일", hours: 168 },
-];
 
 const TRIP_TYPE_OPTIONS: { label: string; value?: string }[] = [
   { label: "전체" },
@@ -89,6 +69,22 @@ function TripTypeBadge({ tripType }: { tripType: string }) {
   );
 }
 
+const SOURCE_LABELS: Record<string, { label: string; color: string }> = {
+  google_flights: { label: "Google Flights", color: "bg-blue-500 text-white" },
+  amadeus:        { label: "Amadeus",        color: "bg-amber-500 text-white" },
+  naver:          { label: "네이버 항공권",    color: "bg-green-500 text-white" },
+  skyscanner:     { label: "Skyscanner",     color: "bg-sky-500 text-white" },
+};
+
+function SourceBadge({ source }: { source: string }) {
+  const info = SOURCE_LABELS[source] ?? { label: source, color: "bg-gray-500 text-white" };
+  return (
+    <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${info.color}`}>
+      {info.label}
+    </span>
+  );
+}
+
 function DealCard({ deal, rank }: { deal: Deal; rank: number }) {
   const airline =
     deal.out_airline === deal.in_airline
@@ -97,9 +93,10 @@ function DealCard({ deal, rank }: { deal: Deal; rank: number }) {
 
   return (
     <div className="bg-white border border-gray-200 rounded-2xl p-5 hover:shadow-lg transition-shadow flex flex-col gap-4">
-      {/* 순위 + 가격 */}
+      {/* 순위 + 출처 + 가격 */}
       <div className="flex items-start justify-between">
         <span className="text-sm font-bold text-gray-300">#{rank}</span>
+        <SourceBadge source={deal.source} />
         <div className="text-right">
           <p className="text-3xl font-extrabold text-blue-600 leading-none">
             {Math.round(deal.min_price).toLocaleString()}
@@ -110,7 +107,7 @@ function DealCard({ deal, rank }: { deal: Deal; rank: number }) {
           </div>
           {deal.last_checked_at && (
             <div className="mt-1">
-              <FreshnessBadge checkedAt={deal.last_checked_at} />
+              <CheckedAtLabel checkedAt={deal.last_checked_at} />
             </div>
           )}
         </div>
@@ -124,9 +121,11 @@ function DealCard({ deal, rank }: { deal: Deal; rank: number }) {
           </span>
           <span className="text-xs text-gray-300">→</span>
           <span className="text-xs font-bold text-blue-500">
-            {deal.out_arr_airport ?? deal.destination}
+            {(deal.out_arr_airport && deal.out_arr_airport !== deal.origin) ? deal.out_arr_airport : deal.destination}
           </span>
-          {deal.out_arr_airport && deal.in_dep_airport && deal.out_arr_airport !== deal.in_dep_airport && (
+          {deal.out_arr_airport && deal.in_dep_airport
+            && deal.out_arr_airport !== deal.origin && deal.in_dep_airport !== deal.origin
+            && deal.out_arr_airport !== deal.in_dep_airport && (
             <span className="text-xs text-orange-400 ml-1">
               복귀:{deal.in_dep_airport}
             </span>
@@ -160,14 +159,11 @@ function DealCard({ deal, rank }: { deal: Deal; rank: number }) {
         ))}
       </div>
 
-      {/* 항공사 + 출처 */}
-      <div className="flex items-center justify-between pt-1 border-t border-gray-100">
-        <span className={`text-sm font-medium leading-snug ${deal.is_mixed_airline ? "text-orange-500" : "text-gray-600"}`}>
+      {/* 항공사 */}
+      <div className="pt-1 border-t border-gray-100">
+        <span className={`text-sm font-medium leading-snug ${!!deal.is_mixed_airline ? "text-orange-500" : "text-gray-600"}`}>
           {airline}
-          {deal.is_mixed_airline && <span className="ml-1 text-xs text-orange-400">(혼합)</span>}
-        </span>
-        <span className="text-xs text-gray-300 shrink-0 ml-2">
-          {deal.source === "google_flights" ? "Google" : deal.source}
+          {!!deal.is_mixed_airline && <span className="ml-1 text-xs text-orange-400">(혼합)</span>}
         </span>
       </div>
 
@@ -204,17 +200,15 @@ export default function Results() {
   const [groups, setGroups] = useState<DestinationGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [activeHours, setActiveHours] = useState<number | undefined>(undefined);
   const [activeDest, setActiveDest] = useState<string | null>(null);
   const [activeTripType, setActiveTripType] = useState<string | undefined>(undefined);
 
-  const load = (hours?: number) => {
+  const load = () => {
     setLoading(true);
     setError("");
-    fetchResults(hours)
+    fetchResults()
       .then((data) => {
         setGroups(data);
-        // 처음 로드 시 또는 선택된 목적지가 사라진 경우 첫 번째 목적지 선택
         if (data.length > 0 && (!activeDest || !data.find((g) => g.destination === activeDest))) {
           setActiveDest(data[0].destination);
         }
@@ -225,11 +219,6 @@ export default function Results() {
 
   useEffect(() => { load(); }, []);
 
-  const handleFilter = (hours?: number) => {
-    setActiveHours(hours);
-    load(hours);
-  };
-
   if (loading)
     return <div className="flex items-center justify-center py-20 text-gray-400 text-lg">로딩 중…</div>;
 
@@ -237,7 +226,7 @@ export default function Results() {
     return (
       <div className="flex flex-col items-center py-20 gap-4 text-red-500">
         <p className="text-base">{error}</p>
-        <button onClick={() => load(activeHours)} className="px-4 py-2 bg-red-50 rounded-lg text-sm hover:bg-red-100">재시도</button>
+        <button onClick={() => load()} className="px-4 py-2 bg-red-50 rounded-lg text-sm hover:bg-red-100">재시도</button>
       </div>
     );
 
@@ -263,25 +252,10 @@ export default function Results() {
 
   return (
     <div className="space-y-6">
-      {/* 필터 바 */}
+      {/* 헤더 */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-gray-400">{groups.length}개 여행지</p>
-        <div className="flex items-center gap-2">
-          {FRESHNESS_OPTIONS.map((opt) => (
-            <button
-              key={opt.label}
-              onClick={() => handleFilter(opt.hours)}
-              className={`text-sm px-3 py-1 rounded-full font-medium transition-colors ${
-                activeHours === opt.hours
-                  ? "bg-blue-500 text-white"
-                  : "bg-gray-100 text-gray-500 hover:bg-gray-200"
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
-          <button onClick={() => load(activeHours)} className="text-sm text-blue-500 hover:text-blue-700 ml-2">새로고침</button>
-        </div>
+        <button onClick={() => load()} className="text-sm text-blue-500 hover:text-blue-700">새로고침</button>
       </div>
 
       {/* 목적지 탭 */}
