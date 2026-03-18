@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React from "react";
 import type { SearchConfig } from "../types";
 
 interface Props {
@@ -45,17 +45,6 @@ export default function SearchConfigForm({ value, onChange }: Props) {
     set("stay_durations", Array.from(s).sort((a, b) => a - b));
   };
 
-  // search_months 태그 입력
-  const [monthInput, setMonthInput] = useState("");
-  const addMonth = () => {
-    const m = monthInput.trim();
-    if (/^\d{4}-\d{2}$/.test(m) && !value.search_months.includes(m)) {
-      set("search_months", [...value.search_months, m].sort());
-    }
-    setMonthInput("");
-  };
-  const removeMonth = (m: string) =>
-    set("search_months", value.search_months.filter((x) => x !== m));
 
   return (
     <section className="bg-white rounded-xl shadow p-6 space-y-8">
@@ -123,43 +112,6 @@ export default function SearchConfigForm({ value, onChange }: Props) {
         <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-3">
           여행 일정
         </h3>
-
-        {/* search_months */}
-        <div className="mb-4">
-          <span className="text-sm text-gray-600 block mb-2">검색 월 (YYYY-MM)</span>
-          <div className="flex flex-wrap gap-2 mb-2">
-            {value.search_months.map((m) => (
-              <span
-                key={m}
-                className="flex items-center gap-1 bg-blue-100 text-blue-700 text-sm px-2 py-0.5 rounded-full"
-              >
-                {m}
-                <button
-                  onClick={() => removeMonth(m)}
-                  className="text-blue-400 hover:text-blue-700 font-bold leading-none"
-                >
-                  ×
-                </button>
-              </span>
-            ))}
-          </div>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              placeholder="2026-06"
-              value={monthInput}
-              onChange={(e) => setMonthInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && addMonth()}
-              className="border rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 w-32"
-            />
-            <button
-              onClick={addMonth}
-              className="px-3 py-1.5 bg-blue-500 text-white rounded text-sm hover:bg-blue-600"
-            >
-              추가
-            </button>
-          </div>
-        </div>
 
         {/* stay_durations */}
         <div>

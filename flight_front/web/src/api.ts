@@ -49,8 +49,12 @@ export async function fetchRunStatus(): Promise<RunStatus> {
   return res.json();
 }
 
-export async function fetchResults(hours?: number): Promise<DestinationGroup[]> {
-  const url = hours != null ? `/api/results?hours=${hours}` : "/api/results";
+export async function fetchResults(params?: { hours?: number; month?: string }): Promise<DestinationGroup[]> {
+  const qs = new URLSearchParams();
+  if (params?.hours != null) qs.set("hours", String(params.hours));
+  if (params?.month) qs.set("month", params.month);
+  const query = qs.toString();
+  const url = query ? `/api/results?${query}` : "/api/results";
   const res = await fetch(url);
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
