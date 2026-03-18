@@ -190,7 +190,7 @@ def get_results(hours: int | None = Query(None)):
                         MAX(out_url) AS out_url,
                         MAX(in_url) AS in_url
                     FROM price_history
-                    WHERE (%s IS NULL OR checked_at::timestamp >= NOW() - %s::interval)
+                    WHERE (%s IS NULL OR checked_at >= NOW() - %s::interval)
                     GROUP BY
                         origin, destination, destination_name,
                         departure_date, return_date, stay_nights,
