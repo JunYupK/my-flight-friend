@@ -52,7 +52,10 @@ export async function fetchRunStatus(): Promise<RunStatus> {
 export async function fetchResults(hours?: number): Promise<DestinationGroup[]> {
   const url = hours != null ? `/api/results?hours=${hours}` : "/api/results";
   const res = await fetch(url);
-  if (!res.ok) throw new Error("Failed to fetch results");
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail ?? "Failed to fetch results");
+  }
   return res.json();
 }
 
