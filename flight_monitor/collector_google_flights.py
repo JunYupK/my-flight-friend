@@ -274,6 +274,9 @@ def _combine_roundtrips(
     return results
 
 
+_BATCH_SIZE = 5
+
+
 async def _fetch_route(
     crawler: AsyncWebCrawler,
     airport_code: str, airport_name: str,
@@ -281,19 +284,68 @@ async def _fetch_route(
 ) -> list[dict]:
     days_in_month = calendar.monthrange(year, month)[1]
     max_days = SEARCH_CONFIG.get("lcc_max_days") or days_in_month
-    out_flights, in_flights = [], []
     delay = SEARCH_CONFIG["request_delay"]
+
+    # 1) 전체 URL + meta 목록 생성
+    urls: list[str] = []
+    metas: list[dict] = []
+    topk = SEARCH_CONFIG["lcc_topk_per_date"]
 
     for day in range(1, min(max_days, days_in_month) + 1):
         date_str = f"{year}{month:02d}{day:02d}"
+        date_formatted = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
 
-        outs = await _fetch_one_way(crawler, ORIGIN, airport_code, date_str)
-        out_flights.extend(outs)
-        await asyncio.sleep(delay)
+        for dep, arr, direction in [
+            (ORIGIN, airport_code, "out"),
+            (airport_code, ORIGIN, "in"),
+        ]:
+            url = _build_tfs_url(dep, arr, date_formatted)
+            if url is None:
+                continue
+            urls.append(url)
+            metas.append({"dep": dep, "arr": arr, "date": date_formatted, "direction": direction, "url": url})
 
-        ins = await _fetch_one_way(crawler, airport_code, ORIGIN, date_str)
-        in_flights.extend(ins)
-        await asyncio.sleep(delay)
+    # 2) BATCH_SIZE 단위로 arun_many() 호출
+    config = CrawlerRunConfig(
+        magic=True,
+        js_code=[_make_scroll_js(), _extract_js()],
+        wait_for="js:() => !!document.querySelector('li.pIav2d')",
+        delay_before_return_html=4.0,
+        cache_mode="bypass",
+    )
+
+    out_flights, in_flights = [], []
+
+    for i in range(0, len(urls), _BATCH_SIZE):
+        batch_urls = urls[i:i + _BATCH_SIZE]
+        batch_metas = metas[i:i + _BATCH_SIZE]
+
+        try:
+            results = await crawler.arun_many(urls=batch_urls, config=config)
+        except Exception as e:
+            print(f"[GoogleFlights ERROR] batch {i // _BATCH_SIZE}: {e}")
+            continue
+
+        for result, meta in zip(results, batch_metas):
+            if not result.success:
+                print(f"[GoogleFlights FAIL] {meta['dep']}-{meta['arr']} {meta['date']}: {result.error_message}")
+                continue
+
+            flights = _parse_flight_cards(result.html or "")
+            if not flights:
+                print(f"[GoogleFlights WARN] 카드 추출 0건 {meta['dep']}-{meta['arr']} {meta['date']}")
+                continue
+
+            flights.sort(key=lambda x: x["price"])
+            enriched = [{"date": meta["date"], "search_url": meta["url"], **f} for f in flights[:topk]]
+
+            if meta["direction"] == "out":
+                out_flights.extend(enriched)
+            else:
+                in_flights.extend(enriched)
+
+        if i + _BATCH_SIZE < len(urls):
+            await asyncio.sleep(delay)
 
     return _combine_roundtrips(out_flights, in_flights, ORIGIN, airport_code, airport_name)
 

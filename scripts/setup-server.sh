@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # OCI Ampere (Ubuntu 22.04/24.04 ARM64) 초기 셋업 스크립트
-# 사용법: ssh ubuntu@<IP> 'bash -s' < scripts/setup-server.sh
+# 사용법: ssh ubuntu@<NEW_IP> 'bash -s' < scripts/setup-server.sh
+#
+# DB 마이그레이션 포함 (기존 서버에서 이전 시):
+#   1. 기존 서버: bash scripts/backup-db.sh
+#   2. 기존 서버: scp backups/flights_*.sql.gz ubuntu@<NEW_IP>:/tmp/db-restore.sql.gz
+#   3. 새 서버:   bash scripts/setup-server.sh   ← DB 덤프 자동 감지·복원
 set -euo pipefail
 
 echo "=== 1. 시스템 업데이트 ==="
@@ -36,13 +41,38 @@ if [ ! -f "$PROJECT_DIR/.env" ]; then
   echo "    vi $PROJECT_DIR/.env"
 fi
 
-echo "=== 6. 수집 cron 등록 ==="
+echo "=== 6. 서비스 빌드 & 시작 ==="
+cd "$PROJECT_DIR"
+docker compose -f docker-compose.prod.yml up -d db
+echo "DB 컨테이너 시작 대기 중..."
+until docker compose -f docker-compose.prod.yml exec -T db pg_isready -U flight_user -d flights 2>/dev/null; do
+  sleep 2
+done
+echo "DB 준비 완료."
+
+echo "=== 7. DB 복원 (기존 서버 데이터 이전) ==="
+DB_DUMP="/tmp/db-restore.sql.gz"
+if [ -f "$DB_DUMP" ]; then
+  echo "덤프 파일 감지: $DB_DUMP"
+  gunzip -c "$DB_DUMP" | docker compose -f docker-compose.prod.yml exec -T db \
+    psql -U flight_user -d flights
+  echo "DB 복원 완료."
+  rm -f "$DB_DUMP"
+else
+  echo "덤프 파일 없음 ($DB_DUMP). 새 DB로 시작합니다."
+fi
+
+echo "=== 8. 나머지 서비스 시작 ==="
+docker compose -f docker-compose.prod.yml up -d
+echo "전체 서비스 시작 완료."
+
+echo "=== 9. 수집 cron 등록 ==="
 CRON_CMD="cd $PROJECT_DIR && docker compose -f docker-compose.prod.yml run --rm collector python -u main.py >> /var/log/flight-collector.log 2>&1"
 CRON_LINE="0 0 * * * $CRON_CMD"
 (crontab -l 2>/dev/null | grep -v 'flight-collector' ; echo "$CRON_LINE") | crontab -
 echo "수집 cron 등록 완료 (매일 09:00 KST = 00:00 UTC)"
 
-echo "=== 7. DB 백업 cron 등록 ==="
+echo "=== 10. DB 백업 cron 등록 ==="
 BACKUP_CMD="cd $PROJECT_DIR && bash scripts/backup-db.sh >> /var/log/flight-backup.log 2>&1"
 BACKUP_LINE="0 18 * * * $BACKUP_CMD"
 (crontab -l 2>/dev/null | grep -v 'flight-backup' ; echo "$BACKUP_LINE") | crontab -
@@ -53,5 +83,5 @@ echo "=== 셋업 완료 ==="
 echo "다음 단계:"
 echo "  1. .env 파일 수정: vi $PROJECT_DIR/.env"
 echo "  2. OCI Security List에서 80, 443 포트 Ingress 허용"
-echo "  3. 도메인 DNS A 레코드를 이 서버 IP로 설정"
-echo "  4. 서비스 시작: cd $PROJECT_DIR && docker compose -f docker-compose.prod.yml up -d"
+echo "  3. 도메인 DNS A 레코드를 이 서버 IP로 변경"
+echo "  4. GitHub Secrets 업데이트: SSH_HOST → 새 서버 IP"
