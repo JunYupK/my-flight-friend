@@ -13,9 +13,7 @@ from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
 
 # 실제 tfs URL 하나만 넣으세요
 TEST_URL = (
-    "https://www.google.com/travel/flights/search?"
-    "tfs=CBwQAhoeEgoyMDI2LTA1LTAxagcIARIDSUNOcgcIARIDQ0VCQAFIAXABggELCP___________wGYAQI"
-    "&tfu=EgYIABAAGAA&curr=KRW&hl=ko"
+    "https://www.google.com/travel/flights/search?tfs=CBwQAhoeEgoyMDI2LTA0LTAxagcIARIDSUNOcgcIARIDRFBTQAFIAXABggELCP___________wGYAQI&hl=ko&curr=KRW"
 )
 
 
