@@ -376,16 +376,33 @@ async def _fetch_all(on_route_done=None) -> list[dict]:
         ],
     )
 
+    if not JAPAN_AIRPORTS:
+        print("[GoogleFlights] JAPAN_AIRPORTS 비어 있음 — airports 테이블 확인 필요")
+        return []
+
+    if not SEARCH_CONFIG["search_months"]:
+        print("[GoogleFlights] search_months 비어 있음")
+        return []
+
     all_results = []
+    total_routes = 0
+    empty_routes = 0
+
     async with AsyncWebCrawler(config=browser_config) as crawler:
         for month_str in SEARCH_CONFIG["search_months"]:
             year, month = map(int, month_str.split("-"))
             for airport_code, airport_name in JAPAN_AIRPORTS.items():
+                total_routes += 1
                 offers = await _fetch_route(crawler, airport_code, airport_name, year, month)
                 all_results.extend(offers)
                 if on_route_done and offers:
                     on_route_done(offers)
+                if not offers:
+                    empty_routes += 1
                 print(f"[GoogleFlights] {airport_code} {month_str}: {len(offers)}건")
+
+    if total_routes > 0 and empty_routes == total_routes:
+        print(f"[GoogleFlights WARN] 전체 {total_routes}개 노선 모두 0건 — DOM 셀렉터 변경 또는 크롤링 차단 가능성")
 
     return all_results
 
