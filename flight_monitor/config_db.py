@@ -51,6 +51,8 @@ def read_config() -> dict:
 
 
 def write_config(search_config: dict):
+    # search_months는 항상 실행 시점 기준으로 동적 생성 — DB에 고정값 저장 방지
+    saved = {k: v for k, v in search_config.items() if k != "search_months"}
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute(
@@ -58,5 +60,5 @@ def write_config(search_config: dict):
             INSERT INTO app_config (key, value) VALUES ('search_config', %s::jsonb)
             ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
             """,
-            (json.dumps(search_config),),
+            (json.dumps(saved),),
         )

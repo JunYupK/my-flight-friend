@@ -109,6 +109,16 @@ def _extract_js() -> str:
         // 직항 여부 / 경유 횟수
         var stopsEl = card.querySelector('.VG3hNb');
         var stopsText = stopsEl ? stopsEl.textContent.trim() : '';
+        if (!stopsText) {
+            // fallback: 카드 내 텍스트에서 "직항" / "경유 N회" 패턴 검색
+            var tw = document.createTreeWalker(card, NodeFilter.SHOW_TEXT);
+            while (tw.nextNode()) {
+                var txt = tw.currentNode.textContent.trim();
+                if (txt === '직항') { stopsText = '직항'; break; }
+                var sm = txt.match(/경유\\s*(\\d+)회/);
+                if (sm) { stopsText = sm[1]; break; }
+            }
+        }
         var stops = stopsText === '직항' ? 0 : (parseInt(stopsText) || null);
 
         // 비행시간 (aria-label: "총 비행 시간은 2시간 20분입니다.")
