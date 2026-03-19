@@ -68,9 +68,9 @@ echo "전체 서비스 시작 완료."
 
 echo "=== 9. 수집 cron 등록 ==="
 CRON_CMD="cd $PROJECT_DIR && docker compose -f docker-compose.prod.yml run --rm collector python -u main.py >> /var/log/flight-collector.log 2>&1"
-CRON_LINE="0 0 * * * $CRON_CMD"
+CRON_LINE="0 */3 * * * $CRON_CMD"
 (crontab -l 2>/dev/null | grep -v 'flight-collector' ; echo "$CRON_LINE") | crontab -
-echo "수집 cron 등록 완료 (매일 09:00 KST = 00:00 UTC)"
+echo "수집 cron 등록 완료 (3시간 간격: 00:00, 03:00, 06:00 ... UTC)"
 
 echo "=== 10. DB 백업 cron 등록 ==="
 BACKUP_CMD="cd $PROJECT_DIR && bash scripts/backup-db.sh >> /var/log/flight-backup.log 2>&1"

@@ -4,7 +4,6 @@ import { fetchConfig, saveConfig } from "./api";
 import type { ConfigData } from "./types";
 import AirportList from "./components/AirportList";
 import SearchConfigForm from "./components/SearchConfig";
-import RunControl from "./components/RunControl";
 import Results from "./components/Results";
 import Trends from "./components/Trends";
 import Landing from "./components/Landing";
@@ -107,7 +106,6 @@ function Layout() {
                     onChange={(sc) => setConfig((c) => c ? { ...c, search_config: sc } : c)}
                   />
                 )}
-                <RunControl />
               </div>
             }
           />

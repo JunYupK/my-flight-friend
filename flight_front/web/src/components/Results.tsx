@@ -160,112 +160,60 @@ function SourceBadge({ source }: { source: string }) {
 }
 
 function DealCard({ deal, rank }: { deal: Deal; rank: number }) {
-  const airline =
-    deal.out_airline === deal.in_airline
-      ? deal.out_airline
-      : `${deal.out_airline} / ${deal.in_airline}`;
+  const legs = [
+    { airline: deal.out_airline, dep: deal.out_dep_time, arr: deal.out_arr_time, dur: deal.out_duration_min, stops: deal.out_stops, from: deal.origin, to: (deal.out_arr_airport && deal.out_arr_airport !== deal.origin) ? deal.out_arr_airport : deal.destination, date: deal.departure_date, url: deal.out_url, urlLabel: "출발편 검색" },
+    { airline: deal.in_airline, dep: deal.in_dep_time, arr: deal.in_arr_time, dur: deal.in_duration_min, stops: deal.in_stops, from: deal.in_dep_airport || deal.destination, to: deal.origin, date: deal.return_date, url: deal.in_url, urlLabel: "복귀편 검색" },
+  ];
 
   return (
-    <div className="bg-white border border-gray-200 rounded-2xl p-5 hover:shadow-lg transition-shadow flex flex-col gap-4">
-      {/* 순위 + 출처 + 가격 */}
-      <div className="flex items-start justify-between">
-        <span className="text-sm font-bold text-gray-300">#{rank}</span>
-        <SourceBadge source={deal.source} />
-        <div className="text-right">
-          <p className="text-3xl font-extrabold text-blue-600 leading-none">
-            {Math.round(deal.min_price).toLocaleString()}
-          </p>
-          <div className="flex items-center gap-1.5 mt-1 justify-end">
-            <span className="text-sm text-gray-400">원 · 왕복</span>
-            <TripTypeBadge tripType={deal.trip_type} />
-          </div>
-          {deal.last_checked_at && (
-            <div className="mt-1">
-              <CheckedAtLabel checkedAt={deal.last_checked_at} />
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* 날짜 + 체류 + 공항 */}
-      <div className="bg-gray-50 rounded-xl px-3 py-2 space-y-1">
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs font-bold text-blue-500">
-            {deal.origin}
-          </span>
-          <span className="text-xs text-gray-300">→</span>
-          <span className="text-xs font-bold text-blue-500">
-            {(deal.out_arr_airport && deal.out_arr_airport !== deal.origin) ? deal.out_arr_airport : deal.destination}
-          </span>
-          {deal.out_arr_airport && deal.in_dep_airport
-            && deal.out_arr_airport !== deal.origin && deal.in_dep_airport !== deal.origin
-            && deal.out_arr_airport !== deal.in_dep_airport && (
-            <span className="text-xs text-orange-400 ml-1">
-              복귀:{deal.in_dep_airport}
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="text-sm font-semibold text-gray-700">{formatDate(deal.departure_date)}</span>
-          <span className="text-gray-300">→</span>
-          <span className="text-sm font-semibold text-gray-700">{formatDate(deal.return_date)}</span>
-          <span className="ml-auto text-sm font-medium text-blue-500 shrink-0 whitespace-nowrap">{deal.stay_nights}박</span>
-        </div>
-      </div>
-
-      {/* 항공편 */}
-      <div className="space-y-2.5">
-        {[
-          { label: "출발 ↗", dep: deal.out_dep_time, arr: deal.out_arr_time, dur: deal.out_duration_min, stops: deal.out_stops },
-          { label: "복귀 ↙", dep: deal.in_dep_time,  arr: deal.in_arr_time,  dur: deal.in_duration_min,  stops: deal.in_stops  },
-        ].map((leg, i) => (
-          <React.Fragment key={i}>
-            {i === 1 && <div className="border-t border-dashed border-gray-100" />}
-            <div className="flex items-center gap-x-2 min-w-0">
-              <span className="text-xs text-gray-400 w-10 shrink-0">{leg.label}</span>
-              <span className="text-sm font-semibold text-gray-800 whitespace-nowrap flex-1 min-w-0">
-                {normalizeTime(leg.dep)} → {normalizeTime(leg.arr)}
-              </span>
-              <span className="text-xs text-gray-400 whitespace-nowrap shrink-0">{formatDuration(leg.dur)}</span>
-              <StopsBadge stops={leg.stops} />
-            </div>
-          </React.Fragment>
-        ))}
-      </div>
-
-      {/* 항공사 */}
-      <div className="pt-1 border-t border-gray-100">
-        <span className={`text-sm font-medium leading-snug ${!!deal.is_mixed_airline ? "text-orange-500" : "text-gray-600"}`}>
-          {airline}
-          {!!deal.is_mixed_airline && <span className="ml-1 text-xs text-orange-400">(혼합)</span>}
+    <div className="bg-white border border-gray-200 rounded-xl hover:shadow-md transition-shadow">
+      {/* 헤더: 순위 + 날짜 + 체류 + 출처 */}
+      <div className="flex items-center gap-2 px-4 pt-3 pb-1.5">
+        <span className="text-xs font-bold text-gray-300">#{rank}</span>
+        <span className="text-sm font-semibold text-gray-700">
+          {formatDate(deal.departure_date)} → {formatDate(deal.return_date)}
         </span>
+        <span className="text-xs font-medium text-blue-500">{deal.stay_nights}박</span>
+        <SourceBadge source={deal.source} />
+        <TripTypeBadge tripType={deal.trip_type} />
+        {deal.last_checked_at && <CheckedAtLabel checkedAt={deal.last_checked_at} />}
       </div>
 
-      {/* 바로가기 링크 */}
-      {(deal.out_url || deal.in_url) && (
-        <div className="flex gap-2 pt-1">
-          {deal.out_url && (
-            <a
-              href={deal.out_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex-1 text-center text-xs py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 font-medium transition-colors"
-            >
-              출발편 검색 ↗
-            </a>
-          )}
-          {deal.in_url && (
-            <a
-              href={deal.in_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex-1 text-center text-xs py-1.5 rounded-lg bg-gray-50 text-gray-500 hover:bg-gray-100 font-medium transition-colors"
-            >
-              복귀편 검색 ↗
+      {/* 구간별 가로 바 */}
+      {legs.map((leg, i) => (
+        <div key={i} className={`flex items-center gap-3 px-4 py-2.5 ${i === 0 ? "border-t border-gray-100" : "border-t border-dashed border-gray-100"}`}>
+          {/* 항공사 */}
+          <span className={`text-sm font-medium w-20 shrink-0 truncate ${i === 1 && deal.is_mixed_airline ? "text-orange-500" : "text-gray-700"}`}>
+            {leg.airline}
+          </span>
+          {/* 시간 + 공항 */}
+          <div className="flex flex-col min-w-0">
+            <span className="text-sm font-semibold text-gray-800 whitespace-nowrap">
+              {normalizeTime(leg.dep)} → {normalizeTime(leg.arr)}
+            </span>
+            <span className="text-xs text-gray-400">{leg.from} → {leg.to} · {formatDate(leg.date)}</span>
+          </div>
+          {/* 소요시간 + 경유 */}
+          <span className="text-xs text-gray-400 whitespace-nowrap shrink-0 ml-auto">{formatDuration(leg.dur)}</span>
+          <StopsBadge stops={leg.stops} />
+          {/* 검색 링크 */}
+          {leg.url && (
+            <a href={leg.url} target="_blank" rel="noopener noreferrer"
+              className="text-xs text-blue-500 hover:text-blue-700 whitespace-nowrap shrink-0">
+              {leg.urlLabel} ↗
             </a>
           )}
         </div>
-      )}
+      ))}
+
+      {/* 가격 바 */}
+      <div className="flex items-center justify-end gap-2 px-4 py-2.5 border-t border-gray-100">
+        {!!deal.is_mixed_airline && <span className="text-xs text-orange-400">(혼합 항공사)</span>}
+        <span className="text-2xl font-extrabold text-blue-600">
+          {Math.round(deal.min_price).toLocaleString()}
+        </span>
+        <span className="text-sm text-gray-400">원</span>
+      </div>
     </div>
   );
 }
@@ -418,7 +366,7 @@ export default function Results() {
           {/* 오늘의 최저가 섹션 */}
           <section>
             <h3 className="text-lg font-bold text-gray-700 mb-3">오늘의 최저가</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
+            <div className="flex flex-col gap-3">
               {topDeals.map((deal, i) => (
                 <DealCard key={i} deal={deal} rank={i + 1} />
               ))}
@@ -429,7 +377,7 @@ export default function Results() {
           {restDeals.length > 0 && (
             <section>
               <h3 className="text-lg font-bold text-gray-700 mb-3">시간대별 추천</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
+              <div className="flex flex-col gap-3">
                 {restDeals.map((deal, i) => (
                   <DealCard key={i} deal={deal} rank={i + 6} />
                 ))}

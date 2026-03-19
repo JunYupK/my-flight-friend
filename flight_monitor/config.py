@@ -1,6 +1,17 @@
 # flight_monitor/config.py
+from datetime import date, timedelta
 
 ORIGIN = "ICN"
+
+
+def _default_search_months() -> list[str]:
+    """현재 월부터 12개월치 YYYY-MM 목록 생성."""
+    today = date.today()
+    months = []
+    for i in range(12):
+        d = date(today.year, today.month, 1) + timedelta(days=32 * i)
+        months.append(d.strftime("%Y-%m"))
+    return sorted(set(months))
 
 JAPAN_AIRPORTS: dict[str, str] = {}
 
@@ -29,7 +40,7 @@ SEARCH_CONFIG = {
     "amadeus_max_requests_per_run": 60,  # Amadeus 월 한도 초과 방지
 
     # LCC (Naver GraphQL)
-    "search_months": ["2026-05"],        # 2개 이상으로 늘리면 요청 수도 배증 주의
+    "search_months": _default_search_months(),  # 현재 월부터 12개월
     "lcc_topk_per_date": 5,             # 날짜별 Top-K 유지
     "lcc_max_days": None,                  # None이면 월 전체, 숫자면 해당 일수만 수집 (테스트용)
 

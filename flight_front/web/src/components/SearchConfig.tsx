@@ -74,39 +74,6 @@ export default function SearchConfigForm({ value, onChange }: Props) {
         </div>
       </div>
 
-      {/* 항공 정책 */}
-      <div>
-        <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-3">
-          항공 정책
-        </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-center">
-          <NumInput
-            label="성인 수"
-            value={value.adults}
-            min={1}
-            onChange={(v) => set("adults", v)}
-          />
-          <label className="flex items-center gap-2 mt-5">
-            <input
-              type="checkbox"
-              checked={value.nonStop}
-              onChange={(e) => set("nonStop", e.target.checked)}
-              className="w-4 h-4"
-            />
-            <span className="text-sm text-gray-700">직항만</span>
-          </label>
-          <label className="flex items-center gap-2 mt-5">
-            <input
-              type="checkbox"
-              checked={value.allow_mixed_airline}
-              onChange={(e) => set("allow_mixed_airline", e.target.checked)}
-              className="w-4 h-4"
-            />
-            <span className="text-sm text-gray-700">혼합 항공사 허용</span>
-          </label>
-        </div>
-      </div>
-
       {/* 여행 일정 */}
       <div>
         <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-3">
@@ -134,66 +101,6 @@ export default function SearchConfigForm({ value, onChange }: Props) {
         </div>
       </div>
 
-      {/* 수집 범위 */}
-      <div>
-        <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-3">
-          수집 범위
-        </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <NumInput
-            label="출발일 범위 (일)"
-            value={value.departure_date_range_days}
-            onChange={(v) => set("departure_date_range_days", v)}
-          />
-          <NumInput
-            label="Amadeus 최대 요청 수"
-            value={value.amadeus_max_requests_per_run}
-            onChange={(v) => set("amadeus_max_requests_per_run", v)}
-          />
-        </div>
-      </div>
-
-      {/* LCC */}
-      <div>
-        <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-3">
-          LCC 설정
-        </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
-          <NumInput
-            label="날짜별 Top-K"
-            value={value.lcc_topk_per_date}
-            onChange={(v) => set("lcc_topk_per_date", v)}
-          />
-          <div className="flex flex-col gap-1">
-            <span className="text-sm text-gray-600">최대 수집 일수</span>
-            <div className="flex items-center gap-3">
-              <input
-                type="number"
-                min={1}
-                value={value.lcc_max_days ?? ""}
-                disabled={value.lcc_max_days === null}
-                onChange={(e) => set("lcc_max_days", Number(e.target.value) || 1)}
-                className="border rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 w-24 disabled:bg-gray-100"
-              />
-              <label className="flex items-center gap-1 text-sm text-gray-700">
-                <input
-                  type="checkbox"
-                  checked={value.lcc_max_days === null}
-                  onChange={(e) => set("lcc_max_days", e.target.checked ? null : 5)}
-                  className="w-4 h-4"
-                />
-                전체
-              </label>
-            </div>
-          </div>
-          <NumInput
-            label="요청 딜레이 (초)"
-            value={value.request_delay}
-            step={0.1}
-            onChange={(v) => set("request_delay", v)}
-          />
-        </div>
-      </div>
     </section>
   );
 }
