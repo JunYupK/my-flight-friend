@@ -218,6 +218,13 @@ def _extract_js() -> str:
 
         var itin = extractItinerary(card);
 
+        if (!depAirport && itin.segment_airports.length >= 2) {
+            depAirport = itin.segment_airports[0];
+        }
+        if (!arrAirport && itin.segment_airports.length >= 2) {
+            arrAirport = itin.segment_airports[itin.segment_airports.length - 1];
+        }
+
         results.push({
             price: price,
             dep_time: toHHMM(depEl ? depEl.textContent : null),

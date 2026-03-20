@@ -295,6 +295,14 @@ def _extract_js() -> str:
         // itinerary에서 편명 + 공항 + 날짜 추출
         var itin = extractItinerary(card);
 
+        // dep/arr 공항: DOM 셀렉터 실패 시 itinerary에서 보완
+        if (!depAirport && itin.segment_airports.length >= 2) {
+            depAirport = itin.segment_airports[0];
+        }
+        if (!arrAirport && itin.segment_airports.length >= 2) {
+            arrAirport = itin.segment_airports[itin.segment_airports.length - 1];
+        }
+
         results.push({
             price: price,
             dep_time: toHHMM(depEl ? depEl.textContent : null),
