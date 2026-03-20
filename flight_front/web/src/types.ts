@@ -64,7 +64,10 @@ export interface Deal {
 export interface DestinationGroup {
   destination: string;
   destination_name: string;
-  deals: Deal[];
+  top_deals: Deal[];
+  diverse_deals: Deal[];
+  min_price: number;
+  total_count: number;
 }
 
 export interface PriceHistoryPoint {

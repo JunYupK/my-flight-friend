@@ -31,7 +31,7 @@ except ImportError:
 
 from .config import ORIGIN, JAPAN_AIRPORTS, SEARCH_CONFIG, TFS_TEMPLATES
 
-_TFS_BASE_DATE = "2026-05-01"
+_TFS_DATE_RE = re.compile(rb"\d{4}-\d{2}-\d{2}")
 
 # 항공사 한글명 → IATA 코드 매핑 (ICN↔일본 노선 등장 항공사)
 _AIRLINE_IATA: dict[str, str] = {
@@ -160,7 +160,10 @@ def _build_tfs_url(dep: str, arr: str, date_str: str) -> str | None:
             return None
         template = tfs_list[0]
     raw = base64.urlsafe_b64decode(template + "==")
-    raw = raw.replace(_TFS_BASE_DATE.encode(), date_str.encode())
+    # 템플릿 내 첫 번째 YYYY-MM-DD 패턴을 찾아 target 날짜로 교체
+    m = _TFS_DATE_RE.search(raw)
+    if m:
+        raw = raw.replace(m.group(), date_str.encode())
     tfs = base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
     return f"https://www.google.com/travel/flights/search?tfs={tfs}&curr=KRW&hl=ko"
 

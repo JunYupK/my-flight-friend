@@ -161,12 +161,116 @@ async def ws_run(websocket: WebSocket):
 
 # ── Results ───────────────────────────────────────────────
 
+def _normalize_time(t: str | None) -> str:
+    if not t:
+        return "??:??"
+    return t.strip()
+
+
+def _extract_hour(t: str | None) -> int | None:
+    norm = _normalize_time(t)
+    if norm == "??:??":
+        return None
+    try:
+        return int(norm.split(":")[0])
+    except (ValueError, IndexError):
+        return None
+
+
+def _time_bucket(hour: int | None) -> str:
+    if hour is None:
+        return "unknown"
+    if hour < 9:
+        return "early"
+    if hour < 12:
+        return "morning"
+    if hour < 17:
+        return "afternoon"
+    return "evening"
+
+
+def _select_diverse_deals(deals: list[dict], max_count: int = 15) -> list[dict]:
+    """시간대 버킷별 대표 딜 선별. Results.tsx selectDiverseDeals의 서버 버전."""
+    bucket_map: dict[str, list[dict]] = {}
+    no_time: list[dict] = []
+
+    for deal in deals:
+        out_h = _extract_hour(deal.get("out_dep_time"))
+        in_h = _extract_hour(deal.get("in_dep_time"))
+        if out_h is None and in_h is None:
+            no_time.append(deal)
+            continue
+        key = f"{_time_bucket(out_h)}_{_time_bucket(in_h)}"
+        bucket_map.setdefault(key, []).append(deal)
+
+    result: list[dict] = []
+    seen: set[int] = set()
+
+    # 각 버킷에서 최저가 1건씩
+    for bucket in bucket_map.values():
+        for d in bucket:
+            idx = id(d)
+            if idx not in seen:
+                seen.add(idx)
+                result.append(d)
+                break
+
+    # 부족하면 추가
+    if len(result) < max_count:
+        for bucket in bucket_map.values():
+            if len(result) >= max_count:
+                break
+            for d in bucket:
+                idx = id(d)
+                if idx not in seen:
+                    seen.add(idx)
+                    result.append(d)
+                    break
+
+    for d in no_time:
+        if len(result) >= max_count:
+            break
+        result.append(d)
+
+    result.sort(key=lambda x: x["min_price"])
+    return result
+
+
+def _query_deals(cur, conditions: list[str], params: list) -> list[dict]:
+    where_clause = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+    cur.execute(f"""
+        SELECT
+            origin, destination, destination_name,
+            departure_date, return_date, stay_nights,
+            trip_type, source, out_airline, in_airline, is_mixed_airline,
+            out_dep_time, out_arr_time, out_duration_min, out_stops,
+            in_dep_time, in_arr_time, in_duration_min, in_stops,
+            out_arr_airport, in_dep_airport,
+            MIN(price) AS min_price,
+            MAX(checked_at) AS last_checked_at,
+            MAX(out_url) AS out_url,
+            MAX(in_url) AS in_url
+        FROM price_history
+        {where_clause}
+        GROUP BY
+            origin, destination, destination_name,
+            departure_date, return_date, stay_nights,
+            trip_type, source, out_airline, in_airline, is_mixed_airline,
+            out_dep_time, out_arr_time, out_duration_min, out_stops,
+            in_dep_time, in_arr_time, in_duration_min, in_stops,
+            out_arr_airport, in_dep_airport
+        ORDER BY destination, min_price ASC
+    """, params)
+    return [dict(r) for r in cur.fetchall()]
+
+
 @app.get("/api/results")
 def get_results(
     hours: int | None = Query(None),
     month: str | None = Query(None, regex=r"^\d{4}-\d{2}$"),
+    trip_type: str | None = Query(None),
 ):
-    """여행지별 항공권 조회. month=YYYY-MM 으로 출발월 필터."""
+    """여행지별 항공권 조회. 서버에서 top_deals/diverse_deals 분류."""
     try:
         with get_conn() as conn:
             cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -175,41 +279,15 @@ def get_results(
             if hours is not None:
                 conditions.append("checked_at >= NOW() - %s::interval")
                 params.append(f"{hours} hours")
+            else:
+                conditions.append("checked_at >= CURRENT_DATE")
             if month is not None:
                 conditions.append("departure_date LIKE %s")
                 params.append(f"{month}-%")
-            where_clause = ("WHERE " + " AND ".join(conditions)) if conditions else ""
-            cur.execute(f"""
-                SELECT *,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY destination
-                        ORDER BY min_price ASC
-                    ) AS rn
-                FROM (
-                    SELECT
-                        origin, destination, destination_name,
-                        departure_date, return_date, stay_nights,
-                        trip_type, source, out_airline, in_airline, is_mixed_airline,
-                        out_dep_time, out_arr_time, out_duration_min, out_stops,
-                        in_dep_time, in_arr_time, in_duration_min, in_stops,
-                        out_arr_airport, in_dep_airport,
-                        MIN(price) AS min_price,
-                        MAX(checked_at) AS last_checked_at,
-                        MAX(out_url) AS out_url,
-                        MAX(in_url) AS in_url
-                    FROM price_history
-                    {where_clause}
-                    GROUP BY
-                        origin, destination, destination_name,
-                        departure_date, return_date, stay_nights,
-                        trip_type, source, out_airline, in_airline, is_mixed_airline,
-                        out_dep_time, out_arr_time, out_duration_min, out_stops,
-                        in_dep_time, in_arr_time, in_duration_min, in_stops,
-                        out_arr_airport, in_dep_airport
-                ) sub
-                ORDER BY destination, min_price ASC
-            """, params)
-            rows = cur.fetchall()
+            if trip_type is not None:
+                conditions.append("trip_type = %s")
+                params.append(trip_type)
+            rows = _query_deals(cur, conditions, params)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -222,9 +300,23 @@ def get_results(
                 "destination_name": row["destination_name"],
                 "deals": [],
             }
-        groups[dest]["deals"].append(dict(row))
+        groups[dest]["deals"].append(row)
 
-    return list(groups.values())
+    result = []
+    for group in groups.values():
+        deals = group["deals"]  # 이미 min_price ASC 정렬됨
+        top_deals = deals[:5]
+        diverse_deals = _select_diverse_deals(deals[5:])
+        result.append({
+            "destination": group["destination"],
+            "destination_name": group["destination_name"],
+            "top_deals": top_deals,
+            "diverse_deals": diverse_deals,
+            "min_price": deals[0]["min_price"] if deals else 0,
+            "total_count": len(deals),
+        })
+
+    return result
 
 
 # ── Price History ─────────────────────────────────────────

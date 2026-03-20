@@ -25,74 +25,6 @@ function normalizeTime(t: string | null) {
   return `${String(h).padStart(2, "0")}:${min}`;
 }
 
-/** 시간 문자열에서 hour 추출 */
-function extractHour(t: string | null): number | null {
-  const norm = normalizeTime(t);
-  if (norm === "??:??") return null;
-  const h = parseInt(norm.split(":")[0]);
-  return isNaN(h) ? null : h;
-}
-
-function timeBucket(hour: number | null): string {
-  if (hour == null) return "unknown";
-  if (hour < 9) return "early";
-  if (hour < 12) return "morning";
-  if (hour < 17) return "afternoon";
-  return "evening";
-}
-
-function selectDiverseDeals(deals: Deal[]): Deal[] {
-  const bucketMap = new Map<string, Deal[]>();
-  const noTime: Deal[] = [];
-
-  for (const deal of deals) {
-    const outH = extractHour(deal.out_dep_time);
-    const inH = extractHour(deal.in_dep_time);
-    if (outH == null && inH == null) {
-      noTime.push(deal);
-      continue;
-    }
-    const key = `${timeBucket(outH)}_${timeBucket(inH)}`;
-    if (!bucketMap.has(key)) bucketMap.set(key, []);
-    bucketMap.get(key)!.push(deal);
-  }
-
-  const result: Deal[] = [];
-  const seen = new Set<number>();
-
-  for (const [, bucket] of bucketMap) {
-    for (const d of bucket) {
-      if (!seen.has(deals.indexOf(d))) {
-        seen.add(deals.indexOf(d));
-        result.push(d);
-        break;
-      }
-    }
-  }
-
-  if (result.length < 15) {
-    for (const [, bucket] of bucketMap) {
-      if (result.length >= 15) break;
-      for (const d of bucket) {
-        const idx = deals.indexOf(d);
-        if (!seen.has(idx)) {
-          seen.add(idx);
-          result.push(d);
-          break;
-        }
-      }
-    }
-  }
-
-  for (const d of noTime) {
-    if (result.length >= 15) break;
-    result.push(d);
-  }
-
-  result.sort((a, b) => a.min_price - b.min_price);
-  return result;
-}
-
 function StopsBadge({ stops }: { stops: number | null }) {
   if (stops == null) return null;
   return stops === 0 ? (
@@ -291,10 +223,10 @@ export default function Results() {
   const [activeTripType, setActiveTripType] = useState<string | undefined>(undefined);
   const [activeMonth, setActiveMonth] = useState<string>(() => getMonthOptions()[0]);
 
-  const load = (month?: string) => {
+  const load = (month?: string, tripType?: string) => {
     setLoading(true);
     setError("");
-    fetchResults({ month })
+    fetchResults({ month, trip_type: tripType })
       .then((data) => {
         setGroups(data);
         if (data.length > 0 && (!activeDest || !data.find((g) => g.destination === activeDest))) {
@@ -305,7 +237,7 @@ export default function Results() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(activeMonth); }, [activeMonth]);
+  useEffect(() => { load(activeMonth, activeTripType); }, [activeMonth, activeTripType]);
 
   if (loading)
     return <div className="flex items-center justify-center py-20 text-apple-secondary text-base">로딩 중…</div>;
@@ -314,7 +246,7 @@ export default function Results() {
     return (
       <div className="flex flex-col items-center py-20 gap-4 text-apple-red">
         <p className="text-base">{error}</p>
-        <button onClick={() => load(activeMonth)} className="px-4 py-2 bg-apple-red/10 rounded-full text-sm hover:bg-apple-red/20 transition-colors">재시도</button>
+        <button onClick={() => load(activeMonth, activeTripType)} className="px-4 py-2 bg-apple-red/10 rounded-full text-sm hover:bg-apple-red/20 transition-colors">재시도</button>
       </div>
     );
 
@@ -332,17 +264,6 @@ export default function Results() {
 
   const activeGroup = groups.find((g) => g.destination === activeDest) ?? groups[0];
 
-  const filteredDeals = activeTripType
-    ? activeGroup.deals.filter((d) => d.trip_type === activeTripType)
-    : activeGroup.deals;
-
-  const topDeals = filteredDeals.slice(0, 5);
-  const restDeals = selectDiverseDeals(filteredDeals.slice(5));
-
-  const minPrice = filteredDeals.length > 0
-    ? Math.min(...filteredDeals.map((d) => d.min_price))
-    : 0;
-
   return (
     <div className="space-y-5">
       {/* 월 필터 */}
@@ -351,14 +272,13 @@ export default function Results() {
       {/* 헤더 */}
       <div className="flex items-center justify-between">
         <p className="text-xs text-apple-secondary">{groups.length}개 여행지</p>
-        <button onClick={() => load(activeMonth)} className="text-xs text-apple-blue hover:underline">새로고침</button>
+        <button onClick={() => load(activeMonth, activeTripType)} className="text-xs text-apple-blue hover:underline">새로고침</button>
       </div>
 
       {/* 목적지 탭 — 가로 스크롤 */}
       <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
         <div className="flex gap-2 w-max sm:w-auto sm:flex-wrap">
           {groups.map((g) => {
-            const gMin = Math.min(...g.deals.map((d) => d.min_price));
             const isActive = g.destination === activeGroup.destination;
             return (
               <button
@@ -372,7 +292,7 @@ export default function Results() {
               >
                 <span className="text-sm font-semibold">{g.destination_name}</span>
                 <span className={`text-[11px] ${isActive ? "text-white/60" : "text-apple-secondary"}`}>
-                  {g.destination} · {Math.round(gMin).toLocaleString()}원~
+                  {g.destination} · {Math.round(g.min_price).toLocaleString()}원~
                 </span>
               </button>
             );
@@ -385,9 +305,9 @@ export default function Results() {
         <div className="flex items-center gap-2">
           <h2 className="text-xl sm:text-2xl font-bold text-apple-text">{activeGroup.destination_name}</h2>
           <span className="text-sm text-apple-secondary">{activeGroup.destination}</span>
-          {minPrice > 0 && (
+          {activeGroup.min_price > 0 && (
             <span className="text-sm font-semibold text-apple-blue whitespace-nowrap">
-              최저 {Math.round(minPrice).toLocaleString()}원~
+              최저 {Math.round(activeGroup.min_price).toLocaleString()}원~
             </span>
           )}
         </div>
@@ -408,24 +328,24 @@ export default function Results() {
         </div>
       </div>
 
-      {filteredDeals.length === 0 ? (
+      {activeGroup.total_count === 0 ? (
         <div className="text-center py-10 text-apple-secondary text-sm">해당 조건의 항공권이 없습니다.</div>
       ) : (
         <>
           <section>
             <h3 className="text-base font-semibold text-apple-text mb-3">오늘의 최저가</h3>
             <div className="flex flex-col gap-3">
-              {topDeals.map((deal, i) => (
+              {activeGroup.top_deals.map((deal, i) => (
                 <DealCard key={i} deal={deal} rank={i + 1} />
               ))}
             </div>
           </section>
 
-          {restDeals.length > 0 && (
+          {activeGroup.diverse_deals.length > 0 && (
             <section>
               <h3 className="text-base font-semibold text-apple-text mb-3">시간대별 추천</h3>
               <div className="flex flex-col gap-3">
-                {restDeals.map((deal, i) => (
+                {activeGroup.diverse_deals.map((deal, i) => (
                   <DealCard key={i} deal={deal} rank={i + 6} />
                 ))}
               </div>
