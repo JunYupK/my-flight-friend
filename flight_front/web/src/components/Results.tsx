@@ -211,8 +211,8 @@ function LegRow({ leg, isMixed, index }: {
 
 function DealCard({ deal, rank }: { deal: Deal; rank: number }) {
   const legs = [
-    { airline: deal.out_airline, dep: deal.out_dep_time, arr: deal.out_arr_time, dur: deal.out_duration_min, stops: deal.out_stops, from: deal.origin, to: (deal.out_arr_airport && deal.out_arr_airport !== deal.origin) ? deal.out_arr_airport : deal.destination, date: deal.departure_date, url: deal.out_url, urlLabel: "출발편 검색" },
-    { airline: deal.in_airline, dep: deal.in_dep_time, arr: deal.in_arr_time, dur: deal.in_duration_min, stops: deal.in_stops, from: deal.in_dep_airport || deal.destination, to: deal.origin, date: deal.return_date, url: deal.in_url, urlLabel: "복귀편 검색" },
+    { airline: deal.out_airline, dep: deal.out_dep_time, arr: deal.out_arr_time, dur: deal.out_duration_min, stops: deal.out_stops, from: deal.origin, to: (deal.out_arr_airport && deal.out_arr_airport !== deal.origin) ? deal.out_arr_airport : deal.destination, date: deal.departure_date, url: deal.out_url, urlLabel: deal.out_url?.includes("/booking?") ? "출발편 예약" : "출발편 검색" },
+    { airline: deal.in_airline, dep: deal.in_dep_time, arr: deal.in_arr_time, dur: deal.in_duration_min, stops: deal.in_stops, from: deal.in_dep_airport || deal.destination, to: deal.origin, date: deal.return_date, url: deal.in_url, urlLabel: deal.in_url?.includes("/booking?") ? "복귀편 예약" : "복귀편 검색" },
   ];
 
   return (
