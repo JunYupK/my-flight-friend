@@ -2,6 +2,9 @@ import sys
 sys.stdout.reconfigure(encoding="utf-8")
 sys.stderr.reconfigure(encoding="utf-8")
 
+import traceback
+from datetime import datetime
+
 from dotenv import load_dotenv
 load_dotenv()
 import flight_monitor.config  # noqa: F401 — sys.modules에 먼저 올려두기
@@ -11,32 +14,81 @@ apply_db_config()
 from flight_monitor.collector_amadeus        import fetch_fsc_offers
 from flight_monitor.collector_google_flights import fetch_google_flights_offers
 from flight_monitor.storage                  import init_db, save_prices, should_notify, record_alert
-from flight_monitor.notifier                 import notify
+from flight_monitor.notifier                 import notify, send_email
 from flight_monitor.config                   import SEARCH_CONFIG
 
 
+def _ts() -> str:
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
 def main():
-    print("=== 일본 항공권 최저가 탐색 시작 ===")
+    print(f"[{_ts()}] === 일본 항공권 최저가 탐색 시작 ===")
     init_db()
 
-    fsc_offers = fetch_fsc_offers()
+    errors: list[str] = []
+
+    # --- FSC 수집 ---
+    try:
+        fsc_offers = fetch_fsc_offers()
+    except Exception as e:
+        fsc_offers = []
+        errors.append(f"FSC 수집 에러: {e}")
+        print(f"[{_ts()}] [ERROR] FSC 수집 실패: {e}")
+        traceback.print_exc()
+
     if fsc_offers:
         save_prices(fsc_offers)
-        print(f"[수집] FSC {len(fsc_offers)}건 저장")
+        print(f"[{_ts()}] [수집] FSC {len(fsc_offers)}건 저장")
 
-    gf_offers = fetch_google_flights_offers(on_route_done=save_prices)
+    # --- Google Flights 수집 ---
+    try:
+        gf_offers = fetch_google_flights_offers(on_route_done=save_prices)
+    except Exception as e:
+        gf_offers = []
+        errors.append(f"GoogleFlights 수집 에러: {e}")
+        print(f"[{_ts()}] [ERROR] GoogleFlights 수집 실패: {e}")
+        traceback.print_exc()
+
     all_offers = fsc_offers + gf_offers
-    print(f"[수집] FSC {len(fsc_offers)}건 / GoogleFlights {len(gf_offers)}건")
+    print(f"[{_ts()}] [수집] FSC {len(fsc_offers)}건 / GoogleFlights {len(gf_offers)}건")
 
+    # --- 수집 결과 0건 경고 ---
+    if not all_offers:
+        msg = (
+            f"[{_ts()}] [WARN] 수집 결과 0건!\n"
+            f"FSC: {len(fsc_offers)}건, GoogleFlights: {len(gf_offers)}건\n"
+        )
+        if errors:
+            msg += "에러 목록:\n" + "\n".join(f"  - {e}" for e in errors)
+        print(msg)
+        send_email(
+            subject="[항공권 모니터] 수집 결과 0건 경고",
+            body=f"<pre>{msg}</pre>",
+        )
+
+    # --- 알림 처리 ---
     target = SEARCH_CONFIG["target_price_krw"]
     for offer in [o for o in all_offers if o["price"] <= target]:
         if should_notify(offer):
             notify(offer, target_price=target)
             record_alert(offer)
-            print(f"[알림] {offer['destination']} {offer['departure_date']}~{offer['return_date']} → {offer['price']:,}원")
+            print(f"[{_ts()}] [알림] {offer['destination']} {offer['departure_date']}~{offer['return_date']} → {offer['price']:,}원")
 
-    print("=== 탐색 완료 ===")
+    print(f"[{_ts()}] === 탐색 완료 ===")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception:
+        print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] [FATAL] 예상치 못한 오류:")
+        traceback.print_exc()
+        try:
+            send_email(
+                subject="[항공권 모니터] 크롤링 크래시 발생",
+                body=f"<pre>{traceback.format_exc()}</pre>",
+            )
+        except Exception:
+            pass
+        sys.exit(1)
