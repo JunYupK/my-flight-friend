@@ -10,13 +10,11 @@ export default function RunControl() {
   const wsRef     = useRef<WebSocket | null>(null);
   const outputRef = useRef<HTMLPreElement>(null);
 
-  // 마운트 시 WebSocket 연결 — 서버의 현재 상태/로그를 즉시 수신
   useEffect(() => {
     connect();
     return () => wsRef.current?.close();
   }, []);
 
-  // 출력 자동 스크롤
   useEffect(() => {
     if (outputRef.current)
       outputRef.current.scrollTop = outputRef.current.scrollHeight;
@@ -34,7 +32,6 @@ export default function RunControl() {
       } else if (data === "__status__:error") {
         setStatus("error");
       } else if (data.startsWith("__status__:")) {
-        // idle 등
         setStatus(data.split(":")[1] as Status);
       } else {
         setOutput((prev) => prev + data);
@@ -42,7 +39,6 @@ export default function RunControl() {
     };
 
     ws.onclose = () => {
-      // 연결 끊기면 2초 후 재연결
       setTimeout(connect, 2000);
     };
   }
@@ -60,10 +56,10 @@ export default function RunControl() {
   };
 
   const statusColor: Record<Status, string> = {
-    idle:    "text-gray-500",
-    running: "text-blue-600",
-    done:    "text-green-600",
-    error:   "text-red-600",
+    idle:    "text-apple-secondary",
+    running: "text-apple-blue",
+    done:    "text-apple-green",
+    error:   "text-apple-red",
   };
   const statusLabel: Record<Status, string> = {
     idle:    "대기 중",
@@ -73,10 +69,10 @@ export default function RunControl() {
   };
 
   return (
-    <section className="bg-white rounded-xl shadow p-6 space-y-4">
+    <section className="bg-white rounded-2xl shadow-apple p-5 sm:p-6 space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">수집 실행</h2>
-        <span className={`text-sm font-medium ${statusColor[status]}`}>
+        <h2 className="text-base font-semibold text-apple-text">수집 실행</h2>
+        <span className={`text-xs font-medium ${statusColor[status]}`}>
           {statusLabel[status]}
         </span>
       </div>
@@ -84,17 +80,17 @@ export default function RunControl() {
       <button
         onClick={handleRun}
         disabled={status === "running"}
-        className="px-5 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        className="px-5 py-2.5 bg-apple-blue text-white rounded-full text-sm font-medium hover:bg-apple-blue-hover disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200"
       >
         {status === "running" ? "수집 중…" : "수집 시작"}
       </button>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-xs text-apple-red">{error}</p>}
 
       {output && (
         <pre
           ref={outputRef}
-          className="bg-gray-900 text-gray-100 text-xs rounded-lg p-4 h-64 overflow-y-auto whitespace-pre-wrap"
+          className="bg-apple-text text-gray-300 text-[11px] leading-relaxed rounded-2xl p-4 h-64 overflow-y-auto whitespace-pre-wrap"
         >
           {output}
         </pre>

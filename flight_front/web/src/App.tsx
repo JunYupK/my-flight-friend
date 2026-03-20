@@ -7,10 +7,11 @@ import SearchConfigForm from "./components/SearchConfig";
 import Results from "./components/Results";
 import Trends from "./components/Trends";
 import Landing from "./components/Landing";
+import RunControl from "./components/RunControl";
 
 const NAV_ITEMS = [
-  { path: "/deals", label: "오늘의 최저가" },
-  { path: "/trends", label: "가격 추이" },
+  { path: "/deals", label: "최저가" },
+  { path: "/trends", label: "추이" },
 ];
 
 function Layout() {
@@ -43,52 +44,74 @@ function Layout() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto px-4">
-          <div className="flex items-center h-14 gap-2 sm:gap-6">
-            <Link to="/" className="font-bold text-gray-800 text-base shrink-0 hover:text-blue-600 transition-colors">
-              Flight Friend
-            </Link>
+    <div className="min-h-screen bg-apple-bg">
+      {/* Glass header */}
+      <header className="sticky top-0 z-30 backdrop-blur-xl bg-white/72 border-b border-black/5">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6">
+          <div className="flex items-center justify-between h-12">
+            {/* Left: logo + nav */}
+            <div className="flex items-center gap-1 sm:gap-2">
+              <Link
+                to="/"
+                className="font-semibold text-apple-text text-sm tracking-tight shrink-0 hover:opacity-70 transition-opacity mr-1 sm:mr-3"
+              >
+                Flight Friend
+              </Link>
 
-            <nav className="flex gap-1">
-              {NAV_ITEMS.map((item) => (
-                <Link
-                  key={item.path}
-                  to={item.path}
-                  className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                    location.pathname === item.path
-                      ? "bg-blue-50 text-blue-600"
-                      : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
-                  }`}
-                >
-                  {item.label}
-                </Link>
-              ))}
-            </nav>
+              <nav className="flex gap-0.5">
+                {NAV_ITEMS.map((item) => (
+                  <Link
+                    key={item.path}
+                    to={item.path}
+                    className={`px-3 py-1 rounded-full text-xs font-medium transition-all duration-200 ${
+                      location.pathname === item.path
+                        ? "bg-apple-text text-white"
+                        : "text-apple-secondary hover:text-apple-text hover:bg-black/5"
+                    }`}
+                  >
+                    {item.label}
+                  </Link>
+                ))}
+              </nav>
+            </div>
 
-            {/* 저장 버튼 — 설정 페이지 전용 */}
-            {isSettings && (
-              <div className="ml-auto flex items-center gap-3">
-                {saveMsg && (
-                  <span className={`text-sm ${saveMsg.includes("실패") ? "text-red-500" : "text-green-500"}`}>
-                    {saveMsg}
-                  </span>
-                )}
+            {/* Right: settings link or save button */}
+            <div className="flex items-center gap-2">
+              {saveMsg && (
+                <span className={`text-xs ${saveMsg.includes("실패") ? "text-apple-red" : "text-apple-green"}`}>
+                  {saveMsg}
+                </span>
+              )}
+              {isSettings ? (
                 <button
                   onClick={handleSave}
                   disabled={saving || !config}
-                  className="px-4 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                  className="px-4 py-1.5 bg-apple-blue text-white rounded-full text-xs font-medium hover:bg-apple-blue-hover disabled:opacity-40 transition-all duration-200"
                 >
-                  {saving ? "저장 중…" : <><span className="hidden sm:inline">검색 설정 </span>저장</>}
+                  {saving ? "저장 중…" : "설정 저장"}
                 </button>
-              </div>
-            )}
+              ) : (
+                <Link
+                  to="/settings"
+                  className={`p-1.5 rounded-full transition-all duration-200 ${
+                    isSettings
+                      ? "bg-apple-text text-white"
+                      : "text-apple-secondary hover:text-apple-text hover:bg-black/5"
+                  }`}
+                  aria-label="설정"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="3" />
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                  </svg>
+                </Link>
+              )}
+            </div>
           </div>
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-4 py-8">
+      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-10">
         <Routes>
           <Route path="/" element={<Landing />} />
           <Route path="/deals" element={<Results />} />
@@ -99,13 +122,14 @@ function Layout() {
               <div className="space-y-6">
                 <AirportList />
                 {!config ? (
-                  <div className="flex items-center justify-center py-10 text-gray-400">로딩 중…</div>
+                  <div className="flex items-center justify-center py-10 text-apple-secondary">로딩 중…</div>
                 ) : (
                   <SearchConfigForm
                     value={config.search_config}
                     onChange={(sc) => setConfig((c) => c ? { ...c, search_config: sc } : c)}
                   />
                 )}
+                <RunControl />
               </div>
             }
           />

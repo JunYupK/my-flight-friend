@@ -75,11 +75,11 @@ export default function AirportList() {
     setEditing((e) => ({ ...e, [code]: { ...e[code], [field]: val } }));
 
   return (
-    <section className="bg-white rounded-xl shadow p-6 space-y-4">
+    <section className="bg-white rounded-2xl shadow-apple p-5 sm:p-6 space-y-5">
       <div className="flex items-center gap-3">
-        <h2 className="text-lg font-semibold">목적지 공항</h2>
+        <h2 className="text-base font-semibold text-apple-text">목적지 공항</h2>
         {msg && (
-          <span className={`text-sm ${msg.ok ? "text-green-500" : "text-red-500"}`}>
+          <span className={`text-xs ${msg.ok ? "text-apple-green" : "text-apple-red"}`}>
             {msg.text}
           </span>
         )}
@@ -89,63 +89,63 @@ export default function AirportList() {
         {airports.map((airport) => {
           const a = editing[airport.code] ?? airport;
           return (
-            <div key={airport.code} className="rounded-lg border-2 border-blue-400">
+            <div key={airport.code} className="rounded-xl bg-apple-bg overflow-hidden">
               {/* 헤더 */}
-              <div className="flex items-center gap-3 px-4 py-3 bg-blue-50">
-                <span className="font-bold text-sm w-8 text-blue-700">{airport.code}</span>
+              <div className="flex items-center gap-3 px-4 py-3">
+                <span className="font-bold text-sm text-apple-blue w-10 shrink-0">{airport.code}</span>
                 <input
                   type="text"
                   value={a.name}
                   onChange={(e) => patch(airport.code, "name", e.target.value)}
-                  className="flex-1 text-sm text-blue-700 bg-transparent border-b border-blue-200 focus:outline-none focus:border-blue-500"
+                  className="flex-1 text-sm text-apple-text bg-transparent border-b border-apple-tertiary/30 focus:outline-none focus:border-apple-blue transition-colors min-w-0"
                 />
                 <button
                   onClick={() => handleSave(airport.code)}
                   disabled={saving[airport.code]}
-                  className="text-xs px-3 py-1 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                  className="text-xs px-3 py-1 rounded-full bg-apple-blue text-white hover:bg-apple-blue-hover disabled:opacity-40 transition-all duration-200 shrink-0"
                 >
                   {saving[airport.code] ? "저장 중…" : "저장"}
                 </button>
                 <button
                   onClick={() => handleDelete(airport.code)}
-                  className="text-xs px-2 py-1 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                  className="text-xs px-2 py-1 rounded-full text-apple-red hover:bg-apple-red/10 transition-all duration-200 shrink-0"
                 >
                   삭제
                 </button>
               </div>
 
               {/* tfs 입력 */}
-              <div className="px-4 pb-4 pt-2 space-y-2 bg-white">
+              <div className="px-4 pb-4 pt-1 space-y-2">
                 {!a.tfs_out && !a.tfs_in && (
-                  <p className="text-xs text-gray-400">
+                  <p className="text-[11px] text-apple-secondary">
                     구글 플라이트에서 ICN↔{airport.code} 편도 검색 후 URL의{" "}
-                    <code className="bg-gray-100 px-1 rounded">tfs=</code> 값 붙여넣기
+                    <code className="bg-white px-1 rounded text-apple-blue">tfs=</code> 값 붙여넣기
                   </p>
                 )}
                 <label className="flex flex-col gap-1">
-                  <span className="text-xs font-medium text-gray-500">
+                  <span className="text-[11px] font-medium text-apple-secondary">
                     ICN → {airport.code} (출발)
-                    {a.tfs_out && <span className="ml-1 text-green-500">✓</span>}
+                    {a.tfs_out && <span className="ml-1 text-apple-green">✓</span>}
                   </span>
                   <input
                     type="text"
                     placeholder="tfs= 값 또는 전체 URL"
                     value={a.tfs_out}
                     onChange={(e) => patch(airport.code, "tfs_out", e.target.value)}
-                    className="border rounded px-3 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    className="bg-white rounded-xl px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-apple-blue/30 shadow-apple-sm"
                   />
                 </label>
                 <label className="flex flex-col gap-1">
-                  <span className="text-xs font-medium text-gray-500">
+                  <span className="text-[11px] font-medium text-apple-secondary">
                     {airport.code} → ICN (복귀)
-                    {a.tfs_in && <span className="ml-1 text-green-500">✓</span>}
+                    {a.tfs_in && <span className="ml-1 text-apple-green">✓</span>}
                   </span>
                   <input
                     type="text"
                     placeholder="tfs= 값 또는 전체 URL"
                     value={a.tfs_in}
                     onChange={(e) => patch(airport.code, "tfs_in", e.target.value)}
-                    className="border rounded px-3 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    className="bg-white rounded-xl px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-apple-blue/30 shadow-apple-sm"
                   />
                 </label>
               </div>
@@ -155,44 +155,44 @@ export default function AirportList() {
       </div>
 
       {/* 새 목적지 추가 */}
-      <div className="space-y-2 pt-2 border-t border-gray-100">
-        <p className="text-xs font-medium text-gray-500">새 목적지 추가</p>
-        <div className="flex gap-2">
+      <div className="space-y-3 pt-3 border-t border-apple-tertiary/20">
+        <p className="text-xs font-medium text-apple-secondary">새 목적지 추가</p>
+        <div className="flex flex-col sm:flex-row gap-2">
           <input
             type="text"
             placeholder="코드 (예: OSA)"
             value={newAirport.code}
             onChange={(e) => setNewAirport((n) => ({ ...n, code: e.target.value.toUpperCase() }))}
             maxLength={3}
-            className="w-28 border rounded px-3 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-400"
+            className="w-full sm:w-24 bg-apple-bg rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-apple-blue/30"
           />
           <input
             type="text"
             placeholder="이름 (예: 오사카)"
             value={newAirport.name}
             onChange={(e) => setNewAirport((n) => ({ ...n, name: e.target.value }))}
-            className="flex-1 border rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+            className="flex-1 bg-apple-bg rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-apple-blue/30"
           />
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-col sm:flex-row gap-2">
           <input
             type="text"
             placeholder="ICN → 목적지 tfs= 값"
             value={newAirport.tfs_out}
             onChange={(e) => setNewAirport((n) => ({ ...n, tfs_out: e.target.value }))}
-            className="flex-1 border rounded px-3 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-400"
+            className="flex-1 bg-apple-bg rounded-xl px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-apple-blue/30"
           />
           <input
             type="text"
             placeholder="목적지 → ICN tfs= 값"
             value={newAirport.tfs_in}
             onChange={(e) => setNewAirport((n) => ({ ...n, tfs_in: e.target.value }))}
-            className="flex-1 border rounded px-3 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-400"
+            className="flex-1 bg-apple-bg rounded-xl px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-apple-blue/30"
           />
           <button
             onClick={handleAdd}
             disabled={adding || !newAirport.code.trim() || !newAirport.name.trim()}
-            className="px-4 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-40 transition-colors"
+            className="px-5 py-2 bg-apple-blue text-white rounded-full text-sm font-medium hover:bg-apple-blue-hover disabled:opacity-40 transition-all duration-200 shrink-0"
           >
             {adding ? "추가 중…" : "추가"}
           </button>

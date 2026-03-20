@@ -13,9 +13,9 @@ import {
 } from "recharts";
 
 const SOURCE_COLORS: Record<string, string> = {
-  google_flights: "#3b82f6",
-  naver_graphql: "#22c55e",
-  amadeus: "#f97316",
+  google_flights: "#0071e3",
+  naver_graphql: "#34c759",
+  amadeus: "#ff9500",
 };
 
 function sourceName(src: string) {
@@ -28,7 +28,6 @@ function formatPrice(v: number) {
   return `${Math.round(v / 1000)}천`;
 }
 
-/** 현재 월 기준 +6개월 목록 */
 function getMonthOptions(): string[] {
   const months: string[] = [];
   const now = new Date();
@@ -39,9 +38,8 @@ function getMonthOptions(): string[] {
   return months;
 }
 
-/** 캘린더 모드: 출발일별 최저가 차트 */
 function CalendarChart({ data, month }: { data: PriceHistoryPoint[]; month: string }) {
-  if (data.length === 0) return <p className="text-sm text-gray-400 py-4">해당 월 데이터가 없습니다.</p>;
+  if (data.length === 0) return <p className="text-sm text-apple-secondary py-4">해당 월 데이터가 없습니다.</p>;
 
   const sources = [...new Set(data.map((d) => d.source))];
   const byDate: Record<string, Record<string, number | string>> = {};
@@ -55,16 +53,17 @@ function CalendarChart({ data, month }: { data: PriceHistoryPoint[]; month: stri
   );
 
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-4">
-      <h3 className="text-sm font-semibold text-gray-600 mb-3">출발일별 최저가 ({month})</h3>
-      <ResponsiveContainer width="100%" height={300}>
+    <div className="bg-white rounded-2xl shadow-apple-sm p-4 sm:p-6">
+      <h3 className="text-sm font-semibold text-apple-text mb-4">출발일별 최저가 ({month})</h3>
+      <ResponsiveContainer width="100%" height={280}>
         <LineChart data={chartData}>
-          <CartesianGrid strokeDasharray="3 3" />
-          <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-          <YAxis tickFormatter={formatPrice} tick={{ fontSize: 11 }} width={50} />
+          <CartesianGrid strokeDasharray="3 3" stroke="#d2d2d720" />
+          <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#86868b" }} />
+          <YAxis tickFormatter={formatPrice} tick={{ fontSize: 11, fill: "#86868b" }} width={45} />
           <Tooltip
             formatter={(v) => [`₩${Number(v).toLocaleString()}`, ""]}
             labelFormatter={(l) => `출발일: ${month}-${l}`}
+            contentStyle={{ borderRadius: 12, border: "none", boxShadow: "0 2px 12px rgba(0,0,0,0.08)" }}
           />
           <Legend />
           {sources.map((src) => (
@@ -72,9 +71,10 @@ function CalendarChart({ data, month }: { data: PriceHistoryPoint[]; month: stri
               key={src}
               type="monotone"
               dataKey={src}
-              stroke={SOURCE_COLORS[src] ?? "#6b7280"}
+              stroke={SOURCE_COLORS[src] ?? "#86868b"}
               name={sourceName(src)}
               dot={{ r: 3 }}
+              strokeWidth={2}
               connectNulls
             />
           ))}
@@ -84,9 +84,8 @@ function CalendarChart({ data, month }: { data: PriceHistoryPoint[]; month: stri
   );
 }
 
-/** 타임라인 모드: 수집 시점별 가격 추이 */
 function TimelineChart({ data }: { data: PriceHistoryPoint[] }) {
-  if (data.length === 0) return <p className="text-sm text-gray-400 py-4">수집 이력이 없습니다.</p>;
+  if (data.length === 0) return <p className="text-sm text-apple-secondary py-4">수집 이력이 없습니다.</p>;
 
   const sources = [...new Set(data.map((d) => d.source))];
   const byDate: Record<string, Record<string, number | string>> = {};
@@ -100,16 +99,17 @@ function TimelineChart({ data }: { data: PriceHistoryPoint[] }) {
   );
 
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-4">
-      <h3 className="text-sm font-semibold text-gray-600 mb-3">수집 시점별 가격 변화</h3>
-      <ResponsiveContainer width="100%" height={300}>
+    <div className="bg-white rounded-2xl shadow-apple-sm p-4 sm:p-6">
+      <h3 className="text-sm font-semibold text-apple-text mb-4">수집 시점별 가격 변화</h3>
+      <ResponsiveContainer width="100%" height={280}>
         <LineChart data={chartData}>
-          <CartesianGrid strokeDasharray="3 3" />
-          <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-          <YAxis tickFormatter={formatPrice} tick={{ fontSize: 11 }} width={50} />
+          <CartesianGrid strokeDasharray="3 3" stroke="#d2d2d720" />
+          <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#86868b" }} />
+          <YAxis tickFormatter={formatPrice} tick={{ fontSize: 11, fill: "#86868b" }} width={45} />
           <Tooltip
             formatter={(v) => [`₩${Number(v).toLocaleString()}`, ""]}
             labelFormatter={(l) => `수집일: ${l}`}
+            contentStyle={{ borderRadius: 12, border: "none", boxShadow: "0 2px 12px rgba(0,0,0,0.08)" }}
           />
           <Legend />
           {sources.map((src) => (
@@ -117,9 +117,10 @@ function TimelineChart({ data }: { data: PriceHistoryPoint[] }) {
               key={src}
               type="monotone"
               dataKey={src}
-              stroke={SOURCE_COLORS[src] ?? "#6b7280"}
+              stroke={SOURCE_COLORS[src] ?? "#86868b"}
               name={sourceName(src)}
               dot={{ r: 3 }}
+              strokeWidth={2}
               connectNulls
             />
           ))}
@@ -134,11 +135,9 @@ export default function Trends() {
   const [dest, setDest] = useState("");
   const [month, setMonth] = useState(() => getMonthOptions()[0]);
 
-  // 캘린더 모드 데이터
   const [calData, setCalData] = useState<PriceHistoryPoint[]>([]);
   const [calLoading, setCalLoading] = useState(false);
 
-  // 타임라인 모드 (특정 여정 선택 시)
   const [selectedTrip, setSelectedTrip] = useState<{ dep: string; ret: string } | null>(null);
   const [tlData, setTlData] = useState<PriceHistoryPoint[]>([]);
   const [tlLoading, setTlLoading] = useState(false);
@@ -152,7 +151,6 @@ export default function Trends() {
       .catch(console.error);
   }, []);
 
-  // 캘린더 데이터 로드
   useEffect(() => {
     if (!dest || !month) return;
     setCalLoading(true);
@@ -163,7 +161,6 @@ export default function Trends() {
       .finally(() => setCalLoading(false));
   }, [dest, month]);
 
-  // 타임라인 데이터 로드
   useEffect(() => {
     if (!dest || !selectedTrip) return;
     setTlLoading(true);
@@ -178,24 +175,23 @@ export default function Trends() {
       .finally(() => setTlLoading(false));
   }, [dest, selectedTrip]);
 
-  // 캘린더 데이터에서 출발일 목록 추출 (타임라인 선택용)
   const departureDates = [...new Set(calData.map((d) => d.departure_date!))].sort();
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center gap-4">
-        <h1 className="text-2xl font-bold text-gray-800">가격 추이</h1>
-        <p className="text-sm text-gray-400">목적지별 항공권 가격 변화를 추적합니다.</p>
+      <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4">
+        <h1 className="text-xl sm:text-2xl font-bold text-apple-text">가격 추이</h1>
+        <p className="text-xs text-apple-secondary">목적지별 항공권 가격 변화를 추적합니다.</p>
       </div>
 
       {/* 필터 */}
-      <div className="flex flex-wrap gap-3 items-center">
+      <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
         <div className="flex items-center gap-2">
-          <label className="text-sm font-medium text-gray-600">목적지</label>
+          <label className="text-xs font-medium text-apple-secondary shrink-0">목적지</label>
           <select
             value={dest}
             onChange={(e) => setDest(e.target.value)}
-            className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white"
+            className="text-sm bg-white rounded-xl px-3 py-2 shadow-apple-sm appearance-none focus:outline-none focus:ring-2 focus:ring-apple-blue/30 min-w-0"
           >
             {airports.map((a) => (
               <option key={a.code} value={a.code}>{a.name} ({a.code})</option>
@@ -203,11 +199,11 @@ export default function Trends() {
           </select>
         </div>
         <div className="flex items-center gap-2">
-          <label className="text-sm font-medium text-gray-600">출발 월</label>
+          <label className="text-xs font-medium text-apple-secondary shrink-0">출발 월</label>
           <select
             value={month}
             onChange={(e) => setMonth(e.target.value)}
-            className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white"
+            className="text-sm bg-white rounded-xl px-3 py-2 shadow-apple-sm appearance-none focus:outline-none focus:ring-2 focus:ring-apple-blue/30 min-w-0"
           >
             {getMonthOptions().map((m) => (
               <option key={m} value={m}>{m}</option>
@@ -218,7 +214,7 @@ export default function Trends() {
 
       {/* 캘린더 차트 */}
       {calLoading ? (
-        <p className="text-sm text-gray-400 py-4">로딩 중…</p>
+        <p className="text-sm text-apple-secondary py-4">로딩 중…</p>
       ) : (
         <CalendarChart data={calData} month={month} />
       )}
@@ -226,26 +222,28 @@ export default function Trends() {
       {/* 출발일 선택 → 타임라인 */}
       {departureDates.length > 0 && (
         <div className="space-y-3">
-          <h3 className="text-sm font-semibold text-gray-600">특정 출발일의 가격 변화 보기</h3>
-          <div className="flex flex-wrap gap-2">
-            {departureDates.map((d) => (
-              <button
-                key={d}
-                onClick={() => setSelectedTrip({ dep: d, ret: "" })}
-                className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors ${
-                  selectedTrip?.dep === d
-                    ? "bg-blue-600 text-white"
-                    : "bg-white border border-gray-200 text-gray-600 hover:border-blue-300"
-                }`}
-              >
-                {d.slice(5)}
-              </button>
-            ))}
+          <h3 className="text-sm font-semibold text-apple-text">특정 출발일의 가격 변화 보기</h3>
+          <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+            <div className="flex gap-1.5 w-max sm:w-auto sm:flex-wrap">
+              {departureDates.map((d) => (
+                <button
+                  key={d}
+                  onClick={() => setSelectedTrip({ dep: d, ret: "" })}
+                  className={`text-xs px-3 py-1.5 rounded-full font-medium transition-all duration-200 whitespace-nowrap ${
+                    selectedTrip?.dep === d
+                      ? "bg-apple-text text-white"
+                      : "bg-white text-apple-secondary shadow-apple-sm hover:text-apple-text"
+                  }`}
+                >
+                  {d.slice(5)}
+                </button>
+              ))}
+            </div>
           </div>
 
           {selectedTrip && (
             tlLoading ? (
-              <p className="text-sm text-gray-400 py-4">로딩 중…</p>
+              <p className="text-sm text-apple-secondary py-4">로딩 중…</p>
             ) : (
               <TimelineChart data={tlData} />
             )
