@@ -118,19 +118,20 @@ def _build_booking_url(
     if not flight_numbers:
         return None
 
+    seg_dates = flight.get("segment_dates") or []
+    airports = flight.get("segment_airports") or []
+
     segments = []
-    for fn_str in flight_numbers:
-        # "MU 580" or "MU580" → airline="MU", num="580"
+    for i, fn_str in enumerate(flight_numbers):
         m = re.match(r"([A-Z0-9]{2})\s*(\d+)", fn_str)
         if not m:
             return None
+        seg_date = seg_dates[i] if i < len(seg_dates) and seg_dates[i] else date_str
         segments.append({
-            "dep": "", "arr": "", "date": date_str,
+            "dep": "", "arr": "", "date": seg_date,
             "airline": m.group(1), "flight_num": m.group(2),
         })
 
-    # 공항 배정: 직항이면 단순, 경유면 중간 공항 필요
-    airports = flight.get("segment_airports") or []
     if len(segments) == 1:
         segments[0]["dep"] = dep
         segments[0]["arr"] = arr
@@ -139,7 +140,6 @@ def _build_booking_url(
             seg["dep"] = airports[i]
             seg["arr"] = airports[i + 1]
     else:
-        # 경유지 정보 부족 — booking URL 생성 불가
         return None
 
     return _build_booking_tfs(date_str, segments, dep, arr)
@@ -185,7 +185,7 @@ def _extract_js() -> str:
     """
     li.pIav2d 카드 셀렉터 기반으로 항공편 데이터를 추출해
     #__fl__ div에 JSON으로 주입한다.
-    편명(flight number)도 DOM 및 페이지 embedded data에서 추출한다.
+    편명은 data-travelimpactmodelwebsiteurl의 itinerary 파라미터에서 추출.
     """
     return """(function() {
     function toHHMM(text) {
@@ -198,63 +198,36 @@ def _extract_js() -> str:
         return String(h).padStart(2, '0') + ':' + m[3];
     }
 
-    // 편명 패턴: "MU 580", "KE703", "7C 1101" 등
-    // IATA 항공사 코드는 최소 영문자 1개 필수 (AA, A1, 7C 등 — 순수 숫자 "26" 등 제외)
-    var fnRe = /\\b([A-Z][A-Z0-9]|[0-9][A-Z])\\s?(\\d{1,4})\\b/g;
+    // data-travelimpactmodelwebsiteurl에서 itinerary 파싱
+    // 직항: itinerary=ICN-NRT-YP-735-20260501
+    // 경유: itinerary=ICN-TNA-SC-8004-20260501,TNA-CKG-SC-8803-20260502
+    function extractItinerary(card) {
+        var el = card.querySelector('[data-travelimpactmodelwebsiteurl]');
+        if (!el) return { flight_numbers: [], segment_airports: [], segment_dates: [] };
+        var url = el.getAttribute('data-travelimpactmodelwebsiteurl') || '';
+        var m = url.match(/itinerary=([^&]+)/);
+        if (!m) return { flight_numbers: [], segment_airports: [], segment_dates: [] };
 
-    function isValidFlightNum(code, num) {
-        // 연도 패턴 제외: "2026" 등
-        if (/^20\\d{2}$/.test(code + num)) return false;
-        // 편명 숫자부는 1~9999, 선행 0 없음
-        if (num.length > 1 && num[0] === '0') return false;
-        return true;
-    }
-
-    // 카드에서 편명 추출 시도
-    function extractFlightNumbers(card) {
+        var segments = m[1].split(',');
         var fns = [];
         var airports = [];
-
-        // 1차: 카드 내 숨겨진 요소, aria-label, title 속성에서 편명 탐색
-        var allEls = card.querySelectorAll('[aria-label], [title], .sSHqwe, .Xsgmwe');
-        for (var j = 0; j < allEls.length; j++) {
-            var text = (allEls[j].getAttribute('aria-label') || '')
-                     + ' ' + (allEls[j].getAttribute('title') || '')
-                     + ' ' + (allEls[j].textContent || '');
-            var m;
-            fnRe.lastIndex = 0;
-            while ((m = fnRe.exec(text)) !== null) {
-                var formatted = m[1] + ' ' + m[2];
-                if (!isValidFlightNum(m[1], m[2])) continue;
-                if (fns.indexOf(formatted) === -1) fns.push(formatted);
+        var dates = [];
+        for (var i = 0; i < segments.length; i++) {
+            var parts = segments[i].split('-');
+            // parts: [DEP, ARR, AIRLINE, FNUM, YYYYMMDD]
+            if (parts.length < 5) continue;
+            if (i === 0) airports.push(parts[0]);
+            airports.push(parts[1]);
+            fns.push(parts[2] + ' ' + parts[3]);
+            // YYYYMMDD → YYYY-MM-DD
+            var d = parts[4];
+            if (d.length === 8) {
+                dates.push(d.substring(0, 4) + '-' + d.substring(4, 6) + '-' + d.substring(6, 8));
+            } else {
+                dates.push('');
             }
         }
-
-        // 2차: 전체 텍스트 노드에서 탐색
-        if (fns.length === 0) {
-            var walker = document.createTreeWalker(card, NodeFilter.SHOW_TEXT);
-            while (walker.nextNode()) {
-                var t = walker.currentNode.textContent.trim();
-                fnRe.lastIndex = 0;
-                var m2;
-                while ((m2 = fnRe.exec(t)) !== null) {
-                    var formatted2 = m2[1] + ' ' + m2[2];
-                    if (!isValidFlightNum(m2[1], m2[2])) continue;
-                    if (fns.indexOf(formatted2) === -1) fns.push(formatted2);
-                }
-            }
-        }
-
-        // 경유지 공항: .iCvNQ 또는 IATA 3자리 패턴 전체 수집
-        var apEls = card.querySelectorAll('.iCvNQ');
-        if (apEls.length >= 2) {
-            for (var k = 0; k < apEls.length; k++) {
-                var ap = apEls[k].textContent.trim();
-                if (/^[A-Z]{3}$/.test(ap)) airports.push(ap);
-            }
-        }
-
-        return { flight_numbers: fns, segment_airports: airports };
+        return { flight_numbers: fns, segment_airports: airports, segment_dates: dates };
     }
 
     var results = [];
@@ -319,8 +292,8 @@ def _extract_js() -> str:
             if (codes.length >= 2) { depAirport = codes[0]; arrAirport = codes[1]; }
         }
 
-        // 편명 추출
-        var fnData = extractFlightNumbers(card);
+        // itinerary에서 편명 + 공항 + 날짜 추출
+        var itin = extractItinerary(card);
 
         results.push({
             price: price,
@@ -331,38 +304,10 @@ def _extract_js() -> str:
             airline: airline,
             dep_airport: depAirport,
             arr_airport: arrAirport,
-            flight_numbers: fnData.flight_numbers,
-            segment_airports: fnData.segment_airports
+            flight_numbers: itin.flight_numbers,
+            segment_airports: itin.segment_airports,
+            segment_dates: itin.segment_dates
         });
-    }
-
-    // Fallback: 페이지 embedded data에서 편명 추출 시도
-    // Google Flights가 script 태그에 삽입하는 JSON 데이터에서 편명을 찾는다
-    var embeddedFlights = [];
-    try {
-        var scripts = document.querySelectorAll('script');
-        for (var s = 0; s < scripts.length; s++) {
-            var content = scripts[s].textContent || '';
-            if (content.length < 500 || content.length > 5000000) continue;
-            // 편명 패턴이 포함된 대형 JSON 데이터 블록 탐색
-            if (content.indexOf('flightNumber') !== -1 || content.indexOf('flight_number') !== -1) {
-                fnRe.lastIndex = 0;
-                var allMatches = content.match(/[A-Z]{2}\\s?\\d{1,4}/g) || [];
-                embeddedFlights = allMatches.map(function(m) { return m.replace(/\\s/, ' '); });
-                break;
-            }
-        }
-    } catch(e) {}
-
-    // embedded data에서 편명을 카드와 매칭 (편명이 비어있는 카드에 대해)
-    if (embeddedFlights.length > 0) {
-        for (var r = 0; r < results.length; r++) {
-            if (results[r].flight_numbers.length === 0 && results[r].airline) {
-                // embedded data에서 해당 항공사의 편명 찾기 시도
-                // (순서 기반 매칭은 불안정하므로, 항공사명과 일치하는 것만)
-                // 이 부분은 Python 측 _AIRLINE_IATA 매핑으로 보완
-            }
-        }
     }
 
     var el = document.getElementById('__fl__');
