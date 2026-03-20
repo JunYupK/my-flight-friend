@@ -199,7 +199,16 @@ def _extract_js() -> str:
     }
 
     // 편명 패턴: "MU 580", "KE703", "7C 1101" 등
-    var fnRe = /\\b([A-Z0-9]{2})\\s?(\\d{1,4})\\b/g;
+    // IATA 항공사 코드는 최소 영문자 1개 필수 (AA, A1, 7C 등 — 순수 숫자 "26" 등 제외)
+    var fnRe = /\\b([A-Z][A-Z0-9]|[0-9][A-Z])\\s?(\\d{1,4})\\b/g;
+
+    function isValidFlightNum(code, num) {
+        // 연도 패턴 제외: "2026" 등
+        if (/^20\\d{2}$/.test(code + num)) return false;
+        // 편명 숫자부는 1~9999, 선행 0 없음
+        if (num.length > 1 && num[0] === '0') return false;
+        return true;
+    }
 
     // 카드에서 편명 추출 시도
     function extractFlightNumbers(card) {
@@ -215,16 +224,13 @@ def _extract_js() -> str:
             var m;
             fnRe.lastIndex = 0;
             while ((m = fnRe.exec(text)) !== null) {
-                var code = m[1] + m[2];
                 var formatted = m[1] + ' ' + m[2];
-                // 시간(00:00~23:59), 가격, 연도 등 오탐 제외
-                if (/^\\d{2}$/.test(m[1]) && parseInt(m[1]) < 24 && parseInt(m[2]) < 60) continue;
-                if (/^20\\d{2}$/.test(m[1] + m[2])) continue;
+                if (!isValidFlightNum(m[1], m[2])) continue;
                 if (fns.indexOf(formatted) === -1) fns.push(formatted);
             }
         }
 
-        // 2차: data-ved 등 data 속성에서 탐색
+        // 2차: 전체 텍스트 노드에서 탐색
         if (fns.length === 0) {
             var walker = document.createTreeWalker(card, NodeFilter.SHOW_TEXT);
             while (walker.nextNode()) {
@@ -233,8 +239,7 @@ def _extract_js() -> str:
                 var m2;
                 while ((m2 = fnRe.exec(t)) !== null) {
                     var formatted2 = m2[1] + ' ' + m2[2];
-                    if (/^\\d{2}$/.test(m2[1]) && parseInt(m2[1]) < 24 && parseInt(m2[2]) < 60) continue;
-                    if (/^20\\d{2}$/.test(m2[1] + m2[2])) continue;
+                    if (!isValidFlightNum(m2[1], m2[2])) continue;
                     if (fns.indexOf(formatted2) === -1) fns.push(formatted2);
                 }
             }
