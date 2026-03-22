@@ -155,6 +155,8 @@ def _combine_roundtrips(out_flights, in_flights) -> list[dict]:
                         "out_airline": out["airline"],
                         "in_airline": ret["airline"],
                         "is_mixed_airline": is_mixed,
+                        "out_price": out["price"],
+                        "in_price": ret["price"],
                         "checked_at": datetime.now().isoformat(),
                     })
 

@@ -93,6 +93,8 @@ def _combine_roundtrips(out_flights, in_flights, airport_code, airport_name):
                         "checked_at": datetime.now().isoformat(),
                         "out_url": None,
                         "in_url": None,
+                        "out_price": out["price"],
+                        "in_price": ret["price"],
                     })
 
     results.sort(key=lambda x: x["price"])

@@ -60,7 +60,9 @@ def init_db():
                 out_arr_airport  TEXT,
                 in_dep_airport   TEXT,
                 out_url          TEXT,
-                in_url           TEXT
+                in_url           TEXT,
+                out_price        REAL,
+                in_price         REAL
             )
         """)
 
@@ -94,10 +96,14 @@ def init_db():
             cur.execute("RELEASE SAVEPOINT pre_ts")
 
         # 기존 테이블에 컬럼 추가 (없을 때만)
-        for col in ("trip_type", "out_arr_airport", "in_dep_airport", "out_url", "in_url"):
+        for col, col_type in [
+            ("trip_type", "TEXT"), ("out_arr_airport", "TEXT"),
+            ("in_dep_airport", "TEXT"), ("out_url", "TEXT"), ("in_url", "TEXT"),
+            ("out_price", "REAL"), ("in_price", "REAL"),
+        ]:
             cur.execute("SAVEPOINT pre_alter")
             try:
-                cur.execute(f"ALTER TABLE price_history ADD COLUMN {col} TEXT")
+                cur.execute(f"ALTER TABLE price_history ADD COLUMN {col} {col_type}")
             except Exception:
                 cur.execute("ROLLBACK TO SAVEPOINT pre_alter")
             else:
@@ -147,7 +153,9 @@ def init_db():
                 MIN(price)      AS min_price,
                 MAX(checked_at) AS last_checked_at,
                 MAX(out_url)    AS out_url,
-                MAX(in_url)     AS in_url
+                MAX(in_url)     AS in_url,
+                MIN(out_price)  AS out_price,
+                MIN(in_price)   AS in_price
             FROM price_history
             GROUP BY
                 origin, destination, destination_name,
@@ -177,6 +185,7 @@ def save_prices(offers: list[dict]):
             o.get("in_dep_time"),  o.get("in_arr_time"),  o.get("in_duration_min"),  o.get("in_stops"),
             o.get("out_arr_airport"), o.get("in_dep_airport"),
             o.get("out_url"), o.get("in_url"),
+            o.get("out_price"), o.get("in_price"),
         )
         for o in offers
     ]
@@ -190,8 +199,9 @@ def save_prices(offers: list[dict]):
              out_dep_time, out_arr_time, out_duration_min, out_stops,
              in_dep_time,  in_arr_time,  in_duration_min,  in_stops,
              out_arr_airport, in_dep_airport,
-             out_url, in_url)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+             out_url, in_url,
+             out_price, in_price)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """, rows)
 
 

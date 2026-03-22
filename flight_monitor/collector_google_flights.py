@@ -442,6 +442,8 @@ def _combine_roundtrips(
                         "in_dep_airport":   ret.get("dep_airport"),
                         "out_url":          out.get("booking_url") or out.get("search_url"),
                         "in_url":           ret.get("booking_url") or ret.get("search_url"),
+                        "out_price":        out["price"],
+                        "in_price":         ret["price"],
                         "checked_at":       datetime.now().isoformat(),
                     })
 

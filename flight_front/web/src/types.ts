@@ -56,6 +56,8 @@ export interface Deal {
   in_dep_airport: string | null;
   out_url: string | null;
   in_url: string | null;
+  out_price: number | null;
+  in_price: number | null;
   min_price: number;
   last_checked_at: string;
   rank: number;

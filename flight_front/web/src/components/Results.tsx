@@ -86,7 +86,7 @@ function SourceBadge({ source }: { source: string }) {
 
 /** 구간 한 줄 (데스크탑) / 세로 스택 (모바일) */
 function LegRow({ leg, isMixed, index }: {
-  leg: { airline: string; dep: string | null; arr: string | null; dur: number | null; stops: number | null; from: string; to: string; date: string; url: string | null; urlLabel: string };
+  leg: { airline: string; dep: string | null; arr: string | null; dur: number | null; stops: number | null; from: string; to: string; date: string; url: string | null; urlLabel: string; price: number | null };
   isMixed: boolean;
   index: number;
 }) {
@@ -105,6 +105,11 @@ function LegRow({ leg, isMixed, index }: {
         </div>
         <span className="text-xs text-apple-secondary whitespace-nowrap shrink-0 ml-auto">{formatDuration(leg.dur)}</span>
         <StopsBadge stops={leg.stops} />
+        {leg.price != null && (
+          <span className="text-xs font-semibold text-apple-text whitespace-nowrap shrink-0">
+            {Math.round(leg.price).toLocaleString()}원
+          </span>
+        )}
         {leg.url && (
           <a href={leg.url} target="_blank" rel="noopener noreferrer"
             className="text-xs text-apple-blue hover:underline whitespace-nowrap shrink-0">
@@ -130,12 +135,19 @@ function LegRow({ leg, isMixed, index }: {
           </span>
           <span className="text-[11px] text-apple-secondary">{leg.from}→{leg.to} · {formatDate(leg.date)}</span>
         </div>
-        {leg.url && (
-          <a href={leg.url} target="_blank" rel="noopener noreferrer"
-            className="text-xs text-apple-blue hover:underline">
-            {leg.urlLabel} ↗
-          </a>
-        )}
+        <div className="flex items-center gap-2">
+          {leg.price != null && (
+            <span className="text-xs font-semibold text-apple-text">
+              {Math.round(leg.price).toLocaleString()}원
+            </span>
+          )}
+          {leg.url && (
+            <a href={leg.url} target="_blank" rel="noopener noreferrer"
+              className="text-xs text-apple-blue hover:underline">
+              {leg.urlLabel} ↗
+            </a>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -143,8 +155,8 @@ function LegRow({ leg, isMixed, index }: {
 
 function DealCard({ deal, rank }: { deal: Deal; rank: number }) {
   const legs = [
-    { airline: deal.out_airline, dep: deal.out_dep_time, arr: deal.out_arr_time, dur: deal.out_duration_min, stops: deal.out_stops, from: deal.origin, to: (deal.out_arr_airport && deal.out_arr_airport !== deal.origin) ? deal.out_arr_airport : deal.destination, date: deal.departure_date, url: deal.out_url, urlLabel: deal.out_url?.includes("/booking?") ? "출발편 예약" : "출발편 검색" },
-    { airline: deal.in_airline, dep: deal.in_dep_time, arr: deal.in_arr_time, dur: deal.in_duration_min, stops: deal.in_stops, from: deal.in_dep_airport || deal.destination, to: deal.origin, date: deal.return_date, url: deal.in_url, urlLabel: deal.in_url?.includes("/booking?") ? "복귀편 예약" : "복귀편 검색" },
+    { airline: deal.out_airline, dep: deal.out_dep_time, arr: deal.out_arr_time, dur: deal.out_duration_min, stops: deal.out_stops, from: deal.origin, to: (deal.out_arr_airport && deal.out_arr_airport !== deal.origin) ? deal.out_arr_airport : deal.destination, date: deal.departure_date, url: deal.out_url, urlLabel: deal.out_url?.includes("/booking?") ? "출발편 예약" : "출발편 검색", price: deal.out_price },
+    { airline: deal.in_airline, dep: deal.in_dep_time, arr: deal.in_arr_time, dur: deal.in_duration_min, stops: deal.in_stops, from: deal.in_dep_airport || deal.destination, to: deal.origin, date: deal.return_date, url: deal.in_url, urlLabel: deal.in_url?.includes("/booking?") ? "복귀편 예약" : "복귀편 검색", price: deal.in_price },
   ];
 
   return (
