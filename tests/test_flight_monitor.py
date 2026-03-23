@@ -8,11 +8,12 @@ import sys
 import pytest
 import psycopg2.extras
 from datetime import datetime, timedelta
-from flight_monitor.config import KST
 from unittest.mock import patch
 
 # 프로젝트 루트를 sys.path에 추가
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
+from flight_monitor.config import KST
 
 import flight_monitor.storage as storage
 from flight_monitor.collector_lcc import (
