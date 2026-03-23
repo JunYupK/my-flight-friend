@@ -21,7 +21,8 @@ export default function RunControl() {
   }, [output]);
 
   function connect() {
-    const ws = new WebSocket(`ws://${location.host}/ws/run`);
+    const proto = location.protocol === "https:" ? "wss" : "ws";
+    const ws = new WebSocket(`${proto}://${location.host}/ws/run`);
     wsRef.current = ws;
 
     ws.onmessage = ({ data }: MessageEvent<string>) => {
