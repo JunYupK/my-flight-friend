@@ -27,6 +27,20 @@ def main():
     init_db()
 
     run_id = start_collection_run()
+
+    try:
+        _collect_and_alert(run_id)
+    except Exception:
+        # main 내부 예상치 못한 에러 → running 상태 run을 error로 마무리
+        finish_collection_run(
+            run_id,
+            status="error",
+            error_log=f"FATAL in main():\n{traceback.format_exc()}",
+        )
+        raise
+
+
+def _collect_and_alert(run_id: int):
     errors: list[str] = []
     alerts_sent = 0
 
@@ -106,16 +120,6 @@ if __name__ == "__main__":
     except Exception:
         print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] [FATAL] 예상치 못한 오류:")
         traceback.print_exc()
-        try:
-            # DB가 초기화된 상태라면 에러 기록 시도
-            run_id = start_collection_run()
-            finish_collection_run(
-                run_id,
-                status="error",
-                error_log=f"FATAL: {traceback.format_exc()}",
-            )
-        except Exception:
-            pass
         try:
             send_email(
                 subject="[항공권 모니터] 크롤링 크래시 발생",
