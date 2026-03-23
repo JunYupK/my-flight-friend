@@ -3,6 +3,7 @@
 import os
 from contextlib import contextmanager
 from datetime import datetime, timedelta
+from flight_monitor.config import KST
 
 import psycopg2
 import psycopg2.extras
@@ -18,6 +19,7 @@ _DSN = os.environ["DATABASE_URL"]
 @contextmanager
 def get_conn():
     conn = psycopg2.connect(_DSN)
+    conn.cursor().execute("SET TIME ZONE 'Asia/Seoul'")
     try:
         yield conn
         conn.commit()
@@ -248,7 +250,9 @@ def should_notify(offer: dict) -> bool:
 
     last_price   = row["last_price"]
     last_sent_at = datetime.fromisoformat(row["last_sent_at"])
-    now          = datetime.now()
+    if last_sent_at.tzinfo is None:
+        last_sent_at = last_sent_at.replace(tzinfo=KST)
+    now          = datetime.now(KST)
 
     cooldown_passed = (now - last_sent_at) >= timedelta(hours=cooldown_h)
     price_dropped   = offer["price"] <= last_price - drop_krw
@@ -258,7 +262,7 @@ def should_notify(offer: dict) -> bool:
 
 def record_alert(offer: dict):
     key = make_alert_key(offer)
-    now_str = datetime.now().isoformat()
+    now_str = datetime.now(KST).isoformat()
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute("""
@@ -274,7 +278,8 @@ def start_collection_run() -> int:
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute(
-            "INSERT INTO collection_runs (started_at) VALUES (NOW()) RETURNING id",
+            "INSERT INTO collection_runs (started_at) VALUES (%s) RETURNING id",
+            (datetime.now(KST),),
         )
         return cur.fetchone()[0]
 
@@ -293,16 +298,16 @@ def finish_collection_run(
         cur = conn.cursor()
         cur.execute("""
             UPDATE collection_runs
-            SET finished_at  = NOW(),
+            SET finished_at  = %s,
                 status       = %s,
                 fsc_count    = %s,
                 google_count = %s,
                 total_saved  = %s,
                 alerts_sent  = %s,
                 error_log    = %s,
-                duration_sec = EXTRACT(EPOCH FROM (NOW() - started_at))
+                duration_sec = EXTRACT(EPOCH FROM (%s::timestamptz - started_at))
             WHERE id = %s
-        """, (status, fsc_count, google_count, total_saved, alerts_sent, error_log, run_id))
+        """, (datetime.now(KST), status, fsc_count, google_count, total_saved, alerts_sent, error_log, datetime.now(KST), run_id))
 
 
 def get_recent_runs(limit: int = 20) -> list[dict]:

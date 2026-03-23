@@ -3,7 +3,7 @@
 from amadeus import Client, ResponseError
 from datetime import datetime, timedelta
 import os
-from .config import ORIGIN, JAPAN_AIRPORTS, SEARCH_CONFIG
+from .config import ORIGIN, JAPAN_AIRPORTS, SEARCH_CONFIG, KST
 
 
 def _get_amadeus_client() -> Client:
@@ -20,7 +20,7 @@ def fetch_fsc_offers() -> list[dict]:
         return []
     amadeus = _get_amadeus_client()
     results = []
-    today = datetime.now()
+    today = datetime.now(KST)
     request_count = 0
     max_requests = SEARCH_CONFIG["amadeus_max_requests_per_run"]
 
@@ -74,7 +74,7 @@ def fetch_fsc_offers() -> list[dict]:
                         "is_mixed_airline": False,
                         "out_url": None,
                         "in_url": None,
-                        "checked_at": datetime.now().isoformat(),
+                        "checked_at": datetime.now(KST).isoformat(),
                     })
 
                 except ResponseError as e:

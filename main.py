@@ -4,6 +4,7 @@ sys.stderr.reconfigure(encoding="utf-8")
 
 import traceback
 from datetime import datetime
+from flight_monitor.config import KST
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -19,7 +20,7 @@ from flight_monitor.config                   import SEARCH_CONFIG
 
 
 def _ts() -> str:
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def main():
@@ -118,7 +119,7 @@ if __name__ == "__main__":
     try:
         main()
     except Exception:
-        print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] [FATAL] 예상치 못한 오류:")
+        print(f"[{datetime.now(KST):%Y-%m-%d %H:%M:%S}] [FATAL] 예상치 못한 오류:")
         traceback.print_exc()
         try:
             send_email(

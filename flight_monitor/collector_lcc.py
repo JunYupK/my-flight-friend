@@ -5,7 +5,7 @@ import time
 import calendar
 from collections import defaultdict
 from datetime import datetime, timedelta
-from .config import ORIGIN, JAPAN_AIRPORTS, SEARCH_CONFIG
+from .config import ORIGIN, JAPAN_AIRPORTS, SEARCH_CONFIG, KST
 
 GRAPHQL_URL = "https://airline-api.naver.com/graphql"
 NLOG_URL    = "https://nlog.naver.com/n"
@@ -53,7 +53,7 @@ def _get_session() -> requests.Session:
                 "page_url": "https://flight.naver.com/",
                 "type": "pageview",
                 "page_sti": "search_flights",
-                "evt_ts": int(datetime.now().timestamp() * 1000),
+                "evt_ts": int(datetime.now(KST).timestamp() * 1000),
             }]
         },
     )
@@ -157,7 +157,7 @@ def _combine_roundtrips(out_flights, in_flights) -> list[dict]:
                         "is_mixed_airline": is_mixed,
                         "out_price": out["price"],
                         "in_price": ret["price"],
-                        "checked_at": datetime.now().isoformat(),
+                        "checked_at": datetime.now(KST).isoformat(),
                     })
 
     results.sort(key=lambda x: x["price"])

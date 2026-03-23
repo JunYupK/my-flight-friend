@@ -17,6 +17,7 @@ import re
 import calendar
 from collections import defaultdict
 from datetime import datetime, timedelta
+from flight_monitor.config import KST
 from html import unescape
 from typing import TYPE_CHECKING
 
@@ -444,7 +445,7 @@ def _combine_roundtrips(
                         "in_url":           ret.get("booking_url") or ret.get("search_url"),
                         "out_price":        out["price"],
                         "in_price":         ret["price"],
-                        "checked_at":       datetime.now().isoformat(),
+                        "checked_at":       datetime.now(KST).isoformat(),
                     })
 
     results.sort(key=lambda x: x["price"])

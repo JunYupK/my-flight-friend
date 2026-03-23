@@ -1,5 +1,7 @@
 # flight_monitor/config.py
-from datetime import date, timedelta
+from datetime import date, timedelta, timezone
+
+KST = timezone(timedelta(hours=9))
 
 ORIGIN = "ICN"
 
