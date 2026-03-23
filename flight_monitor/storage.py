@@ -125,6 +125,21 @@ def init_db():
             )
         """)
 
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS collection_runs (
+                id             SERIAL PRIMARY KEY,
+                started_at     TIMESTAMPTZ NOT NULL,
+                finished_at    TIMESTAMPTZ,
+                status         TEXT NOT NULL DEFAULT 'running',
+                fsc_count      INTEGER DEFAULT 0,
+                google_count   INTEGER DEFAULT 0,
+                total_saved    INTEGER DEFAULT 0,
+                alerts_sent    INTEGER DEFAULT 0,
+                error_log      TEXT,
+                duration_sec   REAL
+            )
+        """)
+
         cur.execute("DROP VIEW IF EXISTS v_best_observed")
         cur.execute("""
             CREATE VIEW v_best_observed AS
@@ -253,3 +268,60 @@ def record_alert(offer: dict):
                 last_price   = EXCLUDED.last_price,
                 last_sent_at = EXCLUDED.last_sent_at
         """, (key, offer["price"], now_str))
+
+
+def start_collection_run() -> int:
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO collection_runs (started_at) VALUES (NOW()) RETURNING id",
+        )
+        return cur.fetchone()[0]
+
+
+def finish_collection_run(
+    run_id: int,
+    *,
+    status: str,
+    fsc_count: int = 0,
+    google_count: int = 0,
+    total_saved: int = 0,
+    alerts_sent: int = 0,
+    error_log: str | None = None,
+):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE collection_runs
+            SET finished_at  = NOW(),
+                status       = %s,
+                fsc_count    = %s,
+                google_count = %s,
+                total_saved  = %s,
+                alerts_sent  = %s,
+                error_log    = %s,
+                duration_sec = EXTRACT(EPOCH FROM (NOW() - started_at))
+            WHERE id = %s
+        """, (status, fsc_count, google_count, total_saved, alerts_sent, error_log, run_id))
+
+
+def get_recent_runs(limit: int = 20) -> list[dict]:
+    with get_conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("""
+            SELECT id, started_at, finished_at, status,
+                   fsc_count, google_count, total_saved, alerts_sent,
+                   duration_sec, error_log IS NOT NULL AS has_error
+            FROM collection_runs
+            ORDER BY started_at DESC
+            LIMIT %s
+        """, (limit,))
+        return [dict(r) for r in cur.fetchall()]
+
+
+def get_run_detail(run_id: int) -> dict | None:
+    with get_conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("SELECT * FROM collection_runs WHERE id = %s", (run_id,))
+        row = cur.fetchone()
+        return dict(row) if row else None

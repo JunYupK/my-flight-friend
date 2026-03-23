@@ -8,6 +8,7 @@ import Results from "./components/Results";
 import Trends from "./components/Trends";
 import Landing from "./components/Landing";
 import RunControl from "./components/RunControl";
+import Monitor from "./components/Monitor";
 
 const NAV_ITEMS = [
   { path: "/deals", label: "최저가" },
@@ -75,14 +76,14 @@ function Layout() {
               </nav>
             </div>
 
-            {/* Right: settings link or save button */}
-            <div className="flex items-center gap-2">
-              {saveMsg && (
-                <span className={`text-xs ${saveMsg.includes("실패") ? "text-apple-red" : "text-apple-green"}`}>
-                  {saveMsg}
-                </span>
-              )}
-              {isSettings ? (
+            {/* Right: save button (settings page only) */}
+            {isSettings && (
+              <div className="flex items-center gap-2">
+                {saveMsg && (
+                  <span className={`text-xs ${saveMsg.includes("실패") ? "text-apple-red" : "text-apple-green"}`}>
+                    {saveMsg}
+                  </span>
+                )}
                 <button
                   onClick={handleSave}
                   disabled={saving || !config}
@@ -90,23 +91,8 @@ function Layout() {
                 >
                   {saving ? "저장 중…" : "설정 저장"}
                 </button>
-              ) : (
-                <Link
-                  to="/settings"
-                  className={`p-1.5 rounded-full transition-all duration-200 ${
-                    isSettings
-                      ? "bg-apple-text text-white"
-                      : "text-apple-secondary hover:text-apple-text hover:bg-black/5"
-                  }`}
-                  aria-label="설정"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="12" r="3" />
-                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-                  </svg>
-                </Link>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </div>
       </header>
@@ -116,6 +102,7 @@ function Layout() {
           <Route path="/" element={<Landing />} />
           <Route path="/deals" element={<Results />} />
           <Route path="/trends" element={<Trends />} />
+          <Route path="/monitor" element={<Monitor />} />
           <Route
             path="/settings"
             element={
