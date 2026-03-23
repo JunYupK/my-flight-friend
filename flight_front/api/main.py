@@ -19,7 +19,7 @@ from pydantic import BaseModel
 import psycopg2.extras
 
 from flight_monitor.config_db import read_config, write_config
-from flight_monitor.storage import init_db, get_conn, get_airports
+from flight_monitor.storage import init_db, get_conn, get_airports, get_recent_runs, get_run_detail
 
 from . import run_state
 
@@ -157,6 +157,21 @@ async def ws_run(websocket: WebSocket):
         pass
     finally:
         run_state.unsubscribe(on_message)
+
+
+# ── Collection Runs ───────────────────────────────────────
+
+@app.get("/api/collection-runs")
+def list_collection_runs(limit: int = Query(20, ge=1, le=100)):
+    return get_recent_runs(limit)
+
+
+@app.get("/api/collection-runs/{run_id}")
+def get_collection_run(run_id: int):
+    run = get_run_detail(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return run
 
 
 # ── Results ───────────────────────────────────────────────

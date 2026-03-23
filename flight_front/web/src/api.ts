@@ -1,4 +1,4 @@
-import type { ConfigData, RunStatus, DestinationGroup, Airport, PriceHistoryResponse } from "./types";
+import type { ConfigData, RunStatus, DestinationGroup, Airport, PriceHistoryResponse, CollectionRun } from "./types";
 
 export async function fetchConfig(): Promise<ConfigData> {
   const res = await fetch("/api/config");
@@ -81,5 +81,17 @@ export async function fetchPriceHistory(params: {
   if (params.return_date) qs.set("return_date", params.return_date);
   const res = await fetch(`/api/price-history?${qs}`);
   if (!res.ok) throw new Error("Failed to fetch price history");
+  return res.json();
+}
+
+export async function fetchCollectionRuns(limit = 20): Promise<CollectionRun[]> {
+  const res = await fetch(`/api/collection-runs?limit=${limit}`);
+  if (!res.ok) throw new Error("Failed to fetch collection runs");
+  return res.json();
+}
+
+export async function fetchRunDetail(id: number): Promise<CollectionRun> {
+  const res = await fetch(`/api/collection-runs/${id}`);
+  if (!res.ok) throw new Error("Failed to fetch run detail");
   return res.json();
 }

@@ -13,6 +13,8 @@ from unittest.mock import patch
 # 프로젝트 루트를 sys.path에 추가
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
+from flight_monitor.config import KST
+
 import flight_monitor.storage as storage
 from flight_monitor.collector_lcc import (
     _index_topk_by_date,
@@ -49,7 +51,7 @@ def _make_offer(**kwargs) -> dict:
         "out_airline": "KE",
         "in_airline": "KE",
         "is_mixed_airline": False,
-        "checked_at": datetime.now().isoformat(),
+        "checked_at": datetime.now(KST).isoformat(),
     }
     defaults.update(kwargs)
     return defaults
@@ -196,7 +198,7 @@ class TestShouldNotify:
         offer = _make_offer(price=250000)
         storage.record_alert(offer)
         # last_sent_at을 13시간 전으로 조작 (쿨다운 12시간 초과)
-        past = (datetime.now() - timedelta(hours=13)).isoformat()
+        past = (datetime.now(KST) - timedelta(hours=13)).isoformat()
         key = storage.make_alert_key(offer)
         with storage.get_conn() as conn:
             cur = conn.cursor()

@@ -83,3 +83,17 @@ export interface PriceHistoryResponse {
   mode: "calendar" | "timeline";
   data: PriceHistoryPoint[];
 }
+
+export interface CollectionRun {
+  id: number;
+  started_at: string;
+  finished_at: string | null;
+  status: "running" | "success" | "partial" | "error";
+  fsc_count: number;
+  google_count: number;
+  total_saved: number;
+  alerts_sent: number;
+  has_error: boolean;
+  duration_sec: number | null;
+  error_log?: string | null;
+}

@@ -6,7 +6,7 @@ import calendar
 import requests
 from collections import defaultdict
 from datetime import datetime, timedelta
-from .config import ORIGIN, JAPAN_AIRPORTS, SEARCH_CONFIG
+from .config import ORIGIN, JAPAN_AIRPORTS, SEARCH_CONFIG, KST
 
 RAPIDAPI_HOST = "skyscanner-skyscanner-flight-search-v1.p.rapidapi.com"
 BROWSE_QUOTES_URL = (
@@ -90,7 +90,7 @@ def _combine_roundtrips(out_flights, in_flights, airport_code, airport_name):
                         "out_airline": out["airline"],
                         "in_airline": ret["airline"],
                         "is_mixed_airline": is_mixed,
-                        "checked_at": datetime.now().isoformat(),
+                        "checked_at": datetime.now(KST).isoformat(),
                         "out_url": None,
                         "in_url": None,
                         "out_price": out["price"],

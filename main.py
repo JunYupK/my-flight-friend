@@ -4,6 +4,7 @@ sys.stderr.reconfigure(encoding="utf-8")
 
 import traceback
 from datetime import datetime
+from flight_monitor.config import KST
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -13,27 +14,43 @@ apply_db_config()
 
 from flight_monitor.collector_amadeus        import fetch_fsc_offers
 from flight_monitor.collector_google_flights import fetch_google_flights_offers
-from flight_monitor.storage                  import init_db, save_prices, should_notify, record_alert
+from flight_monitor.storage                  import init_db, save_prices, should_notify, record_alert, start_collection_run, finish_collection_run
 from flight_monitor.notifier                 import notify, send_email
 from flight_monitor.config                   import SEARCH_CONFIG
 
 
 def _ts() -> str:
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def main():
     print(f"[{_ts()}] === 일본 항공권 최저가 탐색 시작 ===")
     init_db()
 
+    run_id = start_collection_run()
+
+    try:
+        _collect_and_alert(run_id)
+    except Exception:
+        # main 내부 예상치 못한 에러 → running 상태 run을 error로 마무리
+        finish_collection_run(
+            run_id,
+            status="error",
+            error_log=f"FATAL in main():\n{traceback.format_exc()}",
+        )
+        raise
+
+
+def _collect_and_alert(run_id: int):
     errors: list[str] = []
+    alerts_sent = 0
 
     # --- FSC 수집 ---
     try:
         fsc_offers = fetch_fsc_offers()
     except Exception as e:
         fsc_offers = []
-        errors.append(f"FSC 수집 에러: {e}")
+        errors.append(f"FSC 수집 에러: {e}\n{traceback.format_exc()}")
         print(f"[{_ts()}] [ERROR] FSC 수집 실패: {e}")
         traceback.print_exc()
 
@@ -46,7 +63,7 @@ def main():
         gf_offers = fetch_google_flights_offers(on_route_done=save_prices)
     except Exception as e:
         gf_offers = []
-        errors.append(f"GoogleFlights 수집 에러: {e}")
+        errors.append(f"GoogleFlights 수집 에러: {e}\n{traceback.format_exc()}")
         print(f"[{_ts()}] [ERROR] GoogleFlights 수집 실패: {e}")
         traceback.print_exc()
 
@@ -73,7 +90,27 @@ def main():
         if should_notify(offer):
             notify(offer, target_price=target)
             record_alert(offer)
+            alerts_sent += 1
             print(f"[{_ts()}] [알림] {offer['destination']} {offer['departure_date']}~{offer['return_date']} → {offer['price']:,}원")
+
+    # --- 실행 결과 기록 ---
+    total_saved = len(fsc_offers) + len(gf_offers)
+    if errors:
+        status = "partial" if total_saved > 0 else "error"
+        error_log = "\n---\n".join(errors)
+    else:
+        status = "success"
+        error_log = None
+
+    finish_collection_run(
+        run_id,
+        status=status,
+        fsc_count=len(fsc_offers),
+        google_count=len(gf_offers),
+        total_saved=total_saved,
+        alerts_sent=alerts_sent,
+        error_log=error_log,
+    )
 
     print(f"[{_ts()}] === 탐색 완료 ===")
 
@@ -82,7 +119,7 @@ if __name__ == "__main__":
     try:
         main()
     except Exception:
-        print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] [FATAL] 예상치 못한 오류:")
+        print(f"[{datetime.now(KST):%Y-%m-%d %H:%M:%S}] [FATAL] 예상치 못한 오류:")
         traceback.print_exc()
         try:
             send_email(

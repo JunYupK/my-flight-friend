@@ -3,6 +3,7 @@
 import os
 from contextlib import contextmanager
 from datetime import datetime, timedelta
+from flight_monitor.config import KST
 
 import psycopg2
 import psycopg2.extras
@@ -18,6 +19,7 @@ _DSN = os.environ["DATABASE_URL"]
 @contextmanager
 def get_conn():
     conn = psycopg2.connect(_DSN)
+    conn.cursor().execute("SET TIME ZONE 'Asia/Seoul'")
     try:
         yield conn
         conn.commit()
@@ -122,6 +124,21 @@ def init_db():
                 name    TEXT NOT NULL,
                 tfs_out TEXT,
                 tfs_in  TEXT
+            )
+        """)
+
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS collection_runs (
+                id             SERIAL PRIMARY KEY,
+                started_at     TIMESTAMPTZ NOT NULL,
+                finished_at    TIMESTAMPTZ,
+                status         TEXT NOT NULL DEFAULT 'running',
+                fsc_count      INTEGER DEFAULT 0,
+                google_count   INTEGER DEFAULT 0,
+                total_saved    INTEGER DEFAULT 0,
+                alerts_sent    INTEGER DEFAULT 0,
+                error_log      TEXT,
+                duration_sec   REAL
             )
         """)
 
@@ -233,7 +250,9 @@ def should_notify(offer: dict) -> bool:
 
     last_price   = row["last_price"]
     last_sent_at = datetime.fromisoformat(row["last_sent_at"])
-    now          = datetime.now()
+    if last_sent_at.tzinfo is None:
+        last_sent_at = last_sent_at.replace(tzinfo=KST)
+    now          = datetime.now(KST)
 
     cooldown_passed = (now - last_sent_at) >= timedelta(hours=cooldown_h)
     price_dropped   = offer["price"] <= last_price - drop_krw
@@ -243,7 +262,7 @@ def should_notify(offer: dict) -> bool:
 
 def record_alert(offer: dict):
     key = make_alert_key(offer)
-    now_str = datetime.now().isoformat()
+    now_str = datetime.now(KST).isoformat()
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute("""
@@ -253,3 +272,61 @@ def record_alert(offer: dict):
                 last_price   = EXCLUDED.last_price,
                 last_sent_at = EXCLUDED.last_sent_at
         """, (key, offer["price"], now_str))
+
+
+def start_collection_run() -> int:
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO collection_runs (started_at) VALUES (%s) RETURNING id",
+            (datetime.now(KST),),
+        )
+        return cur.fetchone()[0]
+
+
+def finish_collection_run(
+    run_id: int,
+    *,
+    status: str,
+    fsc_count: int = 0,
+    google_count: int = 0,
+    total_saved: int = 0,
+    alerts_sent: int = 0,
+    error_log: str | None = None,
+):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE collection_runs
+            SET finished_at  = %s,
+                status       = %s,
+                fsc_count    = %s,
+                google_count = %s,
+                total_saved  = %s,
+                alerts_sent  = %s,
+                error_log    = %s,
+                duration_sec = EXTRACT(EPOCH FROM (%s::timestamptz - started_at))
+            WHERE id = %s
+        """, (datetime.now(KST), status, fsc_count, google_count, total_saved, alerts_sent, error_log, datetime.now(KST), run_id))
+
+
+def get_recent_runs(limit: int = 20) -> list[dict]:
+    with get_conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("""
+            SELECT id, started_at, finished_at, status,
+                   fsc_count, google_count, total_saved, alerts_sent,
+                   duration_sec, error_log IS NOT NULL AS has_error
+            FROM collection_runs
+            ORDER BY started_at DESC
+            LIMIT %s
+        """, (limit,))
+        return [dict(r) for r in cur.fetchall()]
+
+
+def get_run_detail(run_id: int) -> dict | None:
+    with get_conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("SELECT * FROM collection_runs WHERE id = %s", (run_id,))
+        row = cur.fetchone()
+        return dict(row) if row else None
