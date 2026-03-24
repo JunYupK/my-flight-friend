@@ -43,7 +43,6 @@ def notify(offer: dict, target_price: int):
     ret_date = offer["return_date"]
     stay     = offer["stay_nights"]
     price    = int(offer["price"])
-    source   = offer["source"]
 
     if offer["is_mixed_airline"]:
         airline_info = (

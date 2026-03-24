@@ -18,7 +18,9 @@ def apply_db_config():
             cur.execute("SELECT value FROM app_config WHERE key = 'search_config'")
             row = cur.fetchone()
             if row:
-                config_mod.SEARCH_CONFIG.update(row[0])
+                # 현재 SEARCH_CONFIG에 존재하는 키만 반영 (구 키 무시)
+                valid = {k: v for k, v in row[0].items() if k in config_mod.SEARCH_CONFIG}
+                config_mod.SEARCH_CONFIG.update(valid)
 
             # airports 테이블 → JAPAN_AIRPORTS, TFS_TEMPLATES
             cur.execute("SELECT code, name, tfs_out, tfs_in FROM airports")
