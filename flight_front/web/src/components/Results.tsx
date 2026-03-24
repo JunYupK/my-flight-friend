@@ -7,10 +7,13 @@ function formatDuration(min: number | null) {
   return `${Math.floor(min / 60)}h ${min % 60}m`;
 }
 
-/** "2026-05-01" → "05.01" */
+const DAY_NAMES = ["일", "월", "화", "수", "목", "금", "토"];
+
+/** "2026-05-01" → "05.01(목)" */
 function formatDate(d: string) {
   const parts = d.split("-");
-  return `${parts[1]}.${parts[2]}`;
+  const dt = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+  return `${parts[1]}.${parts[2]}(${DAY_NAMES[dt.getDay()]})`;
 }
 
 /** "AM 10:30" / "PM 3:10" → "10:30" / "15:10" */
@@ -201,7 +204,8 @@ function getMonthOptions(): string[] {
 }
 
 function formatMonth(m: string) {
-  return `${parseInt(m.split("-")[1])}월`;
+  const [year, month] = m.split("-");
+  return `${year}년 ${parseInt(month)}월`;
 }
 
 function MonthFilter({ activeMonth, onChange }: { activeMonth: string; onChange: (m: string) => void }) {
