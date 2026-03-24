@@ -43,7 +43,7 @@ def notify(offer: dict, target_price: int):
     ret_date = offer["return_date"]
     stay     = offer["stay_nights"]
     price    = int(offer["price"])
-    source   = "FSC" if offer["source"] == "amadeus" else "LCC"
+    source   = offer["source"]
 
     if offer["is_mixed_airline"]:
         airline_info = (
@@ -54,7 +54,7 @@ def notify(offer: dict, target_price: int):
         airline_info = f"{offer['out_airline']} (동일 항공사 왕복)"
 
     msg = (
-        f"✈️ [{source}] 왕복 최저가 발견!\n"
+        f"✈️ 왕복 최저가 발견!\n"
         f"📍 인천 → {dest}\n"
         f"📅 출발: {dep_date}  귀국: {ret_date} ({stay}박)\n"
         f"💰 왕복 총액: {price:,}원\n"

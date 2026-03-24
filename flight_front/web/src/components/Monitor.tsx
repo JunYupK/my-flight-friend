@@ -87,7 +87,6 @@ export default function Monitor() {
                 <tr className="border-b border-black/5 text-apple-secondary">
                   <th className="text-left py-2 px-2 font-medium">시간</th>
                   <th className="text-left py-2 px-2 font-medium">상태</th>
-                  <th className="text-right py-2 px-2 font-medium">FSC</th>
                   <th className="text-right py-2 px-2 font-medium">GF</th>
                   <th className="text-right py-2 px-2 font-medium">총건수</th>
                   <th className="text-right py-2 px-2 font-medium">알림</th>
@@ -114,9 +113,6 @@ export default function Monitor() {
                           {run.has_error && " ⚠"}
                         </td>
                         <td className="py-2 px-2 text-right text-apple-text">
-                          {run.fsc_count}
-                        </td>
-                        <td className="py-2 px-2 text-right text-apple-text">
                           {run.google_count}
                         </td>
                         <td className="py-2 px-2 text-right text-apple-text font-medium">
@@ -131,7 +127,7 @@ export default function Monitor() {
                       </tr>
                       {isExpanded && (
                         <tr>
-                          <td colSpan={7} className="p-0">
+                          <td colSpan={6} className="p-0">
                             <div className="px-3 py-3 bg-apple-bg">
                               {run.has_error ? (
                                 logLoading ? (

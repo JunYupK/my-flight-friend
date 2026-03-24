@@ -1,6 +1,6 @@
 """
-테스트: storage, collector_lcc 내부 함수
-외부 API(Amadeus, Naver)는 호출하지 않음. PostgreSQL DB 사용 (TRUNCATE로 격리).
+테스트: storage 모듈
+외부 API는 호출하지 않음. PostgreSQL DB 사용 (TRUNCATE로 격리).
 """
 
 import os
@@ -8,7 +8,6 @@ import sys
 import pytest
 import psycopg2.extras
 from datetime import datetime, timedelta
-from unittest.mock import patch
 
 # 프로젝트 루트를 sys.path에 추가
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -16,10 +15,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from flight_monitor.config import KST
 
 import flight_monitor.storage as storage
-from flight_monitor.collector_lcc import (
-    _index_topk_by_date,
-    _combine_roundtrips,
-)
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -38,8 +33,8 @@ def clean_db():
 def _make_offer(**kwargs) -> dict:
     """테스트용 offer 기본값"""
     defaults = {
-        "source": "amadeus",
-        "trip_type": "round_trip",
+        "source": "google_flights",
+        "trip_type": "oneway_combo",
         "origin": "ICN",
         "destination": "OSA",
         "destination_name": "오사카 (간사이/이타미)",
@@ -139,7 +134,7 @@ class TestMakeAlertKey:
 
     def test_different_source_same_key(self):
         """source가 달라도 동일 키 — 중복 알림 방지"""
-        a = _make_offer(source="amadeus")
+        a = _make_offer(source="google_flights")
         b = _make_offer(source="naver_graphql")
         assert storage.make_alert_key(a) == storage.make_alert_key(b)
 
@@ -221,102 +216,3 @@ class TestShouldNotify:
             )
             row = cur.fetchone()
         assert row["last_price"] == 200000
-
-
-# ---------------------------------------------------------------------------
-# collector_lcc: _index_topk_by_date
-# ---------------------------------------------------------------------------
-
-class TestIndexTopkByDate:
-    def _flight(self, date, price, airline="KE"):
-        return {"date": date, "airline": airline, "price": price, "dep_time": "", "arr_time": ""}
-
-    def test_returns_sorted_topk(self):
-        flights = [
-            self._flight("2026-05-01", 50000),
-            self._flight("2026-05-01", 30000),
-            self._flight("2026-05-01", 40000),
-            self._flight("2026-05-01", 20000),
-            self._flight("2026-05-01", 10000),
-            self._flight("2026-05-01", 60000),  # 6번째 — k=5이면 제외
-        ]
-        result = _index_topk_by_date(flights, k=5)
-        assert len(result["2026-05-01"]) == 5
-        prices = [f["price"] for f in result["2026-05-01"]]
-        assert prices == sorted(prices)
-        assert 60000 not in prices
-
-    def test_groups_by_date(self):
-        flights = [
-            self._flight("2026-05-01", 10000),
-            self._flight("2026-05-02", 20000),
-            self._flight("2026-05-02", 15000),
-        ]
-        result = _index_topk_by_date(flights, k=5)
-        assert "2026-05-01" in result
-        assert "2026-05-02" in result
-        assert len(result["2026-05-01"]) == 1
-        assert len(result["2026-05-02"]) == 2
-
-    def test_empty_input(self):
-        assert _index_topk_by_date([], k=5) == {}
-
-
-# ---------------------------------------------------------------------------
-# collector_lcc: _combine_roundtrips
-# ---------------------------------------------------------------------------
-
-class TestCombineRoundtrips:
-    def _flight(self, date, price, airline="KE"):
-        return {"date": date, "airline": airline, "price": price, "dep_time": "", "arr_time": ""}
-
-    def test_basic_combination(self):
-        out = [self._flight("2026-05-01", 100000)]
-        # stay_durations = [3, 5, 7] → ret_date = 05-04, 05-06, 05-08
-        ret = [self._flight("2026-05-04", 90000)]  # stay 3박
-        results = _combine_roundtrips(out, ret)
-        assert len(results) == 1
-        assert results[0]["price"] == 190000
-        assert results[0]["stay_nights"] == 3
-
-    def test_no_matching_return(self):
-        out = [self._flight("2026-05-01", 100000)]
-        ret = [self._flight("2026-05-10", 90000)]  # 어떤 stay도 매칭 안 됨
-        results = _combine_roundtrips(out, ret)
-        assert results == []
-
-    def test_mixed_airline_included_when_allowed(self):
-        out = [self._flight("2026-05-01", 100000, airline="KE")]
-        ret = [self._flight("2026-05-06", 90000, airline="OZ")]  # stay 5박
-        results = _combine_roundtrips(out, ret)
-        assert any(r["is_mixed_airline"] for r in results)
-
-    def test_mixed_airline_blocked_when_not_allowed(self):
-        with patch("flight_monitor.collector_lcc.SEARCH_CONFIG", {
-            **__import__("flight_monitor.config", fromlist=["SEARCH_CONFIG"]).SEARCH_CONFIG,
-            "allow_mixed_airline": False,
-            "lcc_topk_per_date": 5,
-        }):
-            out = [self._flight("2026-05-01", 100000, airline="KE")]
-            ret = [self._flight("2026-05-06", 90000, airline="OZ")]
-            results = _combine_roundtrips(out, ret)
-            assert all(not r["is_mixed_airline"] for r in results)
-
-    def test_result_sorted_by_price(self):
-        out = [
-            self._flight("2026-05-01", 200000),
-            self._flight("2026-05-02", 100000),
-        ]
-        ret = [
-            self._flight("2026-05-04", 100000),  # 05-01 + 3박
-            self._flight("2026-05-05", 80000),   # 05-02 + 3박
-        ]
-        results = _combine_roundtrips(out, ret)
-        prices = [r["price"] for r in results]
-        assert prices == sorted(prices)
-
-    def test_source_is_naver_graphql(self):
-        out = [self._flight("2026-05-01", 100000)]
-        ret = [self._flight("2026-05-04", 90000)]
-        results = _combine_roundtrips(out, ret)
-        assert all(r["source"] == "naver_graphql" for r in results)

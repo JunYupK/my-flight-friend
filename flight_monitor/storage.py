@@ -133,7 +133,6 @@ def init_db():
                 started_at     TIMESTAMPTZ NOT NULL,
                 finished_at    TIMESTAMPTZ,
                 status         TEXT NOT NULL DEFAULT 'running',
-                fsc_count      INTEGER DEFAULT 0,
                 google_count   INTEGER DEFAULT 0,
                 total_saved    INTEGER DEFAULT 0,
                 alerts_sent    INTEGER DEFAULT 0,
@@ -141,6 +140,15 @@ def init_db():
                 duration_sec   REAL
             )
         """)
+
+        # 기존 테이블에서 fsc_count 컬럼 제거 (있을 때만)
+        cur.execute("SAVEPOINT pre_drop_fsc")
+        try:
+            cur.execute("ALTER TABLE collection_runs DROP COLUMN fsc_count")
+        except Exception:
+            cur.execute("ROLLBACK TO SAVEPOINT pre_drop_fsc")
+        else:
+            cur.execute("RELEASE SAVEPOINT pre_drop_fsc")
 
         cur.execute("DROP VIEW IF EXISTS v_best_observed")
         cur.execute("""
@@ -288,7 +296,6 @@ def finish_collection_run(
     run_id: int,
     *,
     status: str,
-    fsc_count: int = 0,
     google_count: int = 0,
     total_saved: int = 0,
     alerts_sent: int = 0,
@@ -300,14 +307,13 @@ def finish_collection_run(
             UPDATE collection_runs
             SET finished_at  = %s,
                 status       = %s,
-                fsc_count    = %s,
                 google_count = %s,
                 total_saved  = %s,
                 alerts_sent  = %s,
                 error_log    = %s,
                 duration_sec = EXTRACT(EPOCH FROM (%s::timestamptz - started_at))
             WHERE id = %s
-        """, (datetime.now(KST), status, fsc_count, google_count, total_saved, alerts_sent, error_log, datetime.now(KST), run_id))
+        """, (datetime.now(KST), status, google_count, total_saved, alerts_sent, error_log, datetime.now(KST), run_id))
 
 
 def get_recent_runs(limit: int = 20) -> list[dict]:
@@ -315,7 +321,7 @@ def get_recent_runs(limit: int = 20) -> list[dict]:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cur.execute("""
             SELECT id, started_at, finished_at, status,
-                   fsc_count, google_count, total_saved, alerts_sent,
+                   google_count, total_saved, alerts_sent,
                    duration_sec, error_log IS NOT NULL AS has_error
             FROM collection_runs
             ORDER BY started_at DESC
