@@ -7,11 +7,8 @@ export interface SearchConfig {
   alert_realert_drop_krw: number;
   allow_mixed_airline: boolean;
   stay_durations: number[];
-  departure_date_range_days: number;
-  amadeus_max_requests_per_run: number;
-  search_months: string[];
-  lcc_topk_per_date: number;
-  lcc_max_days: number | null;
+  search_range_months: number;
+  topk_per_date: number;
   request_delay: number;
 }
 
@@ -89,7 +86,6 @@ export interface CollectionRun {
   started_at: string;
   finished_at: string | null;
   status: "running" | "success" | "partial" | "error";
-  fsc_count: number;
   google_count: number;
   total_saved: number;
   alerts_sent: number;

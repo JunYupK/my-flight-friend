@@ -14,9 +14,8 @@ import asyncio
 import base64
 import json
 import re
-import calendar
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from flight_monitor.config import KST
 from html import unescape
 from typing import TYPE_CHECKING
@@ -380,7 +379,7 @@ async def _fetch_one_way(
 
     flights.sort(key=lambda x: x["price"])
     enriched = []
-    for f in flights[:SEARCH_CONFIG["lcc_topk_per_date"]]:
+    for f in flights[:SEARCH_CONFIG["topk_per_date"]]:
         booking_url = _build_booking_url(f, dep, arr, date_formatted)
         enriched.append({"date": date_formatted, "search_url": url, "booking_url": booking_url, **f})
     return enriched
@@ -391,7 +390,7 @@ def _combine_roundtrips(
     dep_airport: str, arr_airport: str, arr_name: str,
 ) -> list[dict]:
     """편도 왕/복편 조합으로 왕복 오퍼 생성."""
-    topk = SEARCH_CONFIG["lcc_topk_per_date"]
+    topk = SEARCH_CONFIG["topk_per_date"]
 
     out_idx: dict[str, list] = defaultdict(list)
     in_idx:  dict[str, list] = defaultdict(list)
@@ -458,21 +457,19 @@ _BATCH_SIZE = 5
 async def _fetch_route(
     crawler: AsyncWebCrawler,
     airport_code: str, airport_name: str,
-    year: int, month: int,
+    start_date: date, end_date: date,
 ) -> list[dict]:
-    days_in_month = calendar.monthrange(year, month)[1]
-    max_days = SEARCH_CONFIG.get("lcc_max_days") or days_in_month
+    """start_date~end_date 범위의 편도 항공편을 수집하고 왕복 조합을 반환."""
     delay = SEARCH_CONFIG["request_delay"]
+    topk = SEARCH_CONFIG["topk_per_date"]
 
     # 1) 전체 URL + meta 목록 생성
     urls: list[str] = []
     metas: list[dict] = []
-    topk = SEARCH_CONFIG["lcc_topk_per_date"]
 
-    for day in range(1, min(max_days, days_in_month) + 1):
-        date_str = f"{year}{month:02d}{day:02d}"
-        date_formatted = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
-
+    d = start_date
+    while d <= end_date:
+        date_formatted = d.strftime("%Y-%m-%d")
         for dep, arr, direction in [
             (ORIGIN, airport_code, "out"),
             (airport_code, ORIGIN, "in"),
@@ -482,6 +479,7 @@ async def _fetch_route(
                 continue
             urls.append(url)
             metas.append({"dep": dep, "arr": arr, "date": date_formatted, "direction": direction, "url": url})
+        d += timedelta(days=1)
 
     # 2) BATCH_SIZE 단위로 arun_many() 호출
     config = CrawlerRunConfig(
@@ -551,26 +549,31 @@ async def _fetch_all(on_route_done=None) -> list[dict]:
         print("[GoogleFlights] JAPAN_AIRPORTS 비어 있음 — airports 테이블 확인 필요")
         return []
 
-    if not SEARCH_CONFIG["search_months"]:
-        print("[GoogleFlights] search_months 비어 있음")
-        return []
+    # 오늘부터 search_range_months 개월 뒤까지 수집
+    today = date.today()
+    range_months = SEARCH_CONFIG.get("search_range_months", 12)
+    end_date = date(today.year, today.month, 1) + timedelta(days=32 * range_months)
+    # end_date를 해당 월 말일로 보정
+    end_date = date(end_date.year, end_date.month, 1) - timedelta(days=1)
+    # 마지막 출발일의 복귀편도 수집되도록 stay 최대 박수만큼 연장
+    max_stay = max(SEARCH_CONFIG["stay_durations"])
+    end_date = end_date + timedelta(days=max_stay)
 
     all_results = []
     total_routes = 0
     empty_routes = 0
 
     async with AsyncWebCrawler(config=browser_config) as crawler:
-        for month_str in SEARCH_CONFIG["search_months"]:
-            year, month = map(int, month_str.split("-"))
-            for airport_code, airport_name in JAPAN_AIRPORTS.items():
-                total_routes += 1
-                offers = await _fetch_route(crawler, airport_code, airport_name, year, month)
-                all_results.extend(offers)
-                if on_route_done and offers:
-                    on_route_done(offers)
-                if not offers:
-                    empty_routes += 1
-                print(f"[GoogleFlights] {airport_code} {month_str}: {len(offers)}건")
+        for airport_code, airport_name in JAPAN_AIRPORTS.items():
+            total_routes += 1
+            print(f"[GoogleFlights] {airport_code} 수집 시작 ({today} ~ {end_date})")
+            offers = await _fetch_route(crawler, airport_code, airport_name, today, end_date)
+            all_results.extend(offers)
+            if on_route_done and offers:
+                on_route_done(offers)
+            if not offers:
+                empty_routes += 1
+            print(f"[GoogleFlights] {airport_code}: {len(offers)}건")
 
     if total_routes > 0 and empty_routes == total_routes:
         print(f"[GoogleFlights WARN] 전체 {total_routes}개 노선 모두 0건 — DOM 셀렉터 변경 또는 크롤링 차단 가능성")

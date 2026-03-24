@@ -18,7 +18,9 @@ def apply_db_config():
             cur.execute("SELECT value FROM app_config WHERE key = 'search_config'")
             row = cur.fetchone()
             if row:
-                config_mod.SEARCH_CONFIG.update(row[0])
+                # 현재 SEARCH_CONFIG에 존재하는 키만 반영 (구 키 무시)
+                valid = {k: v for k, v in row[0].items() if k in config_mod.SEARCH_CONFIG}
+                config_mod.SEARCH_CONFIG.update(valid)
 
             # airports 테이블 → JAPAN_AIRPORTS, TFS_TEMPLATES
             cur.execute("SELECT code, name, tfs_out, tfs_in FROM airports")
@@ -51,8 +53,6 @@ def read_config() -> dict:
 
 
 def write_config(search_config: dict):
-    # search_months는 항상 실행 시점 기준으로 동적 생성 — DB에 고정값 저장 방지
-    saved = {k: v for k, v in search_config.items() if k != "search_months"}
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute(
@@ -60,5 +60,5 @@ def write_config(search_config: dict):
             INSERT INTO app_config (key, value) VALUES ('search_config', %s::jsonb)
             ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
             """,
-            (json.dumps(saved),),
+            (json.dumps(search_config),),
         )
