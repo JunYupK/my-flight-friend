@@ -1,4 +1,4 @@
-import type { ConfigData, RunStatus, DestinationGroup, Airport, PriceHistoryResponse, CollectionRun } from "./types";
+import type { ConfigData, RunStatus, DestinationGroup, Airport, PriceHistoryResponse, CollectionRun, Deal } from "./types";
 
 export async function fetchConfig(): Promise<ConfigData> {
   const res = await fetch("/api/config");
@@ -60,6 +60,27 @@ export async function fetchResults(params?: { hours?: number; month?: string; tr
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.detail ?? "Failed to fetch results");
+  }
+  return res.json();
+}
+
+export async function searchFlights(params: {
+  departure_date: string;
+  return_date: string;
+  destination?: string;
+  trip_type?: string;
+  source?: string;
+}): Promise<DestinationGroup[]> {
+  const qs = new URLSearchParams();
+  qs.set("departure_date", params.departure_date);
+  qs.set("return_date", params.return_date);
+  if (params.destination) qs.set("destination", params.destination);
+  if (params.trip_type) qs.set("trip_type", params.trip_type);
+  if (params.source) qs.set("source", params.source);
+  const res = await fetch(`/api/search?${qs}`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail ?? "Search failed");
   }
   return res.json();
 }
