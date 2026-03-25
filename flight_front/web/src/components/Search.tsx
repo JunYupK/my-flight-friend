@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { searchFlights } from "../api";
 import type { DestinationGroup } from "../types";
 import { DAY_NAMES } from "../utils";
@@ -151,6 +151,14 @@ export default function Search() {
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   };
+
+  // 필터 변경 시 자동 재검색
+  useEffect(() => {
+    if (searched && departureDate && returnDate && !loading) {
+      handleSearch();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTripType, activeSource]);
 
   const activeGroup = groups.find((g) => g.destination === activeDest) ?? groups[0] ?? null;
 

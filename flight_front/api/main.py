@@ -342,6 +342,108 @@ def get_results(
 
 # ── Search ───────────────────────────────────────────────
 
+
+def _query_outbound_legs(cur, departure_date: str,
+                         extra_conds: list[str], extra_params: list) -> list[dict]:
+    """departure_date 기준 고유 출발 레그 추출."""
+    conditions = ["departure_date = %s", "out_price IS NOT NULL"]
+    params: list = [departure_date]
+    conditions.extend(extra_conds)
+    params.extend(extra_params)
+    where = "WHERE " + " AND ".join(conditions)
+    cur.execute(f"""
+        SELECT destination, destination_name, origin, source,
+               out_airline, out_dep_time, out_arr_time,
+               out_duration_min, out_stops, out_arr_airport, out_url,
+               MIN(out_price) AS out_price,
+               MAX(checked_at) AS last_checked_at
+        FROM price_history {where}
+        GROUP BY destination, destination_name, origin, source,
+                 out_airline, out_dep_time, out_arr_time,
+                 out_duration_min, out_stops, out_arr_airport, out_url
+    """, params)
+    return [dict(r) for r in cur.fetchall()]
+
+
+def _query_inbound_legs(cur, return_date: str,
+                        extra_conds: list[str], extra_params: list) -> list[dict]:
+    """return_date 기준 고유 귀국 레그 추출."""
+    conditions = ["return_date = %s", "in_price IS NOT NULL"]
+    params: list = [return_date]
+    conditions.extend(extra_conds)
+    params.extend(extra_params)
+    where = "WHERE " + " AND ".join(conditions)
+    cur.execute(f"""
+        SELECT destination, destination_name, origin, source,
+               in_airline, in_dep_time, in_arr_time,
+               in_duration_min, in_stops, in_dep_airport, in_url,
+               MIN(in_price) AS in_price,
+               MAX(checked_at) AS last_checked_at
+        FROM price_history {where}
+        GROUP BY destination, destination_name, origin, source,
+                 in_airline, in_dep_time, in_arr_time,
+                 in_duration_min, in_stops, in_dep_airport, in_url
+    """, params)
+    return [dict(r) for r in cur.fetchall()]
+
+
+def _combine_legs(out_legs: list[dict], in_legs: list[dict],
+                  departure_date: str, return_date: str,
+                  trip_type_filter: str | None) -> list[dict]:
+    """출발 × 귀국 레그 cross-product → 왕복 조합 생성."""
+    from datetime import datetime
+    stay_nights = (datetime.strptime(return_date, "%Y-%m-%d")
+                   - datetime.strptime(departure_date, "%Y-%m-%d")).days
+
+    in_by_dest: dict[str, list[dict]] = {}
+    for leg in in_legs:
+        in_by_dest.setdefault(leg["destination"], []).append(leg)
+
+    deals: list[dict] = []
+    for out in out_legs:
+        dest = out["destination"]
+        for inb in in_by_dest.get(dest, []):
+            is_mixed = (out["out_airline"] or "") != (inb["in_airline"] or "")
+            if trip_type_filter == "round_trip" and is_mixed:
+                continue
+            if trip_type_filter == "oneway_combo" and not is_mixed:
+                continue
+
+            deals.append({
+                "origin": out["origin"],
+                "destination": dest,
+                "destination_name": out["destination_name"],
+                "departure_date": departure_date,
+                "return_date": return_date,
+                "stay_nights": stay_nights,
+                "trip_type": "oneway_combo" if is_mixed else "round_trip",
+                "source": out["source"],
+                "out_airline": out["out_airline"],
+                "in_airline": inb["in_airline"],
+                "is_mixed_airline": is_mixed,
+                "out_dep_time": out["out_dep_time"],
+                "out_arr_time": out["out_arr_time"],
+                "out_duration_min": out["out_duration_min"],
+                "out_stops": out["out_stops"],
+                "in_dep_time": inb["in_dep_time"],
+                "in_arr_time": inb["in_arr_time"],
+                "in_duration_min": inb["in_duration_min"],
+                "in_stops": inb["in_stops"],
+                "out_arr_airport": out["out_arr_airport"],
+                "in_dep_airport": inb["in_dep_airport"],
+                "out_url": out["out_url"],
+                "in_url": inb["in_url"],
+                "out_price": out["out_price"],
+                "in_price": inb["in_price"],
+                "min_price": out["out_price"] + inb["in_price"],
+                "last_checked_at": max(out["last_checked_at"],
+                                       inb["last_checked_at"]).isoformat(),
+            })
+
+    deals.sort(key=lambda d: d["min_price"])
+    return deals
+
+
 @app.get("/api/search")
 def search_flights(
     departure_date: str = Query(..., regex=r"^\d{4}-\d{2}-\d{2}$"),
@@ -350,51 +452,52 @@ def search_flights(
     trip_type: str | None = Query(None),
     source: str | None = Query(None),
 ):
-    """특정 출발일/귀국일의 항공권 검색."""
+    """편도 레그 추출 + 실시간 조합으로 임의 박수 검색 지원."""
     try:
         with get_conn() as conn:
             cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            conditions: list[str] = [
-                "departure_date = %s",
-                "return_date = %s",
-            ]
-            params: list = [departure_date, return_date]
+            extra_conds: list[str] = []
+            extra_params: list = []
             if destination is not None:
-                conditions.append("destination = %s")
-                params.append(destination.upper())
-            if trip_type is not None:
-                conditions.append("trip_type = %s")
-                params.append(trip_type)
+                extra_conds.append("destination = %s")
+                extra_params.append(destination.upper())
             if source is not None:
-                conditions.append("source = %s")
-                params.append(source)
-            rows = _query_deals(cur, conditions, params)
+                extra_conds.append("source = %s")
+                extra_params.append(source)
+
+            out_legs = _query_outbound_legs(cur, departure_date,
+                                            extra_conds, extra_params)
+            in_legs = _query_inbound_legs(cur, return_date,
+                                          extra_conds, extra_params)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+    deals = _combine_legs(out_legs, in_legs, departure_date, return_date,
+                          trip_type)
+
     groups: dict = {}
-    for row in rows:
-        dest = row["destination"]
+    for deal in deals:
+        dest = deal["destination"]
         if dest not in groups:
             groups[dest] = {
                 "destination": dest,
-                "destination_name": row["destination_name"],
+                "destination_name": deal["destination_name"],
                 "deals": [],
             }
-        groups[dest]["deals"].append(row)
+        groups[dest]["deals"].append(deal)
 
     result = []
     for group in groups.values():
-        deals = group["deals"]
-        top_deals = deals[:5]
-        diverse_deals = _select_diverse_deals(deals[5:])
+        d = group["deals"]
+        top_deals = d[:5]
+        diverse_deals = _select_diverse_deals(d[5:])
         result.append({
             "destination": group["destination"],
             "destination_name": group["destination_name"],
             "top_deals": top_deals,
             "diverse_deals": diverse_deals,
-            "min_price": deals[0]["min_price"] if deals else 0,
-            "total_count": len(deals),
+            "min_price": d[0]["min_price"] if d else 0,
+            "total_count": len(d),
         })
 
     return result
