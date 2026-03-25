@@ -286,6 +286,7 @@ def get_results(
     hours: int | None = Query(None),
     month: str | None = Query(None, regex=r"^\d{4}-\d{2}$"),
     trip_type: str | None = Query(None),
+    source: str | None = Query(None),
 ):
     """여행지별 항공권 조회. 서버에서 top_deals/diverse_deals 분류."""
     try:
@@ -304,6 +305,9 @@ def get_results(
             if trip_type is not None:
                 conditions.append("trip_type = %s")
                 params.append(trip_type)
+            if source is not None:
+                conditions.append("source = %s")
+                params.append(source)
             rows = _query_deals(cur, conditions, params)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -322,6 +326,66 @@ def get_results(
     result = []
     for group in groups.values():
         deals = group["deals"]  # 이미 min_price ASC 정렬됨
+        top_deals = deals[:5]
+        diverse_deals = _select_diverse_deals(deals[5:])
+        result.append({
+            "destination": group["destination"],
+            "destination_name": group["destination_name"],
+            "top_deals": top_deals,
+            "diverse_deals": diverse_deals,
+            "min_price": deals[0]["min_price"] if deals else 0,
+            "total_count": len(deals),
+        })
+
+    return result
+
+
+# ── Search ───────────────────────────────────────────────
+
+@app.get("/api/search")
+def search_flights(
+    departure_date: str = Query(..., regex=r"^\d{4}-\d{2}-\d{2}$"),
+    return_date: str = Query(..., regex=r"^\d{4}-\d{2}-\d{2}$"),
+    destination: str | None = Query(None),
+    trip_type: str | None = Query(None),
+    source: str | None = Query(None),
+):
+    """특정 출발일/귀국일의 항공권 검색."""
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            conditions: list[str] = [
+                "departure_date = %s",
+                "return_date = %s",
+            ]
+            params: list = [departure_date, return_date]
+            if destination is not None:
+                conditions.append("destination = %s")
+                params.append(destination.upper())
+            if trip_type is not None:
+                conditions.append("trip_type = %s")
+                params.append(trip_type)
+            if source is not None:
+                conditions.append("source = %s")
+                params.append(source)
+            rows = _query_deals(cur, conditions, params)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    groups: dict = {}
+    for row in rows:
+        dest = row["destination"]
+        if dest not in groups:
+            groups[dest] = {
+                "destination": dest,
+                "destination_name": row["destination_name"],
+                "deals": [],
+            }
+        groups[dest]["deals"].append(row)
+
+    result = []
+    for group in groups.values():
+        deals = group["deals"]
         top_deals = deals[:5]
         diverse_deals = _select_diverse_deals(deals[5:])
         result.append({
