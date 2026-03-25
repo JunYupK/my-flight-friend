@@ -286,6 +286,7 @@ def get_results(
     hours: int | None = Query(None),
     month: str | None = Query(None, regex=r"^\d{4}-\d{2}$"),
     trip_type: str | None = Query(None),
+    source: str | None = Query(None),
 ):
     """여행지별 항공권 조회. 서버에서 top_deals/diverse_deals 분류."""
     try:
@@ -304,6 +305,9 @@ def get_results(
             if trip_type is not None:
                 conditions.append("trip_type = %s")
                 params.append(trip_type)
+            if source is not None:
+                conditions.append("source = %s")
+                params.append(source)
             rows = _query_deals(cur, conditions, params)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

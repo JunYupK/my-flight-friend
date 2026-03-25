@@ -1,7 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { fetchResults } from "../api";
 import type { DestinationGroup } from "../types";
-import { DealCard, TRIP_TYPE_OPTIONS } from "./DealCard";
+import { DealCard, TRIP_TYPE_OPTIONS, SOURCE_LABELS } from "./DealCard";
+
+const SOURCE_OPTIONS = [
+  { label: "전체", value: "" },
+  ...Object.entries(SOURCE_LABELS).map(([key, { label }]) => ({ label, value: key })),
+];
 
 function getMonthOptions(): string[] {
   const months: string[] = [];
@@ -47,12 +52,13 @@ export default function Results() {
   const [error, setError] = useState("");
   const [activeDest, setActiveDest] = useState<string | null>(null);
   const [activeTripType, setActiveTripType] = useState<string | undefined>(undefined);
+  const [activeSource, setActiveSource] = useState<string>("");
   const [activeMonth, setActiveMonth] = useState<string>(() => getMonthOptions()[0]);
 
-  const load = (month?: string, tripType?: string) => {
+  const load = (month?: string, tripType?: string, source?: string) => {
     setLoading(true);
     setError("");
-    fetchResults({ month, trip_type: tripType })
+    fetchResults({ month, trip_type: tripType, source: source || undefined })
       .then((data) => {
         setGroups(data);
         if (data.length > 0 && (!activeDest || !data.find((g) => g.destination === activeDest))) {
@@ -63,7 +69,7 @@ export default function Results() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(activeMonth, activeTripType); }, [activeMonth, activeTripType]);
+  useEffect(() => { load(activeMonth, activeTripType, activeSource); }, [activeMonth, activeTripType, activeSource]);
 
   if (loading)
     return <div className="flex items-center justify-center py-20 text-apple-secondary text-base">로딩 중…</div>;
@@ -72,7 +78,7 @@ export default function Results() {
     return (
       <div className="flex flex-col items-center py-20 gap-4 text-apple-red">
         <p className="text-base">{error}</p>
-        <button onClick={() => load(activeMonth, activeTripType)} className="px-4 py-2 bg-apple-red/10 rounded-full text-sm hover:bg-apple-red/20 transition-colors">재시도</button>
+        <button onClick={() => load(activeMonth, activeTripType, activeSource)} className="px-4 py-2 bg-apple-red/10 rounded-full text-sm hover:bg-apple-red/20 transition-colors">재시도</button>
       </div>
     );
 
@@ -98,7 +104,7 @@ export default function Results() {
       {/* 헤더 */}
       <div className="flex items-center justify-between">
         <p className="text-xs text-apple-secondary">{groups.length}개 여행지</p>
-        <button onClick={() => load(activeMonth, activeTripType)} className="text-xs text-apple-blue hover:underline">새로고침</button>
+        <button onClick={() => load(activeMonth, activeTripType, activeSource)} className="text-xs text-apple-blue hover:underline">새로고침</button>
       </div>
 
       {/* 목적지 탭 — 가로 스크롤 */}
@@ -137,7 +143,7 @@ export default function Results() {
             </span>
           )}
         </div>
-        <div className="flex gap-1.5 sm:ml-auto">
+        <div className="flex items-center gap-1.5 sm:ml-auto">
           {TRIP_TYPE_OPTIONS.map((opt) => (
             <button
               key={opt.label}
@@ -151,6 +157,15 @@ export default function Results() {
               {opt.label}
             </button>
           ))}
+          <select
+            value={activeSource}
+            onChange={(e) => setActiveSource(e.target.value)}
+            className="text-xs px-3 py-1.5 rounded-full bg-white shadow-apple-sm text-apple-text border-none outline-none cursor-pointer"
+          >
+            {SOURCE_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
         </div>
       </div>
 
