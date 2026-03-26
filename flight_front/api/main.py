@@ -503,6 +503,40 @@ def search_flights(
     return result
 
 
+# ── Calendar Prices ───────────────────────────────────────
+
+@app.get("/api/calendar-prices")
+def get_calendar_prices(
+    destination: str = Query(...),
+    from_date: str = Query(..., alias="from", regex=r"^\d{4}-\d{2}-\d{2}$"),
+    to_date: str = Query(..., alias="to", regex=r"^\d{4}-\d{2}-\d{2}$"),
+):
+    """캘린더 가격 오버레이용. 출발일별 최저 out_price, 귀국일별 최저 in_price."""
+    with get_conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("""
+            SELECT departure_date AS date, MIN(out_price) AS price
+            FROM price_history
+            WHERE destination = %s
+              AND departure_date BETWEEN %s AND %s
+              AND out_price IS NOT NULL
+            GROUP BY departure_date
+        """, (destination.upper(), from_date, to_date))
+        out_prices = {r["date"]: r["price"] for r in cur.fetchall()}
+
+        cur.execute("""
+            SELECT return_date AS date, MIN(in_price) AS price
+            FROM price_history
+            WHERE destination = %s
+              AND return_date BETWEEN %s AND %s
+              AND in_price IS NOT NULL
+            GROUP BY return_date
+        """, (destination.upper(), from_date, to_date))
+        in_prices = {r["date"]: r["price"] for r in cur.fetchall()}
+
+    return {"out": out_prices, "in": in_prices}
+
+
 # ── Price History ─────────────────────────────────────────
 
 @app.get("/api/price-history")

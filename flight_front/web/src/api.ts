@@ -106,6 +106,19 @@ export async function fetchPriceHistory(params: {
   return res.json();
 }
 
+export type CalendarPrices = { out: Record<string, number>; in: Record<string, number> };
+
+export async function fetchCalendarPrices(params: {
+  destination: string;
+  from: string;
+  to: string;
+}): Promise<CalendarPrices> {
+  const qs = new URLSearchParams({ destination: params.destination, from: params.from, to: params.to });
+  const res = await fetch(`/api/calendar-prices?${qs}`);
+  if (!res.ok) throw new Error("Failed to fetch calendar prices");
+  return res.json();
+}
+
 export async function fetchCollectionRuns(limit = 20): Promise<CollectionRun[]> {
   const res = await fetch(`/api/collection-runs?limit=${limit}`);
   if (!res.ok) throw new Error("Failed to fetch collection runs");
