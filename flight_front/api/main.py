@@ -263,8 +263,8 @@ def _query_deals(cur, conditions: list[str], params: list) -> list[dict]:
             out_arr_airport, in_dep_airport,
             MIN(price) AS min_price,
             MAX(checked_at) AS last_checked_at,
-            MAX(out_url) AS out_url,
-            MAX(in_url) AS in_url,
+            MIN(out_url) AS out_url,
+            MIN(in_url) AS in_url,
             MIN(out_price) AS out_price,
             MIN(in_price) AS in_price
         FROM price_history

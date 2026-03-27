@@ -163,7 +163,9 @@ def _build_tfs_url(dep: str, arr: str, date_str: str) -> str | None:
     # 템플릿 내 첫 번째 YYYY-MM-DD 패턴을 찾아 target 날짜로 교체
     m = _TFS_DATE_RE.search(raw)
     if m:
-        raw = raw.replace(m.group(), date_str.encode())
+        raw = raw[:m.start()] + date_str.encode() + raw[m.end():]
+    else:
+        print(f"[GoogleFlights WARN] tfs 템플릿에 날짜 패턴 없음: {dep}_{arr}")
     tfs = base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
     return f"https://www.google.com/travel/flights/search?tfs={tfs}&curr=KRW&hl=ko"
 
@@ -495,6 +497,7 @@ async def _fetch_route(
     for i in range(0, len(urls), _BATCH_SIZE):
         batch_urls = urls[i:i + _BATCH_SIZE]
         batch_metas = metas[i:i + _BATCH_SIZE]
+        url_to_meta = {u: m for u, m in zip(batch_urls, batch_metas)}
 
         try:
             results = await crawler.arun_many(urls=batch_urls, config=config)
@@ -502,7 +505,11 @@ async def _fetch_route(
             print(f"[GoogleFlights ERROR] batch {i // _BATCH_SIZE}: {e}")
             continue
 
-        for result, meta in zip(results, batch_metas):
+        for result in results:
+            meta = url_to_meta.get(result.url)
+            if meta is None:
+                print(f"[GoogleFlights WARN] 매칭 메타 없음: {result.url[:80]}")
+                continue
             if not result.success:
                 print(f"[GoogleFlights FAIL] {meta['dep']}-{meta['arr']} {meta['date']}: {result.error_message}")
                 continue
@@ -513,6 +520,15 @@ async def _fetch_route(
                 continue
 
             flights.sort(key=lambda x: x["price"])
+
+            # 첫 번째 항공편의 dep_airport로 방향 검증
+            sample_dep = flights[0].get("dep_airport")
+            if sample_dep and sample_dep != meta["dep"]:
+                print(f"[GoogleFlights WARN] 공항 불일치: "
+                      f"기대 {meta['dep']}→{meta['arr']}, "
+                      f"실제 출발공항 {sample_dep}. 해당 결과 스킵")
+                continue
+
             enriched = []
             for f in flights[:topk]:
                 booking_url = _build_booking_url(f, meta["dep"], meta["arr"], meta["date"])
