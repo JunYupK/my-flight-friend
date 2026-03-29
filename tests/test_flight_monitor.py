@@ -27,7 +27,11 @@ def clean_db():
     yield
     with storage.get_conn() as conn:
         cur = conn.cursor()
-        cur.execute("TRUNCATE price_history, alert_state RESTART IDENTITY CASCADE")
+        cur.execute("""
+            TRUNCATE price_history, alert_state,
+                     flight_legs, raw_legs, price_events
+            RESTART IDENTITY CASCADE
+        """)
 
 
 def _make_offer(**kwargs) -> dict:
@@ -67,6 +71,28 @@ class TestInitDb:
             tables = {r[0] for r in cur.fetchall()}
         assert "price_history" in tables
         assert "alert_state" in tables
+        assert "raw_legs" in tables
+        assert "price_events" in tables
+        assert "flight_legs" in tables
+
+    def test_trigger_created(self):
+        with storage.get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT trigger_name FROM information_schema.triggers
+                WHERE event_object_table = 'flight_legs'
+                  AND trigger_name = 'flight_legs_price_change'
+            """)
+            assert cur.fetchone() is not None
+
+    def test_flight_legs_has_best_source(self):
+        with storage.get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'flight_legs' AND column_name = 'best_source'
+            """)
+            assert cur.fetchone() is not None
 
     def test_view_created(self):
         with storage.get_conn() as conn:
@@ -216,3 +242,133 @@ class TestShouldNotify:
             )
             row = cur.fetchone()
         assert row["last_price"] == 200000
+
+
+def _make_leg(**kwargs) -> dict:
+    """테스트용 leg 기본값"""
+    defaults = {
+        "source": "google_flights",
+        "origin": "ICN",
+        "destination": "OSA",
+        "destination_name": "오사카",
+        "date": "2026-05-10",
+        "direction": "out",
+        "airline": "KE",
+        "dep_time": "09:00",
+        "arr_time": "11:30",
+        "duration_min": 150,
+        "stops": 0,
+        "dep_airport": None,
+        "arr_airport": "KIX",
+        "price": 150000.0,
+        "booking_url": None,
+        "search_url": "https://flights.google.com/example",
+        "checked_at": datetime.now(KST).isoformat(),
+    }
+    defaults.update(kwargs)
+    return defaults
+
+
+# ---------------------------------------------------------------------------
+# storage: save_legs (3-레이어 파이프라인)
+# ---------------------------------------------------------------------------
+
+class TestSaveLegs:
+    def test_raw_legs_inserted(self):
+        """save_legs 호출 시 raw_legs에 행이 삽입된다."""
+        storage.save_legs([_make_leg()])
+        with storage.get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT COUNT(*) FROM raw_legs")
+            assert cur.fetchone()[0] == 1
+
+    def test_flight_legs_upserted(self):
+        """save_legs 호출 시 flight_legs에 행이 UPSERT된다."""
+        storage.save_legs([_make_leg()])
+        with storage.get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT COUNT(*) FROM flight_legs")
+            assert cur.fetchone()[0] == 1
+
+    def test_best_source_set_on_insert(self):
+        """최초 삽입 시 best_source가 source와 동일하게 설정된다."""
+        storage.save_legs([_make_leg(source="google_flights")])
+        with storage.get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT best_source FROM flight_legs")
+            assert cur.fetchone()[0] == "google_flights"
+
+    def test_upsert_keeps_lower_price(self):
+        """같은 레그를 다른 가격으로 두 번 저장 시 최저가만 유지된다."""
+        storage.save_legs([_make_leg(price=200000)])
+        storage.save_legs([_make_leg(price=150000)])
+        with storage.get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT price FROM flight_legs")
+            assert cur.fetchone()[0] == 150000
+
+    def test_upsert_higher_price_ignored(self):
+        """더 높은 가격으로 재수집해도 flight_legs 가격이 오르지 않는다."""
+        storage.save_legs([_make_leg(price=150000)])
+        storage.save_legs([_make_leg(price=200000)])
+        with storage.get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT price FROM flight_legs")
+            assert cur.fetchone()[0] == 150000
+
+    def test_price_drop_triggers_price_event(self):
+        """가격이 하락하면 price_events에 행이 기록된다."""
+        storage.save_legs([_make_leg(price=200000)])
+        storage.save_legs([_make_leg(price=150000)])
+        with storage.get_conn() as conn:
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cur.execute("SELECT * FROM price_events")
+            row = cur.fetchone()
+        assert row is not None
+        assert row["old_price"] == 200000
+        assert row["new_price"] == 150000
+        assert row["delta"] == -50000
+
+    def test_same_price_no_price_event(self):
+        """동일 가격 재수집 시 price_events에 행이 추가되지 않는다."""
+        storage.save_legs([_make_leg(price=150000)])
+        storage.save_legs([_make_leg(price=150000)])
+        with storage.get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT COUNT(*) FROM price_events")
+            assert cur.fetchone()[0] == 0
+
+    def test_price_rise_no_price_event(self):
+        """더 높은 가격 수집 시 flight_legs 불변 + price_events 없음."""
+        storage.save_legs([_make_leg(price=150000)])
+        storage.save_legs([_make_leg(price=200000)])
+        with storage.get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT COUNT(*) FROM price_events")
+            assert cur.fetchone()[0] == 0
+
+    def test_best_source_updates_on_price_drop(self):
+        """가격 하락 시 best_source가 새 소스로 업데이트된다."""
+        storage.save_legs([_make_leg(source="google_flights", price=200000)])
+        storage.save_legs([_make_leg(source="naver", price=150000)])
+        with storage.get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT best_source FROM flight_legs")
+            assert cur.fetchone()[0] == "naver"
+
+    def test_empty_list_no_db_touch(self):
+        """빈 리스트 호출 시 DB에 아무것도 쓰지 않는다."""
+        storage.save_legs([])
+        with storage.get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT COUNT(*) FROM raw_legs")
+            assert cur.fetchone()[0] == 0
+
+    def test_multiple_legs_all_inserted_to_raw(self):
+        """여러 레그를 한번에 저장 시 raw_legs에 모두 기록된다."""
+        legs = [_make_leg(date=f"2026-05-{10+i:02d}") for i in range(3)]
+        storage.save_legs(legs)
+        with storage.get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT COUNT(*) FROM raw_legs")
+            assert cur.fetchone()[0] == 3

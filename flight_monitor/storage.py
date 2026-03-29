@@ -182,6 +182,97 @@ def init_db():
             ON flight_legs (destination, date) WHERE direction = 'in'
         """)
 
+        # flight_legs에 best_source 컬럼 추가 (없을 때만)
+        cur.execute("SAVEPOINT pre_best_source")
+        try:
+            cur.execute("ALTER TABLE flight_legs ADD COLUMN best_source TEXT")
+        except Exception:
+            cur.execute("ROLLBACK TO SAVEPOINT pre_best_source")
+        else:
+            cur.execute("RELEASE SAVEPOINT pre_best_source")
+
+        # ── raw_legs: 수집 원본 로그 (append-only) ──
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS raw_legs (
+                id               SERIAL PRIMARY KEY,
+                source           TEXT NOT NULL,
+                origin           TEXT NOT NULL,
+                destination      TEXT NOT NULL,
+                destination_name TEXT,
+                date             TEXT NOT NULL,
+                direction        TEXT NOT NULL,
+                airline          TEXT,
+                dep_time         TEXT,
+                arr_time         TEXT,
+                duration_min     INTEGER,
+                stops            INTEGER,
+                dep_airport      TEXT,
+                arr_airport      TEXT,
+                price            REAL NOT NULL,
+                currency         TEXT DEFAULT 'KRW',
+                booking_url      TEXT,
+                search_url       TEXT,
+                extra            JSONB,
+                collected_at     TIMESTAMP NOT NULL
+            )
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_raw_legs_dest_date
+            ON raw_legs (destination, date, direction)
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_raw_legs_collected_at
+            ON raw_legs (collected_at)
+        """)
+
+        # ── price_events: 가격 변동 이력 (event-sourced) ──
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS price_events (
+                id           SERIAL PRIMARY KEY,
+                destination  TEXT NOT NULL,
+                date         TEXT NOT NULL,
+                direction    TEXT NOT NULL,
+                airline      TEXT,
+                dep_time     TEXT,
+                source       TEXT NOT NULL,
+                old_price    REAL,
+                new_price    REAL NOT NULL,
+                delta        REAL,
+                changed_at   TIMESTAMP NOT NULL
+            )
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_price_events_dest_date
+            ON price_events (destination, date, direction)
+        """)
+
+        # ── flight_legs 가격 변동 감지 트리거 ──
+        cur.execute("""
+            CREATE OR REPLACE FUNCTION record_price_change() RETURNS TRIGGER AS $$
+            BEGIN
+                IF NEW.price <> OLD.price THEN
+                    INSERT INTO price_events
+                        (destination, date, direction, airline, dep_time,
+                         source, old_price, new_price, delta, changed_at)
+                    VALUES
+                        (NEW.destination, NEW.date, NEW.direction,
+                         NEW.airline, NEW.dep_time,
+                         COALESCE(NEW.best_source, NEW.source),
+                         OLD.price, NEW.price,
+                         NEW.price - OLD.price, NEW.checked_at);
+                END IF;
+                RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql
+        """)
+        cur.execute("DROP TRIGGER IF EXISTS flight_legs_price_change ON flight_legs")
+        cur.execute("""
+            CREATE TRIGGER flight_legs_price_change
+            AFTER UPDATE ON flight_legs
+            FOR EACH ROW
+            EXECUTE FUNCTION record_price_change()
+        """)
+
         # 기존 테이블에서 fsc_count 컬럼 제거 (있을 때만)
         cur.execute("SAVEPOINT pre_drop_fsc")
         try:
@@ -272,24 +363,60 @@ def save_prices(offers: list[dict]):
 
 
 def save_legs(legs: list[dict]):
-    """편도 항공편을 flight_legs 테이블에 UPSERT 저장."""
+    """편도 항공편 저장 파이프라인.
+
+    raw_legs  : 수집 원본 전량 INSERT (append-only 로그)
+    flight_legs: 소스별 최저가 UPSERT — 가격 하락 시 DB 트리거가 price_events에 기록
+    """
     if not legs:
         return
-    rows = [
+
+    raw_rows = [
         (
-            lg["source"], lg["origin"], lg["destination"], lg["destination_name"],
+            lg["source"], lg["origin"], lg["destination"], lg.get("destination_name"),
+            lg["date"], lg["direction"],
+            lg.get("airline"), lg.get("dep_time"), lg.get("arr_time"),
+            lg.get("duration_min"), lg.get("stops"),
+            lg.get("dep_airport"), lg.get("arr_airport"),
+            lg["price"], lg.get("currency", "KRW"),
+            lg.get("booking_url"), lg.get("search_url"),
+            json.dumps(lg["extra"]) if lg.get("extra") else None,
+            lg["checked_at"],
+        )
+        for lg in legs
+    ]
+
+    flight_rows = [
+        (
+            lg["source"], lg["origin"], lg["destination"], lg.get("destination_name"),
             lg["date"], lg["direction"],
             lg.get("airline"), lg.get("dep_time"), lg.get("arr_time"),
             lg.get("duration_min"), lg.get("stops"),
             lg.get("dep_airport"), lg.get("arr_airport"),
             lg["price"],
             lg.get("booking_url"), lg.get("search_url"),
+            lg["source"],
             lg["checked_at"],
         )
         for lg in legs
     ]
+
     with get_conn() as conn:
         cur = conn.cursor()
+
+        # Layer 1: 원본 로그
+        psycopg2.extras.execute_batch(cur, """
+            INSERT INTO raw_legs
+            (source, origin, destination, destination_name,
+             date, direction,
+             airline, dep_time, arr_time, duration_min, stops,
+             dep_airport, arr_airport,
+             price, currency, booking_url, search_url, extra,
+             collected_at)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        """, raw_rows)
+
+        # Layer 2: 현재 상태 (트리거가 가격 하락 시 price_events 기록)
         psycopg2.extras.execute_batch(cur, """
             INSERT INTO flight_legs
             (source, origin, destination, destination_name,
@@ -297,17 +424,20 @@ def save_legs(legs: list[dict]):
              airline, dep_time, arr_time, duration_min, stops,
              dep_airport, arr_airport,
              price, booking_url, search_url,
-             checked_at)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+             best_source, checked_at)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             ON CONFLICT (origin, destination, date, direction,
                          COALESCE(airline, ''), COALESCE(dep_time, ''),
                          COALESCE(arr_time, ''), COALESCE(stops, -1))
             DO UPDATE SET
                 price       = LEAST(EXCLUDED.price, flight_legs.price),
+                best_source = CASE WHEN EXCLUDED.price < flight_legs.price
+                                   THEN EXCLUDED.source
+                                   ELSE flight_legs.best_source END,
                 booking_url = COALESCE(EXCLUDED.booking_url, flight_legs.booking_url),
                 search_url  = COALESCE(EXCLUDED.search_url, flight_legs.search_url),
                 checked_at  = EXCLUDED.checked_at
-        """, rows)
+        """, flight_rows)
 
 
 def make_alert_key(offer: dict) -> str:
