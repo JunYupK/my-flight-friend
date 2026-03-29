@@ -263,8 +263,8 @@ def _query_deals(cur, conditions: list[str], params: list) -> list[dict]:
             out_arr_airport, in_dep_airport,
             MIN(price) AS min_price,
             MAX(checked_at) AS last_checked_at,
-            MAX(out_url) AS out_url,
-            MAX(in_url) AS in_url,
+            MIN(out_url) AS out_url,
+            MIN(in_url) AS in_url,
             MIN(out_price) AS out_price,
             MIN(in_price) AS in_price
         FROM price_history
@@ -345,44 +345,48 @@ def get_results(
 
 def _query_outbound_legs(cur, departure_date: str,
                          extra_conds: list[str], extra_params: list) -> list[dict]:
-    """departure_date 기준 고유 출발 레그 추출."""
-    conditions = ["departure_date = %s", "out_price IS NOT NULL"]
+    """departure_date 기준 출발 레그 조회 (flight_legs 테이블)."""
+    conditions = ["date = %s", "direction = 'out'"]
     params: list = [departure_date]
     conditions.extend(extra_conds)
     params.extend(extra_params)
     where = "WHERE " + " AND ".join(conditions)
     cur.execute(f"""
         SELECT destination, destination_name, origin, source,
-               out_airline, out_dep_time, out_arr_time,
-               out_duration_min, out_stops, out_arr_airport, out_url,
-               MIN(out_price) AS out_price,
-               MAX(checked_at) AS last_checked_at
-        FROM price_history {where}
-        GROUP BY destination, destination_name, origin, source,
-                 out_airline, out_dep_time, out_arr_time,
-                 out_duration_min, out_stops, out_arr_airport, out_url
+               airline AS out_airline,
+               dep_time AS out_dep_time,
+               arr_time AS out_arr_time,
+               duration_min AS out_duration_min,
+               stops AS out_stops,
+               arr_airport AS out_arr_airport,
+               COALESCE(booking_url, search_url) AS out_url,
+               price AS out_price,
+               checked_at AS last_checked_at
+        FROM flight_legs {where}
     """, params)
     return [dict(r) for r in cur.fetchall()]
 
 
 def _query_inbound_legs(cur, return_date: str,
                         extra_conds: list[str], extra_params: list) -> list[dict]:
-    """return_date 기준 고유 귀국 레그 추출."""
-    conditions = ["return_date = %s", "in_price IS NOT NULL"]
+    """return_date 기준 귀국 레그 조회 (flight_legs 테이블)."""
+    conditions = ["date = %s", "direction = 'in'"]
     params: list = [return_date]
     conditions.extend(extra_conds)
     params.extend(extra_params)
     where = "WHERE " + " AND ".join(conditions)
     cur.execute(f"""
         SELECT destination, destination_name, origin, source,
-               in_airline, in_dep_time, in_arr_time,
-               in_duration_min, in_stops, in_dep_airport, in_url,
-               MIN(in_price) AS in_price,
-               MAX(checked_at) AS last_checked_at
-        FROM price_history {where}
-        GROUP BY destination, destination_name, origin, source,
-                 in_airline, in_dep_time, in_arr_time,
-                 in_duration_min, in_stops, in_dep_airport, in_url
+               airline AS in_airline,
+               dep_time AS in_dep_time,
+               arr_time AS in_arr_time,
+               duration_min AS in_duration_min,
+               stops AS in_stops,
+               dep_airport AS in_dep_airport,
+               COALESCE(booking_url, search_url) AS in_url,
+               price AS in_price,
+               checked_at AS last_checked_at
+        FROM flight_legs {where}
     """, params)
     return [dict(r) for r in cur.fetchall()]
 
