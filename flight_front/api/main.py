@@ -251,32 +251,61 @@ def _select_diverse_deals(deals: list[dict], max_count: int = 15) -> list[dict]:
     return result
 
 
-def _query_deals(cur, conditions: list[str], params: list) -> list[dict]:
-    where_clause = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+def _query_deals(cur, hours: int | None, month: str | None,
+                 source: str | None, trip_type: str | None) -> list[dict]:
+    conds = [
+        "o.direction = 'out'",
+        "i.direction = 'in'",
+        "o.destination = i.destination",
+        "(i.date::date - o.date::date) BETWEEN 4 AND 7",
+    ]
+    params: list = []
+
+    if hours is not None:
+        conds.append("o.checked_at >= NOW() - %s::interval")
+        conds.append("i.checked_at >= NOW() - %s::interval")
+        params.extend([f"{hours} hours", f"{hours} hours"])
+    else:
+        conds.append("o.checked_at >= CURRENT_DATE")
+        conds.append("i.checked_at >= CURRENT_DATE")
+
+    if month is not None:
+        conds.append("o.date LIKE %s")
+        params.append(f"{month}-%")
+
+    if source is not None:
+        conds.append("o.source = %s")
+        params.append(source)
+
+    if trip_type == "round_trip":
+        conds.append("o.airline = i.airline")
+    elif trip_type == "oneway_combo":
+        conds.append("o.airline IS DISTINCT FROM i.airline")
+
+    where = "WHERE " + " AND ".join(conds)
     cur.execute(f"""
         SELECT
-            origin, destination, destination_name,
-            departure_date, return_date, stay_nights,
-            trip_type, source, out_airline, in_airline, is_mixed_airline,
-            out_dep_time, out_arr_time, out_duration_min, out_stops,
-            in_dep_time, in_arr_time, in_duration_min, in_stops,
-            out_arr_airport, in_dep_airport,
-            MIN(price) AS min_price,
-            MAX(checked_at) AS last_checked_at,
-            MIN(out_url) AS out_url,
-            MIN(in_url) AS in_url,
-            MIN(out_price) AS out_price,
-            MIN(in_price) AS in_price
-        FROM price_history
-        {where_clause}
-        GROUP BY
-            origin, destination, destination_name,
-            departure_date, return_date, stay_nights,
-            trip_type, source, out_airline, in_airline, is_mixed_airline,
-            out_dep_time, out_arr_time, out_duration_min, out_stops,
-            in_dep_time, in_arr_time, in_duration_min, in_stops,
-            out_arr_airport, in_dep_airport
-        ORDER BY destination, min_price ASC
+            o.origin, o.destination, o.destination_name,
+            o.date AS departure_date,
+            i.date AS return_date,
+            (i.date::date - o.date::date) AS stay_nights,
+            CASE WHEN o.airline = i.airline THEN 'round_trip' ELSE 'oneway_combo' END AS trip_type,
+            o.source,
+            o.airline AS out_airline, i.airline AS in_airline,
+            (o.airline IS DISTINCT FROM i.airline)::int AS is_mixed_airline,
+            o.dep_time AS out_dep_time, o.arr_time AS out_arr_time,
+            o.duration_min AS out_duration_min, o.stops AS out_stops,
+            i.dep_time AS in_dep_time, i.arr_time AS in_arr_time,
+            i.duration_min AS in_duration_min, i.stops AS in_stops,
+            o.arr_airport AS out_arr_airport, i.dep_airport AS in_dep_airport,
+            GREATEST(o.checked_at, i.checked_at) AS last_checked_at,
+            COALESCE(o.booking_url, o.search_url) AS out_url,
+            COALESCE(i.booking_url, i.search_url) AS in_url,
+            o.price AS out_price, i.price AS in_price,
+            (o.price + i.price) AS min_price
+        FROM flight_legs o, flight_legs i
+        {where}
+        ORDER BY o.destination, (o.price + i.price) ASC
     """, params)
     return [dict(r) for r in cur.fetchall()]
 
@@ -292,23 +321,7 @@ def get_results(
     try:
         with get_conn() as conn:
             cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            conditions: list[str] = []
-            params: list = []
-            if hours is not None:
-                conditions.append("checked_at >= NOW() - %s::interval")
-                params.append(f"{hours} hours")
-            else:
-                conditions.append("checked_at >= CURRENT_DATE")
-            if month is not None:
-                conditions.append("departure_date LIKE %s")
-                params.append(f"{month}-%")
-            if trip_type is not None:
-                conditions.append("trip_type = %s")
-                params.append(trip_type)
-            if source is not None:
-                conditions.append("source = %s")
-                params.append(source)
-            rows = _query_deals(cur, conditions, params)
+            rows = _query_deals(cur, hours, month, source, trip_type)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -516,26 +529,25 @@ def get_calendar_prices(
     to_date: str = Query(..., alias="to", regex=r"^\d{4}-\d{2}-\d{2}$"),
 ):
     """캘린더 가격 오버레이용. 출발일별 최저 out_price, 귀국일별 최저 in_price."""
+    dest = destination.upper()
     with get_conn() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cur.execute("""
-            SELECT departure_date AS date, MIN(out_price) AS price
-            FROM price_history
-            WHERE destination = %s
-              AND departure_date BETWEEN %s AND %s
-              AND out_price IS NOT NULL
-            GROUP BY departure_date
-        """, (destination.upper(), from_date, to_date))
+            SELECT date, MIN(price) AS price
+            FROM flight_legs
+            WHERE destination = %s AND direction = 'out'
+              AND date BETWEEN %s AND %s
+            GROUP BY date
+        """, (dest, from_date, to_date))
         out_prices = {r["date"]: r["price"] for r in cur.fetchall()}
 
         cur.execute("""
-            SELECT return_date AS date, MIN(in_price) AS price
-            FROM price_history
-            WHERE destination = %s
-              AND return_date BETWEEN %s AND %s
-              AND in_price IS NOT NULL
-            GROUP BY return_date
-        """, (destination.upper(), from_date, to_date))
+            SELECT date, MIN(price) AS price
+            FROM flight_legs
+            WHERE destination = %s AND direction = 'in'
+              AND date BETWEEN %s AND %s
+            GROUP BY date
+        """, (dest, from_date, to_date))
         in_prices = {r["date"]: r["price"] for r in cur.fetchall()}
 
     return {"out": out_prices, "in": in_prices}
