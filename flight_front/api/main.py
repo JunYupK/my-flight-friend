@@ -564,53 +564,39 @@ def get_price_history(
     departure_date: str | None = Query(None),
     return_date: str | None = Query(None),
 ):
-    """가격 히스토리 조회. calendar(출발일별 최저가) / timeline(수집 시점별 추이)."""
+    """가격 히스토리 조회. calendar(출발일별 최저가) / timeline(가격 변동 이력)."""
+    dest = destination.upper()
     with get_conn() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
         if mode == "timeline":
             if not departure_date:
                 raise HTTPException(400, "timeline mode requires departure_date")
-            if return_date:
-                cur.execute("""
-                    SELECT
-                        DATE(checked_at)::text AS check_date,
-                        source,
-                        MIN(price) AS min_price
-                    FROM price_history
-                    WHERE destination = %s
-                      AND departure_date = %s
-                      AND return_date = %s
-                    GROUP BY DATE(checked_at), source
-                    ORDER BY check_date
-                """, (destination.upper(), departure_date, return_date))
-            else:
-                cur.execute("""
-                    SELECT
-                        DATE(checked_at)::text AS check_date,
-                        source,
-                        MIN(price) AS min_price
-                    FROM price_history
-                    WHERE destination = %s
-                      AND departure_date = %s
-                    GROUP BY DATE(checked_at), source
-                    ORDER BY check_date
-                """, (destination.upper(), departure_date))
+            cur.execute("""
+                SELECT
+                    DATE(changed_at)::text AS check_date,
+                    source,
+                    new_price AS min_price
+                FROM price_events
+                WHERE destination = %s
+                  AND date = %s
+                  AND direction = 'out'
+                ORDER BY changed_at
+            """, (dest, departure_date))
         else:
             if not month:
                 raise HTTPException(400, "calendar mode requires month parameter")
             cur.execute("""
                 SELECT
-                    departure_date,
-                    source,
-                    MIN(price) AS min_price
-                FROM price_history
+                    date AS departure_date,
+                    best_source AS source,
+                    price AS min_price
+                FROM flight_legs
                 WHERE destination = %s
-                  AND departure_date LIKE %s
-                  AND (stay_nights = %s OR %s IS NULL)
-                GROUP BY departure_date, source
-                ORDER BY departure_date
-            """, (destination.upper(), f"{month}%", stay_nights, stay_nights))
+                  AND direction = 'out'
+                  AND date LIKE %s
+                ORDER BY date
+            """, (dest, f"{month}%"))
 
         return {"mode": mode, "data": [dict(r) for r in cur.fetchall()]}
 
