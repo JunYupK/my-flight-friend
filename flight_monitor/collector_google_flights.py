@@ -542,6 +542,33 @@ async def _fetch_route(
         if i + _BATCH_SIZE < len(urls):
             await asyncio.sleep(delay)
 
+    # 편도 레그를 flight_legs 테이블에 저장
+    from flight_monitor.storage import save_legs
+    now_iso = datetime.now(KST).isoformat()
+    leg_records = []
+    for direction, flights in [("out", out_flights), ("in", in_flights)]:
+        for f in flights:
+            leg_records.append({
+                "source": "google_flights",
+                "origin": ORIGIN,
+                "destination": airport_code,
+                "destination_name": airport_name,
+                "date": f["date"],
+                "direction": direction,
+                "airline": f.get("airline"),
+                "dep_time": f.get("dep_time"),
+                "arr_time": f.get("arr_time"),
+                "duration_min": f.get("duration_min"),
+                "stops": f.get("stops"),
+                "dep_airport": f.get("dep_airport"),
+                "arr_airport": f.get("arr_airport"),
+                "price": f["price"],
+                "booking_url": f.get("booking_url"),
+                "search_url": f.get("search_url"),
+                "checked_at": now_iso,
+            })
+    save_legs(leg_records)
+
     return _combine_roundtrips(out_flights, in_flights, ORIGIN, airport_code, airport_name)
 
 

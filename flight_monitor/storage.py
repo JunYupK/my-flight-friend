@@ -1,5 +1,6 @@
 # flight_monitor/storage.py
 
+import json
 import os
 from contextlib import contextmanager
 from datetime import datetime, timedelta
@@ -141,6 +142,46 @@ def init_db():
             )
         """)
 
+        # ── flight_legs: 편도 항공편 개별 저장 ──
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS flight_legs (
+                id               SERIAL PRIMARY KEY,
+                source           TEXT NOT NULL,
+                origin           TEXT NOT NULL,
+                destination      TEXT NOT NULL,
+                destination_name TEXT,
+                date             TEXT NOT NULL,
+                direction        TEXT NOT NULL,
+                airline          TEXT,
+                dep_time         TEXT,
+                arr_time         TEXT,
+                duration_min     INTEGER,
+                stops            INTEGER,
+                dep_airport      TEXT,
+                arr_airport      TEXT,
+                price            REAL NOT NULL,
+                booking_url      TEXT,
+                search_url       TEXT,
+                checked_at       TIMESTAMP NOT NULL
+            )
+        """)
+        cur.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_flight_legs_identity
+            ON flight_legs (
+                origin, destination, date, direction,
+                COALESCE(airline, ''), COALESCE(dep_time, ''),
+                COALESCE(arr_time, ''), COALESCE(stops, -1)
+            )
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_flight_legs_out
+            ON flight_legs (destination, date) WHERE direction = 'out'
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_flight_legs_in
+            ON flight_legs (destination, date) WHERE direction = 'in'
+        """)
+
         # 기존 테이블에서 fsc_count 컬럼 제거 (있을 때만)
         cur.execute("SAVEPOINT pre_drop_fsc")
         try:
@@ -227,6 +268,45 @@ def save_prices(offers: list[dict]):
              out_url, in_url,
              out_price, in_price)
             VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        """, rows)
+
+
+def save_legs(legs: list[dict]):
+    """편도 항공편을 flight_legs 테이블에 UPSERT 저장."""
+    if not legs:
+        return
+    rows = [
+        (
+            lg["source"], lg["origin"], lg["destination"], lg["destination_name"],
+            lg["date"], lg["direction"],
+            lg.get("airline"), lg.get("dep_time"), lg.get("arr_time"),
+            lg.get("duration_min"), lg.get("stops"),
+            lg.get("dep_airport"), lg.get("arr_airport"),
+            lg["price"],
+            lg.get("booking_url"), lg.get("search_url"),
+            lg["checked_at"],
+        )
+        for lg in legs
+    ]
+    with get_conn() as conn:
+        cur = conn.cursor()
+        psycopg2.extras.execute_batch(cur, """
+            INSERT INTO flight_legs
+            (source, origin, destination, destination_name,
+             date, direction,
+             airline, dep_time, arr_time, duration_min, stops,
+             dep_airport, arr_airport,
+             price, booking_url, search_url,
+             checked_at)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            ON CONFLICT (origin, destination, date, direction,
+                         COALESCE(airline, ''), COALESCE(dep_time, ''),
+                         COALESCE(arr_time, ''), COALESCE(stops, -1))
+            DO UPDATE SET
+                price       = LEAST(EXCLUDED.price, flight_legs.price),
+                booking_url = COALESCE(EXCLUDED.booking_url, flight_legs.booking_url),
+                search_url  = COALESCE(EXCLUDED.search_url, flight_legs.search_url),
+                checked_at  = EXCLUDED.checked_at
         """, rows)
 
 
