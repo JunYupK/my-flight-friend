@@ -327,7 +327,7 @@ class TestSaveLegs:
         assert row is not None
         assert row["old_price"] == 200000
         assert row["new_price"] == 150000
-        assert row["delta"] == -50000
+        assert row["new_price"] - row["old_price"] == -50000
 
     def test_same_price_no_price_event(self):
         """동일 가격 재수집 시 price_events에 행이 추가되지 않는다."""

@@ -165,10 +165,13 @@ def init_db():
                 checked_at       TIMESTAMP NOT NULL
             )
         """)
+        # source를 unique key에 포함 — source별 독립 row 유지, 추후 source 필터링 지원
+        # 기존 인덱스 drop 후 재생성 (IF NOT EXISTS는 컬럼 변경 시 재생성 안 함)
+        cur.execute("DROP INDEX IF EXISTS uq_flight_legs_identity")
         cur.execute("""
-            CREATE UNIQUE INDEX IF NOT EXISTS uq_flight_legs_identity
+            CREATE UNIQUE INDEX uq_flight_legs_identity
             ON flight_legs (
-                origin, destination, date, direction,
+                source, origin, destination, date, direction,
                 COALESCE(airline, ''), COALESCE(dep_time, ''),
                 COALESCE(arr_time, ''), COALESCE(stops, -1)
             )
@@ -224,6 +227,10 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_raw_legs_collected_at
             ON raw_legs (collected_at)
         """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_raw_legs_source
+            ON raw_legs (source, destination, date, direction)
+        """)
 
         # ── price_events: 가격 변동 이력 (event-sourced) ──
         cur.execute("""
@@ -237,7 +244,6 @@ def init_db():
                 source       TEXT NOT NULL,
                 old_price    REAL,
                 new_price    REAL NOT NULL,
-                delta        REAL,
                 changed_at   TIMESTAMP NOT NULL
             )
         """)
@@ -246,6 +252,15 @@ def init_db():
             ON price_events (destination, date, direction)
         """)
 
+        # 기존 배포: price_events.delta 컬럼 제거 (delta는 쿼리 시 new_price - old_price로 계산)
+        cur.execute("SAVEPOINT pre_drop_delta")
+        try:
+            cur.execute("ALTER TABLE price_events DROP COLUMN IF EXISTS delta")
+        except Exception:
+            cur.execute("ROLLBACK TO SAVEPOINT pre_drop_delta")
+        else:
+            cur.execute("RELEASE SAVEPOINT pre_drop_delta")
+
         # ── flight_legs 가격 변동 감지 트리거 ──
         cur.execute("""
             CREATE OR REPLACE FUNCTION record_price_change() RETURNS TRIGGER AS $$
@@ -253,13 +268,13 @@ def init_db():
                 IF NEW.price <> OLD.price THEN
                     INSERT INTO price_events
                         (destination, date, direction, airline, dep_time,
-                         source, old_price, new_price, delta, changed_at)
+                         source, old_price, new_price, changed_at)
                     VALUES
                         (NEW.destination, NEW.date, NEW.direction,
                          NEW.airline, NEW.dep_time,
                          COALESCE(NEW.best_source, NEW.source),
                          OLD.price, NEW.price,
-                         NEW.price - OLD.price, NEW.checked_at);
+                         NEW.checked_at);
                 END IF;
                 RETURN NEW;
             END;
@@ -426,7 +441,7 @@ def save_legs(legs: list[dict]):
              price, booking_url, search_url,
              best_source, checked_at)
             VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-            ON CONFLICT (origin, destination, date, direction,
+            ON CONFLICT (source, origin, destination, date, direction,
                          COALESCE(airline, ''), COALESCE(dep_time, ''),
                          COALESCE(arr_time, ''), COALESCE(stops, -1))
             DO UPDATE SET

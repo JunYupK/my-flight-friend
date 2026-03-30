@@ -62,7 +62,7 @@ function CalendarChart({ data, month }: { data: PriceHistoryPoint[]; month: stri
           <YAxis tickFormatter={formatPrice} tick={{ fontSize: 11, fill: "#86868b" }} width={45} />
           <Tooltip
             formatter={(v) => [`₩${Number(v).toLocaleString()}`, ""]}
-            labelFormatter={(l) => `출발일: ${month}-${l}`}
+            labelFormatter={(l) => `출발일: ${month.slice(0, 4)}-${l}`}
             contentStyle={{ borderRadius: 12, border: "none", boxShadow: "0 2px 12px rgba(0,0,0,0.08)" }}
           />
           <Legend />
