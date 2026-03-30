@@ -327,7 +327,7 @@ class TestSaveLegs:
         assert row is not None
         assert row["old_price"] == 200000
         assert row["new_price"] == 150000
-        assert row["delta"] == -50000
+        assert row["new_price"] - row["old_price"] == -50000
 
     def test_same_price_no_price_event(self):
         """동일 가격 재수집 시 price_events에 행이 추가되지 않는다."""
@@ -347,14 +347,19 @@ class TestSaveLegs:
             cur.execute("SELECT COUNT(*) FROM price_events")
             assert cur.fetchone()[0] == 0
 
-    def test_best_source_updates_on_price_drop(self):
-        """가격 하락 시 best_source가 새 소스로 업데이트된다."""
+    def test_different_sources_create_separate_rows(self):
+        """서로 다른 source는 각각 독립 row로 저장되며 best_source는 자신의 source와 동일하다."""
         storage.save_legs([_make_leg(source="google_flights", price=200000)])
         storage.save_legs([_make_leg(source="naver", price=150000)])
         with storage.get_conn() as conn:
-            cur = conn.cursor()
-            cur.execute("SELECT best_source FROM flight_legs")
-            assert cur.fetchone()[0] == "naver"
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cur.execute("SELECT source, best_source FROM flight_legs ORDER BY price")
+            rows = cur.fetchall()
+        assert len(rows) == 2
+        assert rows[0]["source"] == "naver"
+        assert rows[0]["best_source"] == "naver"
+        assert rows[1]["source"] == "google_flights"
+        assert rows[1]["best_source"] == "google_flights"
 
     def test_empty_list_no_db_touch(self):
         """빈 리스트 호출 시 DB에 아무것도 쓰지 않는다."""

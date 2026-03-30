@@ -574,14 +574,15 @@ def get_price_history(
                 raise HTTPException(400, "timeline mode requires departure_date")
             cur.execute("""
                 SELECT
-                    DATE(changed_at)::text AS check_date,
+                    DATE(collected_at)::text AS check_date,
                     source,
-                    new_price AS min_price
-                FROM price_events
+                    MIN(price) AS min_price
+                FROM raw_legs
                 WHERE destination = %s
                   AND date = %s
                   AND direction = 'out'
-                ORDER BY changed_at
+                GROUP BY DATE(collected_at), source
+                ORDER BY DATE(collected_at)
             """, (dest, departure_date))
         else:
             if not month:
