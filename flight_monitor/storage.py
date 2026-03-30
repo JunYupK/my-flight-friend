@@ -35,6 +35,9 @@ def init_db():
     with get_conn() as conn:
         cur = conn.cursor()
 
+        # ALTER COLUMN checked_at가 뷰 의존성으로 실패하지 않도록 먼저 drop
+        cur.execute("DROP VIEW IF EXISTS v_best_observed")
+
         cur.execute("""
             CREATE TABLE IF NOT EXISTS price_history (
                 id               SERIAL PRIMARY KEY,
@@ -104,13 +107,7 @@ def init_db():
             ("in_dep_airport", "TEXT"), ("out_url", "TEXT"), ("in_url", "TEXT"),
             ("out_price", "REAL"), ("in_price", "REAL"),
         ]:
-            cur.execute("SAVEPOINT pre_alter")
-            try:
-                cur.execute(f"ALTER TABLE price_history ADD COLUMN {col} {col_type}")
-            except Exception:
-                cur.execute("ROLLBACK TO SAVEPOINT pre_alter")
-            else:
-                cur.execute("RELEASE SAVEPOINT pre_alter")
+            cur.execute(f"ALTER TABLE price_history ADD COLUMN IF NOT EXISTS {col} {col_type}")
 
         cur.execute("""
             CREATE TABLE IF NOT EXISTS app_config (
@@ -186,13 +183,7 @@ def init_db():
         """)
 
         # flight_legs에 best_source 컬럼 추가 (없을 때만)
-        cur.execute("SAVEPOINT pre_best_source")
-        try:
-            cur.execute("ALTER TABLE flight_legs ADD COLUMN best_source TEXT")
-        except Exception:
-            cur.execute("ROLLBACK TO SAVEPOINT pre_best_source")
-        else:
-            cur.execute("RELEASE SAVEPOINT pre_best_source")
+        cur.execute("ALTER TABLE flight_legs ADD COLUMN IF NOT EXISTS best_source TEXT")
 
         # ── raw_legs: 수집 원본 로그 (append-only) ──
         cur.execute("""
@@ -253,13 +244,7 @@ def init_db():
         """)
 
         # 기존 배포: price_events.delta 컬럼 제거 (delta는 쿼리 시 new_price - old_price로 계산)
-        cur.execute("SAVEPOINT pre_drop_delta")
-        try:
-            cur.execute("ALTER TABLE price_events DROP COLUMN IF EXISTS delta")
-        except Exception:
-            cur.execute("ROLLBACK TO SAVEPOINT pre_drop_delta")
-        else:
-            cur.execute("RELEASE SAVEPOINT pre_drop_delta")
+        cur.execute("ALTER TABLE price_events DROP COLUMN IF EXISTS delta")
 
         # ── flight_legs 가격 변동 감지 트리거 ──
         cur.execute("""
@@ -289,13 +274,7 @@ def init_db():
         """)
 
         # 기존 테이블에서 fsc_count 컬럼 제거 (있을 때만)
-        cur.execute("SAVEPOINT pre_drop_fsc")
-        try:
-            cur.execute("ALTER TABLE collection_runs DROP COLUMN fsc_count")
-        except Exception:
-            cur.execute("ROLLBACK TO SAVEPOINT pre_drop_fsc")
-        else:
-            cur.execute("RELEASE SAVEPOINT pre_drop_fsc")
+        cur.execute("ALTER TABLE collection_runs DROP COLUMN IF EXISTS fsc_count")
 
         cur.execute("DROP VIEW IF EXISTS v_best_observed")
         cur.execute("""
