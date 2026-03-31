@@ -211,6 +211,7 @@ async def _crawl_route(crawler, airport_code: str, start_date: date, end_date: d
         wait_for="js:() => !!document.querySelector('li.pIav2d')",
         delay_before_return_html=4.0,
         cache_mode="bypass",
+        page_timeout=30000,
     )
 
     total_flights = 0
