@@ -434,6 +434,25 @@ def save_legs(legs: list[dict]):
         """, flight_rows)
 
 
+def get_collected_today(source: str) -> set[tuple[str, str, str]]:
+    """오늘(KST) 이미 수집한 (destination, date, direction) 집합 반환.
+
+    raw_legs를 기준으로 조회. 동일 날짜 재실행 시 이미 수집된 URL을 스킵하는 데 사용.
+    """
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT DISTINCT destination, date, direction
+            FROM raw_legs
+            WHERE source = %s
+              AND collected_at >= CURRENT_DATE
+            """,
+            (source,),
+        )
+        return {(row[0], row[1], row[2]) for row in cur.fetchall()}
+
+
 def make_alert_key(offer: dict) -> str:
     return "|".join([
         offer["destination"],
