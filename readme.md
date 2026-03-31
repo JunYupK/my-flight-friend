@@ -1,6 +1,6 @@
 # My Flight Friend
 
-**ICN(인천) 출발 일본행 항공권 최저가 자동 모니터링 시스템**
+** 항공권 최저가 자동 모니터링 시스템**
 
 [![CI](https://github.com/JunYupK/my-flight-friend/actions/workflows/ci.yml/badge.svg)](https://github.com/JunYupK/my-flight-friend/actions/workflows/ci.yml)
 [![Deploy](https://github.com/JunYupK/my-flight-friend/actions/workflows/deploy.yml/badge.svg)](https://github.com/JunYupK/my-flight-friend/actions/workflows/deploy.yml)
