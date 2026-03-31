@@ -460,6 +460,7 @@ async def _fetch_route(
     crawler: AsyncWebCrawler,
     airport_code: str, airport_name: str,
     start_date: date, end_date: date,
+    skip_set: set[tuple[str, str, str]] | None = None,
 ) -> list[dict]:
     """start_date~end_date 범위의 편도 항공편을 수집하고 왕복 조합을 반환."""
     delay = SEARCH_CONFIG["request_delay"]
@@ -476,6 +477,8 @@ async def _fetch_route(
             (ORIGIN, airport_code, "out"),
             (airport_code, ORIGIN, "in"),
         ]:
+            if skip_set and (airport_code, date_formatted, direction) in skip_set:
+                continue
             url = _build_tfs_url(dep, arr, date_formatted)
             if url is None:
                 continue
@@ -490,6 +493,7 @@ async def _fetch_route(
         wait_for="js:() => !!document.querySelector('li.pIav2d')",
         delay_before_return_html=4.0,
         cache_mode="bypass",
+        page_timeout=SEARCH_CONFIG.get("page_timeout_ms", 30000),
     )
 
     out_flights, in_flights = [], []
@@ -572,6 +576,28 @@ async def _fetch_route(
     return _combine_roundtrips(out_flights, in_flights, ORIGIN, airport_code, airport_name)
 
 
+async def _fetch_airport(
+    airport_code: str,
+    airport_name: str,
+    today: date,
+    end_date: date,
+    skip_set: set[tuple[str, str, str]],
+    on_route_done,
+    semaphore: asyncio.Semaphore,
+    browser_config,
+) -> list[dict]:
+    async with semaphore:
+        async with AsyncWebCrawler(config=browser_config) as crawler:
+            offers = await _fetch_route(
+                crawler, airport_code, airport_name, today, end_date, skip_set
+            )
+        if on_route_done and offers:
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, on_route_done, offers)
+        print(f"[GoogleFlights] {airport_code}: {len(offers)}건")
+        return offers
+
+
 async def _fetch_all(on_route_done=None) -> list[dict]:
     if not _CRAWL4AI_AVAILABLE:
         print("[GoogleFlights] crawl4ai 미설치, 수집 스킵")
@@ -602,24 +628,35 @@ async def _fetch_all(on_route_done=None) -> list[dict]:
     max_stay = max(SEARCH_CONFIG["stay_durations"])
     end_date = end_date + timedelta(days=max_stay)
 
+    # Option D: 오늘 이미 수집한 URL 스킵
+    from flight_monitor.storage import get_collected_today
+    skip_set = get_collected_today("google_flights")
+    if skip_set:
+        print(f"[GoogleFlights] {len(skip_set)}건 오늘 이미 수집됨, 스킵")
+
+    # Option F: 공항 병렬화
+    parallel = SEARCH_CONFIG.get("parallel_airports", 3)
+    semaphore = asyncio.Semaphore(parallel)
+
+    tasks = [
+        _fetch_airport(code, name, today, end_date, skip_set, on_route_done, semaphore, browser_config)
+        for code, name in JAPAN_AIRPORTS.items()
+    ]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
     all_results = []
-    total_routes = 0
     empty_routes = 0
-
-    async with AsyncWebCrawler(config=browser_config) as crawler:
-        for airport_code, airport_name in JAPAN_AIRPORTS.items():
-            total_routes += 1
-            print(f"[GoogleFlights] {airport_code} 수집 시작 ({today} ~ {end_date})")
-            offers = await _fetch_route(crawler, airport_code, airport_name, today, end_date)
-            all_results.extend(offers)
-            if on_route_done and offers:
-                on_route_done(offers)
-            if not offers:
+    for airport_code, result in zip(JAPAN_AIRPORTS.keys(), results):
+        if isinstance(result, BaseException):
+            print(f"[GoogleFlights ERROR] {airport_code}: {result}")
+            empty_routes += 1
+        else:
+            all_results.extend(result)
+            if not result:
                 empty_routes += 1
-            print(f"[GoogleFlights] {airport_code}: {len(offers)}건")
 
-    if total_routes > 0 and empty_routes == total_routes:
-        print(f"[GoogleFlights WARN] 전체 {total_routes}개 노선 모두 0건 — DOM 셀렉터 변경 또는 크롤링 차단 가능성")
+    if len(tasks) > 0 and empty_routes == len(tasks):
+        print(f"[GoogleFlights WARN] 전체 {len(tasks)}개 노선 모두 0건 — DOM 셀렉터 변경 또는 크롤링 차단 가능성")
 
     return all_results
 

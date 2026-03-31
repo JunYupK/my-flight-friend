@@ -33,4 +33,6 @@ SEARCH_CONFIG = {
 
     # 성능/안전
     "request_delay": 1.0,
+    "parallel_airports": 3,      # 동시 실행 공항 수
+    "page_timeout_ms": 30000,    # CrawlerRunConfig page_timeout (ms)
 }
