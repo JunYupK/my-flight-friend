@@ -82,19 +82,9 @@ export default function Results() {
       </div>
     );
 
-  if (groups.length === 0)
-    return (
-      <div className="space-y-6">
-        <MonthFilter activeMonth={activeMonth} onChange={setActiveMonth} />
-        <div className="flex flex-col items-center py-20 gap-3 text-apple-secondary">
-          <p className="text-5xl">✈</p>
-          <p className="text-lg font-medium">해당 월의 항공권 데이터가 없습니다.</p>
-          <p className="text-sm">다른 월을 선택하거나 수집을 실행해주세요.</p>
-        </div>
-      </div>
-    );
-
-  const activeGroup = groups.find((g) => g.destination === activeDest) ?? groups[0];
+  const activeGroup = groups.length > 0
+    ? (groups.find((g) => g.destination === activeDest) ?? groups[0])
+    : null;
 
   return (
     <div className="space-y-5">
@@ -108,41 +98,45 @@ export default function Results() {
       </div>
 
       {/* 목적지 탭 — 가로 스크롤 */}
-      <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
-        <div className="flex gap-2 w-max sm:w-auto sm:flex-wrap">
-          {groups.map((g) => {
-            const isActive = g.destination === activeGroup.destination;
-            return (
-              <button
-                key={g.destination}
-                onClick={() => setActiveDest(g.destination)}
-                className={`flex flex-col items-start px-4 py-2.5 rounded-2xl text-left transition-all duration-200 whitespace-nowrap ${
-                  isActive
-                    ? "bg-apple-text text-white shadow-apple"
-                    : "bg-white text-apple-text shadow-apple-sm hover:shadow-apple"
-                }`}
-              >
-                <span className="text-sm font-semibold">{g.destination_name}</span>
-                <span className={`text-[11px] ${isActive ? "text-white/60" : "text-apple-secondary"}`}>
-                  {g.destination} · {Math.round(g.min_price).toLocaleString()}원~
-                </span>
-              </button>
-            );
-          })}
+      {activeGroup && (
+        <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+          <div className="flex gap-2 w-max sm:w-auto sm:flex-wrap">
+            {groups.map((g) => {
+              const isActive = g.destination === activeGroup.destination;
+              return (
+                <button
+                  key={g.destination}
+                  onClick={() => setActiveDest(g.destination)}
+                  className={`flex flex-col items-start px-4 py-2.5 rounded-2xl text-left transition-all duration-200 whitespace-nowrap ${
+                    isActive
+                      ? "bg-apple-text text-white shadow-apple"
+                      : "bg-white text-apple-text shadow-apple-sm hover:shadow-apple"
+                  }`}
+                >
+                  <span className="text-sm font-semibold">{g.destination_name}</span>
+                  <span className={`text-[11px] ${isActive ? "text-white/60" : "text-apple-secondary"}`}>
+                    {g.destination} · {Math.round(g.min_price).toLocaleString()}원~
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* 선택된 목적지 헤더 + trip_type 필터 */}
+      {/* 선택된 목적지 헤더 + trip_type/source 필터 */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-        <div className="flex items-center gap-2">
-          <h2 className="text-xl sm:text-2xl font-bold text-apple-text">{activeGroup.destination_name}</h2>
-          <span className="text-sm text-apple-secondary">{activeGroup.destination}</span>
-          {activeGroup.min_price > 0 && (
-            <span className="text-sm font-semibold text-apple-blue whitespace-nowrap">
-              최저 {Math.round(activeGroup.min_price).toLocaleString()}원~
-            </span>
-          )}
-        </div>
+        {activeGroup && (
+          <div className="flex items-center gap-2">
+            <h2 className="text-xl sm:text-2xl font-bold text-apple-text">{activeGroup.destination_name}</h2>
+            <span className="text-sm text-apple-secondary">{activeGroup.destination}</span>
+            {activeGroup.min_price > 0 && (
+              <span className="text-sm font-semibold text-apple-blue whitespace-nowrap">
+                최저 {Math.round(activeGroup.min_price).toLocaleString()}원~
+              </span>
+            )}
+          </div>
+        )}
         <div className="flex items-center gap-1.5 sm:ml-auto">
           {TRIP_TYPE_OPTIONS.map((opt) => (
             <button
@@ -169,7 +163,13 @@ export default function Results() {
         </div>
       </div>
 
-      {activeGroup.total_count === 0 ? (
+      {!activeGroup ? (
+        <div className="flex flex-col items-center py-20 gap-3 text-apple-secondary">
+          <p className="text-5xl">✈</p>
+          <p className="text-lg font-medium">해당 조건의 항공권이 없습니다.</p>
+          <p className="text-sm">필터를 변경하거나 수집을 실행해주세요.</p>
+        </div>
+      ) : activeGroup.total_count === 0 ? (
         <div className="text-center py-10 text-apple-secondary text-sm">해당 조건의 항공권이 없습니다.</div>
       ) : (
         <>
