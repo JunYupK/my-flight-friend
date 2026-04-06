@@ -3,7 +3,8 @@ import type { Deal } from "../types";
 import { formatDate, normalizeTime, formatDuration } from "../utils";
 
 export function StopsBadge({ stops }: { stops: number | null }) {
-  if (stops == null) return null;
+  if (stops == null)
+    return <span className="text-[10px] bg-apple-red/10 text-apple-red px-2 py-0.5 rounded-full font-medium whitespace-nowrap">경유</span>;
   return stops === 0 ? (
     <span className="text-[10px] bg-apple-green/10 text-apple-green px-2 py-0.5 rounded-full font-medium whitespace-nowrap">직항</span>
   ) : (
