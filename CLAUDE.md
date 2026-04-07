@@ -114,7 +114,8 @@ ALERT_EMAIL=...
 **Data flow:** `main.py` → collectors → `storage.save_prices()` → alert check → `notifier.notify()`
 
 **Data sources** (all produce the same offer dict shape):
-- `collector_google_flights.py` — crawl4ai headless browser. Scrapes `li.pIav2d` cards via JS injection. Encodes date into base64 `tfs=` URL parameter by replacing bytes in `_TFS_TEMPLATES`. Only ICN↔TYO is registered; other routes need new tfs= values added. **Only collector wired into `main.py`.**
+- `collector_google_flights.py` — crawl4ai headless browser. Scrapes `li.pIav2d` cards via JS injection. Encodes date into base64 `tfs=` URL parameter by replacing bytes in `_TFS_TEMPLATES`. Only ICN↔TYO is registered; other routes need new tfs= values added. **Wired into `main.py`.**
+- `collector_naver.py` — crawl4ai headless browser. `flight.naver.com` 검색 결과 DOM 파싱. 편도(OW) URL(`SEL:city-{dest}:airport-YYYYMMDD`)로 outbound/inbound 수집 후 왕복 조합. `div[class*="combination_ConcurrentItemContainer"]` 카드 셀렉터 기반. **Wired into `main.py`.**
 - `collector_skyscanner.py` — Skyscanner RapidAPI (`browsequotes/v1.0`). Requires `RAPIDAPI_KEY`. Not wired into `main.py`.
 
 **Offer dict shape** (all collectors must produce these fields):
