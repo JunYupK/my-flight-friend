@@ -26,17 +26,22 @@ jobs:
 
             git pull origin master
 
-            # app + collector 이미지 리빌드
-            docker compose -f docker-compose.prod.yml build app collector
+            # app + mcp + collector 이미지 리빌드
+            docker compose -f docker-compose.prod.yml build app mcp collector
 
             # 무중단 재시작
-            docker compose -f docker-compose.prod.yml up -d app
+            docker compose -f docker-compose.prod.yml up -d app mcp
 
             # 헬스체크 (Caddy 경유)
             sleep 5
             curl -sf http://localhost/api/config > /dev/null \
-              && echo "Deploy OK" \
-              || (echo "Health check failed" && exit 1)
+              && echo "App deploy OK" \
+              || (echo "App health check failed" && exit 1)
+
+            curl -sf -o /dev/null -w "%{http_code}" http://localhost/mcp/sse \
+              | grep -qE "^(200|401)$" \
+              && echo "MCP deploy OK" \
+              || (echo "MCP health check failed" && exit 1)
 
             # 미사용 이미지 정리
             docker image prune -f

@@ -1,0 +1,9 @@
+FROM python:3.11-slim
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir $(grep -v 'crawl4ai' requirements.txt | tr '\n' ' ')
+
+COPY . .
+
+CMD ["python", "mcp_server.py"]

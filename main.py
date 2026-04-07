@@ -15,7 +15,7 @@ apply_db_config()
 
 from flight_monitor.collector_google_flights import fetch_google_flights_offers
 from flight_monitor.collector_naver          import fetch_naver_offers
-from flight_monitor.storage                  import init_db, save_prices, should_notify, record_alert, start_collection_run, finish_collection_run
+from flight_monitor.storage                  import init_db, should_notify, record_alert, start_collection_run, finish_collection_run
 from flight_monitor.notifier                 import notify, send_email
 from flight_monitor.config                   import SEARCH_CONFIG
 
@@ -48,8 +48,8 @@ def _collect_and_alert(run_id: int):
 
     # --- Google Flights + Naver 병렬 수집 ---
     with ThreadPoolExecutor(max_workers=2) as pool:
-        gf_future: Future = pool.submit(fetch_google_flights_offers, save_prices)
-        nv_future: Future = pool.submit(fetch_naver_offers, save_prices)
+        gf_future: Future = pool.submit(fetch_google_flights_offers)
+        nv_future: Future = pool.submit(fetch_naver_offers)
 
     gf_offers: list[dict] = []
     nv_offers: list[dict] = []

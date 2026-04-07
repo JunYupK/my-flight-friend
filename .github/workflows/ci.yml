@@ -41,6 +41,9 @@ jobs:
           DATABASE_URL: postgresql://flight_user:flight_pass@localhost:5432/flights
         run: pytest tests/ -v
 
+      - name: Lint mcp_server.py
+        run: python -m py_compile mcp_server.py
+
   build-frontend:
     runs-on: ubuntu-latest
 

@@ -49,6 +49,24 @@ services:
       db:
         condition: service_healthy
 
+  mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+    restart: unless-stopped
+    expose:
+      - "8001"
+    environment:
+      DATABASE_URL: postgresql://flight_user:${DB_PASSWORD:?DB_PASSWORD must be set}@db:5432/flights
+    env_file:
+      - .env
+    networks:
+      - frontend
+      - backend
+    depends_on:
+      db:
+        condition: service_healthy
+
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
@@ -58,6 +76,8 @@ services:
       - "443:443/udp"
     environment:
       DOMAIN: ${DOMAIN:?DOMAIN must be set}
+    env_file:
+      - .env
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
@@ -66,6 +86,7 @@ services:
       - frontend
     depends_on:
       - app
+      - mcp
 
 networks:
   frontend:
