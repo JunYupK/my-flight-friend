@@ -38,7 +38,7 @@ jobs:
               && echo "App deploy OK" \
               || (echo "App health check failed" && exit 1)
 
-            curl -sf -o /dev/null -w "%{http_code}" http://localhost/mcp/sse \
+            curl -sk -o /dev/null -w "%{http_code}" https://localhost/mcp/sse \
               | grep -qE "^(200|401)$" \
               && echo "MCP deploy OK" \
               || (echo "MCP health check failed" && exit 1)
