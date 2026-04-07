@@ -13,6 +13,7 @@ from flight_monitor.config_db import apply_db_config
 apply_db_config()
 
 from flight_monitor.collector_google_flights import fetch_google_flights_offers
+from flight_monitor.collector_naver          import fetch_naver_offers
 from flight_monitor.storage                  import init_db, save_prices, should_notify, record_alert, start_collection_run, finish_collection_run
 from flight_monitor.notifier                 import notify, send_email
 from flight_monitor.config                   import SEARCH_CONFIG
@@ -53,14 +54,24 @@ def _collect_and_alert(run_id: int):
         print(f"[{_ts()}] [ERROR] GoogleFlights 수집 실패: {e}")
         traceback.print_exc()
 
-    all_offers = gf_offers
-    print(f"[{_ts()}] [수집] GoogleFlights {len(gf_offers)}건")
+    # --- Naver 수집 ---
+    try:
+        nv_offers = fetch_naver_offers(on_route_done=save_prices)
+    except Exception as e:
+        nv_offers = []
+        errors.append(f"Naver 수집 에러: {e}\n{traceback.format_exc()}")
+        print(f"[{_ts()}] [ERROR] Naver 수집 실패: {e}")
+        traceback.print_exc()
+
+    all_offers = gf_offers + nv_offers
+    print(f"[{_ts()}] [수집] GoogleFlights {len(gf_offers)}건, Naver {len(nv_offers)}건")
 
     # --- 수집 결과 0건 경고 ---
     if not all_offers:
         msg = (
             f"[{_ts()}] [WARN] 수집 결과 0건!\n"
             f"GoogleFlights: {len(gf_offers)}건\n"
+            f"Naver: {len(nv_offers)}건\n"
         )
         if errors:
             msg += "에러 목록:\n" + "\n".join(f"  - {e}" for e in errors)
@@ -80,7 +91,7 @@ def _collect_and_alert(run_id: int):
             print(f"[{_ts()}] [알림] {offer['destination']} {offer['departure_date']}~{offer['return_date']} → {offer['price']:,}원")
 
     # --- 실행 결과 기록 ---
-    total_saved = len(gf_offers)
+    total_saved = len(gf_offers) + len(nv_offers)
     if errors:
         status = "partial" if total_saved > 0 else "error"
         error_log = "\n---\n".join(errors)
@@ -92,6 +103,7 @@ def _collect_and_alert(run_id: int):
         run_id,
         status=status,
         google_count=len(gf_offers),
+        naver_count=len(nv_offers),
         total_saved=total_saved,
         alerts_sent=alerts_sent,
         error_log=error_log,

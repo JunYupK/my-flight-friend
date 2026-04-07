@@ -14,7 +14,7 @@ import type { PriceHistoryPoint } from "../types";
 
 const SOURCE_COLORS: Record<string, string> = {
   google_flights: "#3b82f6",
-  naver_graphql: "#22c55e",
+  naver: "#22c55e",
   amadeus: "#f97316",
 };
 
@@ -78,7 +78,7 @@ export default function PriceChart({ destination, month }: PriceChartProps) {
               type="monotone"
               dataKey={src}
               stroke={SOURCE_COLORS[src] ?? "#6b7280"}
-              name={src === "google_flights" ? "Google" : src === "naver_graphql" ? "Naver" : src}
+              name={src === "google_flights" ? "Google" : src === "naver" ? "Naver" : src}
               dot={{ r: 3 }}
               connectNulls
             />

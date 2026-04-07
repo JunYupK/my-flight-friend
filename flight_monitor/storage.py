@@ -276,6 +276,12 @@ def init_db():
         # 기존 테이블에서 fsc_count 컬럼 제거 (있을 때만)
         cur.execute("ALTER TABLE collection_runs DROP COLUMN IF EXISTS fsc_count")
 
+        # naver_count 컬럼 추가 (있을 때만 스킵)
+        cur.execute("""
+            ALTER TABLE collection_runs
+            ADD COLUMN IF NOT EXISTS naver_count INTEGER DEFAULT 0
+        """)
+
         cur.execute("DROP VIEW IF EXISTS v_best_observed")
         cur.execute("""
             CREATE VIEW v_best_observed AS
@@ -520,6 +526,7 @@ def finish_collection_run(
     *,
     status: str,
     google_count: int = 0,
+    naver_count: int = 0,
     total_saved: int = 0,
     alerts_sent: int = 0,
     error_log: str | None = None,
@@ -531,12 +538,13 @@ def finish_collection_run(
             SET finished_at  = %s,
                 status       = %s,
                 google_count = %s,
+                naver_count  = %s,
                 total_saved  = %s,
                 alerts_sent  = %s,
                 error_log    = %s,
                 duration_sec = EXTRACT(EPOCH FROM (%s::timestamptz - started_at))
             WHERE id = %s
-        """, (datetime.now(KST), status, google_count, total_saved, alerts_sent, error_log, datetime.now(KST), run_id))
+        """, (datetime.now(KST), status, google_count, naver_count, total_saved, alerts_sent, error_log, datetime.now(KST), run_id))
 
 
 def get_recent_runs(limit: int = 20) -> list[dict]:
@@ -544,7 +552,8 @@ def get_recent_runs(limit: int = 20) -> list[dict]:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cur.execute("""
             SELECT id, started_at, finished_at, status,
-                   google_count, total_saved, alerts_sent,
+                   google_count, COALESCE(naver_count, 0) AS naver_count,
+                   total_saved, alerts_sent,
                    duration_sec, error_log IS NOT NULL AS has_error
             FROM collection_runs
             ORDER BY started_at DESC

@@ -14,13 +14,13 @@ import {
 
 const SOURCE_COLORS: Record<string, string> = {
   google_flights: "#0071e3",
-  naver_graphql: "#34c759",
+  naver: "#34c759",
   amadeus: "#ff9500",
 };
 
 function sourceName(src: string) {
   if (src === "google_flights") return "Google";
-  if (src === "naver_graphql") return "Naver";
+  if (src === "naver") return "Naver";
   return src;
 }
 
