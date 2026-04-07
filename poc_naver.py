@@ -1,207 +1,214 @@
 """
-네이버 항공권 API PoC — 편도(OW) / 왕복(RT) 둘 다 테스트
+네이버 항공권 crawl4ai PoC — 브라우저 기반 크롤링
 실행: python poc_naver.py
+
+Naver 항공편 검색 페이지를 headless 브라우저로 접근하여
+DOM에서 항공편 데이터를 추출한다.
 """
 
+import asyncio
 import json
-import requests
+import re
 from datetime import date, timedelta
 
-API_URL = "https://flight-api.naver.com/flight/international/searchFlights"
-
-HEADERS = {
-    "Content-Type": "application/json",
-    "Accept": "text/event-stream",
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/131.0.0.0 Safari/537.36"
-    ),
-    "Referer": "https://flight.naver.com/",
-    "Origin": "https://flight.naver.com",
-    "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Connection": "keep-alive",
-}
+try:
+    from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig
+except ImportError:
+    print("crawl4ai 미설치. pip install crawl4ai")
+    exit(1)
 
 
-def build_payload(origin, dest, dep_date, ret_date=None, trip_type="OW"):
+def build_naver_url(origin, dest, dep_date, ret_date=None, trip_type="OW"):
     """
-    trip_type: "OW" (편도) 또는 "RT" (왕복)
+    네이버 항공권 검색 URL 생성.
     dep_date, ret_date: "YYYYMMDD" 형식
     """
-    itineraries = [
-        {
-            "departureLocationCode": origin,
-            "departureLocationType": "airport",
-            "arrivalLocationCode": dest,
-            "arrivalLocationType": "airport",
-            "departureDate": dep_date,
-        }
-    ]
+    base = "https://flight.naver.com/flights/international"
+    # OW: /ICN-NRT-20260421
+    # RT: /ICN-NRT-20260421/NRT-ICN-20260424
+    path = f"{base}/{origin}-{dest}-{dep_date}"
     if trip_type == "RT" and ret_date:
-        itineraries.append({
-            "departureLocationCode": dest,
-            "departureLocationType": "airport",
-            "arrivalLocationCode": origin,
-            "arrivalLocationType": "airport",
-            "departureDate": ret_date,
-        })
+        path += f"/{dest}-{origin}-{ret_date}"
+    params = f"?adult=1&fareType=Y&tripType={trip_type}"
+    return path + params
 
-    return {
-        "adultCount": 1,
-        "childCount": 0,
-        "infantCount": 0,
-        "device": "pc",
-        "isNonstop": False,
-        "seatClass": "Y",
-        "tripType": trip_type,
-        "itineraries": itineraries,
-        "openReturnDays": 0,
-        "flightFilter": {
-            "filter": {
-                "airlines": [],
-                "departureAirports": [[origin], [dest]] if trip_type == "RT" else [[origin]],
-                "arrivalAirports": [[dest], [origin]] if trip_type == "RT" else [[dest]],
-                "departureTime": [],
-                "fareTypes": [],
-                "flightDurationSeconds": [],
-                "hasCardBenefit": False,
-                "isIndividual": False,
-                "isLowCarbonEmission": False,
-                "isSameAirlines": False,
-                "isSameDepArrAirport": True,
-                "isTravelClub": False,
-                "minFare": {},
-                "viaCount": [],
-                "selectedItineraries": [],
-            },
-            "limit": 20,
-            "skip": 0,
-            "sort": {"adultMinFare": 1},
-        },
-        "initialRequest": False,
+
+# JS: 페이지 로딩 완료까지 스크롤
+SCROLL_JS = """
+(async () => {
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    let prev = 0;
+    for (let i = 0; i < 5; i++) {
+        window.scrollTo(0, document.body.scrollHeight);
+        await sleep(1500);
+        const curr = document.body.scrollHeight;
+        if (curr === prev) break;
+        prev = curr;
+    }
+})();
+"""
+
+# JS: DOM에서 항공편 데이터 추출 (결과를 #__nv__ div에 저장)
+# 네이버 DOM 구조를 탐색하기 위해 우선 raw 정보를 최대한 수집한다
+EXTRACT_JS = """
+(function() {
+    var results = [];
+
+    // 네이버 항공편 카드 셀렉터 탐색
+    // 알려진 셀렉터 후보들을 시도
+    var selectors = [
+        'div[class*="result"] div[class*="item"]',
+        'div[class*="flight"] div[class*="item"]',
+        'div[class*="domestic_Flight"] li',
+        'ul[class*="result"] > li',
+        'div[class*="concurrent_ConcurrentList"] > div',
+        'div[class*="indivisual_IndivisualItem"]',
+    ];
+
+    var cards = [];
+    var usedSelector = '';
+    for (var i = 0; i < selectors.length; i++) {
+        cards = document.querySelectorAll(selectors[i]);
+        if (cards.length > 0) {
+            usedSelector = selectors[i];
+            break;
+        }
     }
 
+    // 페이지 내 주요 텍스트 컨텐츠 덤프 (디버깅용)
+    var bodyText = document.body ? document.body.innerText.substring(0, 3000) : '';
 
-def parse_sse(response):
-    """SSE 스트림에서 마지막 유효 데이터 추출"""
-    last_data = None
-    for line in response.iter_lines(decode_unicode=True):
-        if line and line.startswith("data:"):
-            raw = line[5:].strip()
-            if not raw:
-                continue
-            try:
-                parsed = json.loads(raw)
-                if parsed.get("itineraries") and parsed.get("fareMappings"):
-                    last_data = parsed
-            except json.JSONDecodeError:
-                pass
-    return last_data
+    // 가격이 포함된 요소 찾기 (숫자+원 패턴)
+    var priceElements = [];
+    var allElements = document.querySelectorAll('*');
+    for (var j = 0; j < allElements.length && priceElements.length < 20; j++) {
+        var el = allElements[j];
+        if (el.children.length === 0) {
+            var txt = (el.textContent || '').trim();
+            if (/[\\d,]+원/.test(txt) && txt.length < 30) {
+                priceElements.push({
+                    tag: el.tagName,
+                    class: el.className,
+                    text: txt,
+                    parentClass: el.parentElement ? el.parentElement.className : ''
+                });
+            }
+        }
+    }
 
-
-def print_results(data, trip_type):
-    if not data:
-        print("  → 응답 없음 (data=None)")
-        return
-
-    itineraries = data.get("itineraries", [])
-    fare_mappings = data.get("fareMappings", [])
-    print(f"  → itineraries: {len(itineraries)}개, fareMappings: {len(fare_mappings)}개")
-
-    # itinerary 맵
-    itin_map = {it["itineraryId"]: it for it in itineraries}
-
-    for i, fm in enumerate(fare_mappings[:5]):  # 상위 5개만
-        ids = fm.get("itineraryIds", "")
-        fares = fm.get("fares", [])
-        best = min((f["adult"]["totalFare"] for f in fares if f.get("adult", {}).get("totalFare")), default=0)
-
-        parts = ids.split("-")
-        segments_info = []
-        for pid in parts:
-            itin = itin_map.get(pid)
-            if not itin:
-                continue
-            segs = itin.get("segments", [])
-            if segs:
-                first = segs[0]
-                last = segs[-1]
-                dep = first.get("departure", {})
-                arr = last.get("arrival", {})
-                airline = first.get("marketingCarrier", {}).get("airlineCode", "??")
-                flight_no = first.get("marketingCarrier", {}).get("flightNumber", "")
-                stops = len(segs) - 1
-                duration = itin.get("duration", 0)
-                segments_info.append(
-                    f"{airline}{flight_no} "
-                    f"{dep.get('airportCode','?')} {dep.get('time','?')[:5]} → "
-                    f"{arr.get('airportCode','?')} {arr.get('time','?')[:5]} "
-                    f"({duration}분, {stops}경유)"
-                )
-
-        print(f"  [{i+1}] ₩{best:,}  |  {' / '.join(segments_info)}")
-        # fareMapping에서 파트너 정보
-        partners = [f"{f.get('partnerCode','?')}({f['adult']['totalFare']:,})" for f in fares[:3]]
-        print(f"       파트너: {', '.join(partners)}")
+    var el = document.getElementById('__nv__');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = '__nv__';
+        el.style.display = 'none';
+        document.body.appendChild(el);
+    }
+    el.textContent = JSON.stringify({
+        usedSelector: usedSelector,
+        cardCount: cards.length,
+        priceElements: priceElements,
+        bodyTextPreview: bodyText,
+        url: window.location.href,
+        title: document.title,
+    });
+})();
+"""
 
 
-def create_session():
-    """flight.naver.com 방문하여 세션 쿠키 획득"""
-    session = requests.Session()
-    session.headers.update(HEADERS)
-
-    print("[세션] flight.naver.com 쿠키 획득 중...")
+def parse_naver_result(raw_html):
+    """#__nv__ div에서 추출 결과 파싱"""
+    m = re.search(r'id="__nv__"[^>]*>(.*?)</div>', raw_html, re.DOTALL)
+    if not m:
+        return None
     try:
-        resp = session.get("https://flight.naver.com/", timeout=10)
-        print(f"[세션] HTTP {resp.status_code}, 쿠키: {list(session.cookies.keys())}")
-    except Exception as e:
-        print(f"[세션] 쿠키 획득 실패 (계속 진행): {e}")
-
-    return session
-
-
-def test_search(session, origin, dest, dep_date, ret_date=None, trip_type="OW"):
-    label = f"{trip_type} {origin}→{dest} {dep_date}"
-    if ret_date:
-        label += f" ~ {ret_date}"
-    print(f"\n{'='*60}")
-    print(f"[TEST] {label}")
-    print(f"{'='*60}")
-
-    payload = build_payload(origin, dest, dep_date, ret_date, trip_type)
-    print(f"  payload tripType={trip_type}, itineraries={len(payload['itineraries'])}개")
-
-    try:
-        resp = session.post(API_URL, json=payload, stream=True, timeout=30)
-        print(f"  HTTP {resp.status_code}")
-        print(f"  응답 헤더: {dict(list(resp.headers.items())[:5])}")
-        if resp.status_code != 200:
-            print(f"  응답: {resp.text[:500]}")
-            return
-        data = parse_sse(resp)
-        print_results(data, trip_type)
-        return data
-    except Exception as e:
-        print(f"  에러: {e}")
+        from html import unescape
+        return json.loads(unescape(m.group(1).strip()))
+    except (json.JSONDecodeError, ValueError):
         return None
 
 
-if __name__ == "__main__":
-    # 2주 뒤 날짜로 테스트
+async def test_search(crawler, origin, dest, dep_date, ret_date=None, trip_type="OW"):
+    url = build_naver_url(origin, dest, dep_date, ret_date, trip_type)
+    label = f"{trip_type} {origin}→{dest} {dep_date}"
+    if ret_date:
+        label += f" ~ {ret_date}"
+
+    print(f"\n{'='*60}")
+    print(f"[TEST] {label}")
+    print(f"  URL: {url}")
+    print(f"{'='*60}")
+
+    try:
+        result = await crawler.arun(
+            url=url,
+            config=CrawlerRunConfig(
+                magic=True,
+                js_code=[SCROLL_JS, EXTRACT_JS],
+                delay_before_return_html=8.0,  # 네이버 SSE 로딩 대기
+                cache_mode="bypass",
+                page_timeout=30000,
+            ),
+        )
+    except Exception as e:
+        print(f"  크롤링 에러: {e}")
+        return
+
+    if not result.success:
+        print(f"  크롤링 실패: {result.error_message}")
+        return
+
+    print(f"  크롤링 성공! HTML 길이: {len(result.html or '')}자")
+
+    data = parse_naver_result(result.html or "")
+    if data:
+        print(f"  페이지 제목: {data.get('title')}")
+        print(f"  최종 URL: {data.get('url')}")
+        print(f"  사용된 셀렉터: {data.get('usedSelector') or '(없음)'}")
+        print(f"  카드 수: {data.get('cardCount')}")
+        print(f"\n  가격 요소 ({len(data.get('priceElements', []))}개):")
+        for pe in data.get("priceElements", [])[:10]:
+            print(f"    <{pe['tag']} class=\"{pe['class'][:60]}\">{pe['text']}")
+        print(f"\n  본문 텍스트 미리보기:")
+        body = data.get("bodyTextPreview", "")
+        # 처음 1000자만 출력
+        for line in body[:1000].split("\n"):
+            line = line.strip()
+            if line:
+                print(f"    {line}")
+    else:
+        print("  #__nv__ 데이터 추출 실패")
+        # HTML 일부 출력
+        html = result.html or ""
+        print(f"  HTML 앞부분:\n{html[:500]}")
+
+
+async def main():
     dep = (date.today() + timedelta(days=14)).strftime("%Y%m%d")
     ret = (date.today() + timedelta(days=17)).strftime("%Y%m%d")
 
-    session = create_session()
+    browser_config = BrowserConfig(
+        headless=True,
+        viewport={"width": 1920, "height": 1080},
+        extra_args=[
+            "--disable-blink-features=AutomationControlled",
+            "--no-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+        ],
+    )
 
-    # --- 1) 편도 테스트 ---
-    test_search(session, "ICN", "NRT", dep, trip_type="OW")
+    async with AsyncWebCrawler(config=browser_config) as crawler:
+        # 1) 편도 테스트
+        await test_search(crawler, "ICN", "NRT", dep, trip_type="OW")
 
-    # --- 2) 왕복 테스트 ---
-    test_search(session, "ICN", "NRT", dep, ret, trip_type="RT")
+        # 2) 왕복 테스트
+        await test_search(crawler, "ICN", "NRT", dep, ret, trip_type="RT")
 
-    # --- 3) 귀국편 편도 테스트 ---
-    test_search(session, "NRT", "ICN", ret, trip_type="OW")
+        # 3) 귀국편 편도
+        await test_search(crawler, "NRT", "ICN", ret, trip_type="OW")
 
     print("\n✅ PoC 완료")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
