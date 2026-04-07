@@ -1,3 +1,8 @@
 {$DOMAIN} {
+	handle_path /mcp/* {
+		@no_auth not header Authorization "Bearer {env.MCP_API_KEY}"
+		respond @no_auth 401
+		reverse_proxy mcp:8001
+	}
 	reverse_proxy app:8000
 }
