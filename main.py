@@ -3,6 +3,7 @@ sys.stdout.reconfigure(encoding="utf-8")
 sys.stderr.reconfigure(encoding="utf-8")
 
 import traceback
+from concurrent.futures import ThreadPoolExecutor, Future
 from datetime import datetime
 from flight_monitor.config import KST
 
@@ -45,20 +46,24 @@ def _collect_and_alert(run_id: int):
     errors: list[str] = []
     alerts_sent = 0
 
-    # --- Google Flights 수집 ---
+    # --- Google Flights + Naver 병렬 수집 ---
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        gf_future: Future = pool.submit(fetch_google_flights_offers, save_prices)
+        nv_future: Future = pool.submit(fetch_naver_offers, save_prices)
+
+    gf_offers: list[dict] = []
+    nv_offers: list[dict] = []
+
     try:
-        gf_offers = fetch_google_flights_offers(on_route_done=save_prices)
+        gf_offers = gf_future.result()
     except Exception as e:
-        gf_offers = []
         errors.append(f"GoogleFlights 수집 에러: {e}\n{traceback.format_exc()}")
         print(f"[{_ts()}] [ERROR] GoogleFlights 수집 실패: {e}")
         traceback.print_exc()
 
-    # --- Naver 수집 ---
     try:
-        nv_offers = fetch_naver_offers(on_route_done=save_prices)
+        nv_offers = nv_future.result()
     except Exception as e:
-        nv_offers = []
         errors.append(f"Naver 수집 에러: {e}\n{traceback.format_exc()}")
         print(f"[{_ts()}] [ERROR] Naver 수집 실패: {e}")
         traceback.print_exc()
