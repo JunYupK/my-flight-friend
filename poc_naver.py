@@ -18,7 +18,10 @@ HEADERS = {
         "Chrome/131.0.0.0 Safari/537.36"
     ),
     "Referer": "https://flight.naver.com/",
+    "Origin": "https://flight.naver.com",
     "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Connection": "keep-alive",
 }
 
 
@@ -144,7 +147,22 @@ def print_results(data, trip_type):
         print(f"       파트너: {', '.join(partners)}")
 
 
-def test_search(origin, dest, dep_date, ret_date=None, trip_type="OW"):
+def create_session():
+    """flight.naver.com 방문하여 세션 쿠키 획득"""
+    session = requests.Session()
+    session.headers.update(HEADERS)
+
+    print("[세션] flight.naver.com 쿠키 획득 중...")
+    try:
+        resp = session.get("https://flight.naver.com/", timeout=10)
+        print(f"[세션] HTTP {resp.status_code}, 쿠키: {list(session.cookies.keys())}")
+    except Exception as e:
+        print(f"[세션] 쿠키 획득 실패 (계속 진행): {e}")
+
+    return session
+
+
+def test_search(session, origin, dest, dep_date, ret_date=None, trip_type="OW"):
     label = f"{trip_type} {origin}→{dest} {dep_date}"
     if ret_date:
         label += f" ~ {ret_date}"
@@ -156,8 +174,9 @@ def test_search(origin, dest, dep_date, ret_date=None, trip_type="OW"):
     print(f"  payload tripType={trip_type}, itineraries={len(payload['itineraries'])}개")
 
     try:
-        resp = requests.post(API_URL, json=payload, headers=HEADERS, stream=True, timeout=30)
+        resp = session.post(API_URL, json=payload, stream=True, timeout=30)
         print(f"  HTTP {resp.status_code}")
+        print(f"  응답 헤더: {dict(list(resp.headers.items())[:5])}")
         if resp.status_code != 200:
             print(f"  응답: {resp.text[:500]}")
             return
@@ -174,13 +193,15 @@ if __name__ == "__main__":
     dep = (date.today() + timedelta(days=14)).strftime("%Y%m%d")
     ret = (date.today() + timedelta(days=17)).strftime("%Y%m%d")
 
+    session = create_session()
+
     # --- 1) 편도 테스트 ---
-    test_search("ICN", "NRT", dep, trip_type="OW")
+    test_search(session, "ICN", "NRT", dep, trip_type="OW")
 
     # --- 2) 왕복 테스트 ---
-    test_search("ICN", "NRT", dep, ret, trip_type="RT")
+    test_search(session, "ICN", "NRT", dep, ret, trip_type="RT")
 
     # --- 3) 귀국편 편도 테스트 ---
-    test_search("NRT", "ICN", ret, trip_type="OW")
+    test_search(session, "NRT", "ICN", ret, trip_type="OW")
 
     print("\n✅ PoC 완료")
