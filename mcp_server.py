@@ -17,7 +17,7 @@ load_dotenv()
 
 _DSN = os.environ["DATABASE_URL"]
 
-mcp = FastMCP("flight-friend")
+mcp = FastMCP("flight-friend", host="0.0.0.0", port=8001)
 
 
 def _query(sql: str, params: tuple = ()) -> list[dict]:
@@ -269,4 +269,4 @@ def compare_sources(
 
 
 if __name__ == "__main__":
-    mcp.run(transport="sse", host="0.0.0.0", port=8001)
+    mcp.run(transport="sse")
