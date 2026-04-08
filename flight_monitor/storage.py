@@ -181,6 +181,15 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_flight_legs_in
             ON flight_legs (destination, date) WHERE direction = 'in'
         """)
+        # deals 쿼리용: checked_at 필터 + destination/date 조인
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_flight_legs_out_checked
+            ON flight_legs (checked_at, destination, date) WHERE direction = 'out'
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_flight_legs_in_checked
+            ON flight_legs (checked_at, destination, date) WHERE direction = 'in'
+        """)
 
         # flight_legs에 best_source 컬럼 추가 (없을 때만)
         cur.execute("ALTER TABLE flight_legs ADD COLUMN IF NOT EXISTS best_source TEXT")
