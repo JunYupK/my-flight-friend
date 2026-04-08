@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -253,37 +254,54 @@ def _select_diverse_deals(deals: list[dict], max_count: int = 15) -> list[dict]:
 
 def _query_deals(cur, hours: int | None, month: str | None,
                  source: str | None, trip_type: str | None) -> list[dict]:
-    conds = [
-        "o.direction = 'out'",
-        "i.direction = 'in'",
-        "o.destination = i.destination",
-        "(i.date::date - o.date::date) BETWEEN 4 AND 7",
-    ]
-    params: list = []
+    from flight_monitor.config import SEARCH_CONFIG
+    stay = SEARCH_CONFIG.get("stay_durations", [3, 4, 5])
+    min_stay, max_stay = min(stay), max(stay)
+
+    out_conds = ["direction = 'out'"]
+    in_conds = ["direction = 'in'"]
+    out_params: list = []
+    in_params: list = []
 
     if hours is not None:
-        conds.append("o.checked_at >= NOW() - %s::interval")
-        conds.append("i.checked_at >= NOW() - %s::interval")
-        params.extend([f"{hours} hours", f"{hours} hours"])
+        out_conds.append("checked_at >= NOW() - %s::interval")
+        in_conds.append("checked_at >= NOW() - %s::interval")
+        out_params.append(f"{hours} hours")
+        in_params.append(f"{hours} hours")
     else:
-        conds.append("o.checked_at >= CURRENT_DATE")
-        conds.append("i.checked_at >= CURRENT_DATE")
+        out_conds.append("checked_at >= CURRENT_DATE")
+        in_conds.append("checked_at >= CURRENT_DATE")
 
     if month is not None:
-        conds.append("o.date LIKE %s")
-        params.append(f"{month}-%")
+        out_conds.append("date LIKE %s")
+        out_params.append(f"{month}-%")
 
     if source is not None:
-        conds.append("o.source = %s")
-        params.append(source)
+        out_conds.append("source = %s")
+        out_params.append(source)
+
+    join_conds = [
+        "o.destination = i.destination",
+        "(i.date::date - o.date::date) BETWEEN %s AND %s",
+    ]
+    join_params: list = [min_stay, max_stay]
 
     if trip_type == "round_trip":
-        conds.append("o.airline = i.airline")
+        join_conds.append("o.airline = i.airline")
     elif trip_type == "oneway_combo":
-        conds.append("o.airline IS DISTINCT FROM i.airline")
+        join_conds.append("o.airline IS DISTINCT FROM i.airline")
 
-    where = "WHERE " + " AND ".join(conds)
+    out_where = " AND ".join(out_conds)
+    in_where = " AND ".join(in_conds)
+    join_on = " AND ".join(join_conds)
+
     cur.execute(f"""
+        WITH outs AS MATERIALIZED (
+            SELECT * FROM flight_legs WHERE {out_where}
+        ),
+        ins AS MATERIALIZED (
+            SELECT * FROM flight_legs WHERE {in_where}
+        )
         SELECT
             o.origin, o.destination, o.destination_name,
             o.date AS departure_date,
@@ -303,11 +321,27 @@ def _query_deals(cur, hours: int | None, month: str | None,
             COALESCE(i.booking_url, i.search_url) AS in_url,
             o.price AS out_price, i.price AS in_price,
             (o.price + i.price) AS min_price
-        FROM flight_legs o, flight_legs i
-        {where}
+        FROM outs o JOIN ins i ON {join_on}
         ORDER BY o.destination, (o.price + i.price) ASC
-    """, params)
+    """, out_params + in_params + join_params)
     return [dict(r) for r in cur.fetchall()]
+
+
+_deals_cache: dict[str, tuple[float, list]] = {}
+_DEALS_CACHE_TTL = 300  # 5분
+
+
+def _query_deals_cached(hours, month, source, trip_type) -> list[dict]:
+    key = f"{hours}:{month}:{source}:{trip_type}"
+    now = time.time()
+    cached = _deals_cache.get(key)
+    if cached and now - cached[0] < _DEALS_CACHE_TTL:
+        return cached[1]
+    with get_conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        result = _query_deals(cur, hours, month, source, trip_type)
+    _deals_cache[key] = (now, result)
+    return result
 
 
 @app.get("/api/results")
@@ -319,9 +353,7 @@ def get_results(
 ):
     """여행지별 항공권 조회. 서버에서 top_deals/diverse_deals 분류."""
     try:
-        with get_conn() as conn:
-            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            rows = _query_deals(cur, hours, month, source, trip_type)
+        rows = _query_deals_cached(hours, month, source, trip_type)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

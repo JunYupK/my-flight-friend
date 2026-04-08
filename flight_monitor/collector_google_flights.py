@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import calendar
 import json
 import re
 from collections import defaultdict
@@ -623,7 +624,8 @@ async def _fetch_all(on_route_done=None) -> list[dict]:
     range_months = SEARCH_CONFIG.get("search_range_months", 12)
     end_date = date(today.year, today.month, 1) + timedelta(days=32 * range_months)
     # end_date를 해당 월 말일로 보정
-    end_date = date(end_date.year, end_date.month, 1) - timedelta(days=1)
+    _, last_day = calendar.monthrange(end_date.year, end_date.month)
+    end_date = date(end_date.year, end_date.month, last_day)
     # 마지막 출발일의 복귀편도 수집되도록 stay 최대 박수만큼 연장
     max_stay = max(SEARCH_CONFIG["stay_durations"])
     end_date = end_date + timedelta(days=max_stay)

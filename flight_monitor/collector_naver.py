@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import asyncio
+import calendar
 import json
 import re
 from collections import defaultdict
@@ -377,7 +378,8 @@ async def _fetch_all(on_route_done=None) -> list[dict]:
     today = date.today()
     range_months = SEARCH_CONFIG.get("search_range_months", 12)
     end_date = date(today.year, today.month, 1) + timedelta(days=32 * range_months)
-    end_date = date(end_date.year, end_date.month, 1) - timedelta(days=1)
+    _, last_day = calendar.monthrange(end_date.year, end_date.month)
+    end_date = date(end_date.year, end_date.month, last_day)
     max_stay = max(SEARCH_CONFIG["stay_durations"])
     end_date = end_date + timedelta(days=max_stay)
 
