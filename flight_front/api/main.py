@@ -1,4 +1,5 @@
 # flight_front/api/main.py
+import json
 import os
 import subprocess
 import sys
@@ -258,89 +259,142 @@ def _query_deals(cur, hours: int | None, month: str | None,
     stay = SEARCH_CONFIG.get("stay_durations", [3, 4, 5])
     min_stay, max_stay = min(stay), max(stay)
 
-    out_conds = ["direction = 'out'"]
-    in_conds = ["direction = 'in'"]
-    out_params: list = []
-    in_params: list = []
-
-    if hours is not None:
-        out_conds.append("checked_at >= NOW() - %s::interval")
-        in_conds.append("checked_at >= NOW() - %s::interval")
-        out_params.append(f"{hours} hours")
-        in_params.append(f"{hours} hours")
-    else:
-        out_conds.append("checked_at >= CURRENT_DATE")
-        in_conds.append("checked_at >= CURRENT_DATE")
-
-    if month is not None:
-        out_conds.append("date LIKE %s")
-        out_params.append(f"{month}-%")
-
-    if source is not None:
-        out_conds.append("source = %s")
-        out_params.append(source)
-
-    join_conds = [
-        "o.destination = i.destination",
-        "(i.date::date - o.date::date) BETWEEN %s AND %s",
-    ]
     join_params: list = [min_stay, max_stay]
 
+    trip_join_extra = ""
     if trip_type == "round_trip":
-        join_conds.append("o.airline = i.airline")
+        trip_join_extra = " AND o.airline = i.airline"
     elif trip_type == "oneway_combo":
-        join_conds.append("o.airline IS DISTINCT FROM i.airline")
+        trip_join_extra = " AND o.airline IS DISTINCT FROM i.airline"
 
-    out_where = " AND ".join(out_conds)
-    in_where = " AND ".join(in_conds)
-    join_on = " AND ".join(join_conds)
+    where_conds = ["o.direction = 'out'", "i.direction = 'in'"]
+    where_params: list = []
+
+    if hours is not None:
+        where_conds.append("o.checked_at >= NOW() - %s::interval")
+        where_conds.append("i.checked_at >= NOW() - %s::interval")
+        where_params.append(f"{hours} hours")
+        where_params.append(f"{hours} hours")
+    else:
+        where_conds.append("o.checked_at >= CURRENT_DATE")
+        where_conds.append("i.checked_at >= CURRENT_DATE")
+
+    if month is not None:
+        # date is TEXT in 'YYYY-MM-DD' — lexicographic range matches date range
+        # and lets the (destination, date) partial indexes do a range scan.
+        year, mon = map(int, month.split("-"))
+        start_date = f"{year:04d}-{mon:02d}-01"
+        if mon == 12:
+            end_date = f"{year + 1:04d}-01-01"
+        else:
+            end_date = f"{year:04d}-{mon + 1:02d}-01"
+        where_conds.append("o.date >= %s AND o.date < %s")
+        where_params.extend([start_date, end_date])
+
+    if source is not None:
+        where_conds.append("o.source = %s")
+        where_params.append(source)
+
+    where_clause = " AND ".join(where_conds)
 
     cur.execute(f"""
-        WITH outs AS MATERIALIZED (
-            SELECT * FROM flight_legs WHERE {out_where}
-        ),
-        ins AS MATERIALIZED (
-            SELECT * FROM flight_legs WHERE {in_where}
+        WITH ranked AS (
+            SELECT
+                o.origin, o.destination, o.destination_name,
+                o.date AS departure_date,
+                i.date AS return_date,
+                (i.date::date - o.date::date) AS stay_nights,
+                CASE WHEN o.airline = i.airline THEN 'round_trip' ELSE 'oneway_combo' END AS trip_type,
+                o.source,
+                o.airline AS out_airline, i.airline AS in_airline,
+                (o.airline IS DISTINCT FROM i.airline)::int AS is_mixed_airline,
+                o.dep_time AS out_dep_time, o.arr_time AS out_arr_time,
+                o.duration_min AS out_duration_min, o.stops AS out_stops,
+                i.dep_time AS in_dep_time, i.arr_time AS in_arr_time,
+                i.duration_min AS in_duration_min, i.stops AS in_stops,
+                o.arr_airport AS out_arr_airport, i.dep_airport AS in_dep_airport,
+                GREATEST(o.checked_at, i.checked_at) AS last_checked_at,
+                COALESCE(o.booking_url, o.search_url) AS out_url,
+                COALESCE(i.booking_url, i.search_url) AS in_url,
+                o.price AS out_price, i.price AS in_price,
+                (o.price + i.price) AS min_price,
+                ROW_NUMBER() OVER (
+                    PARTITION BY o.destination
+                    ORDER BY (o.price + i.price) ASC
+                ) AS rn
+            FROM flight_legs o
+            JOIN flight_legs i
+                ON o.destination = i.destination
+                AND (i.date::date - o.date::date) BETWEEN %s AND %s{trip_join_extra}
+            WHERE {where_clause}
         )
         SELECT
-            o.origin, o.destination, o.destination_name,
-            o.date AS departure_date,
-            i.date AS return_date,
-            (i.date::date - o.date::date) AS stay_nights,
-            CASE WHEN o.airline = i.airline THEN 'round_trip' ELSE 'oneway_combo' END AS trip_type,
-            o.source,
-            o.airline AS out_airline, i.airline AS in_airline,
-            (o.airline IS DISTINCT FROM i.airline)::int AS is_mixed_airline,
-            o.dep_time AS out_dep_time, o.arr_time AS out_arr_time,
-            o.duration_min AS out_duration_min, o.stops AS out_stops,
-            i.dep_time AS in_dep_time, i.arr_time AS in_arr_time,
-            i.duration_min AS in_duration_min, i.stops AS in_stops,
-            o.arr_airport AS out_arr_airport, i.dep_airport AS in_dep_airport,
-            GREATEST(o.checked_at, i.checked_at) AS last_checked_at,
-            COALESCE(o.booking_url, o.search_url) AS out_url,
-            COALESCE(i.booking_url, i.search_url) AS in_url,
-            o.price AS out_price, i.price AS in_price,
-            (o.price + i.price) AS min_price
-        FROM outs o JOIN ins i ON {join_on}
-        ORDER BY o.destination, (o.price + i.price) ASC
-    """, out_params + in_params + join_params)
+            origin, destination, destination_name, departure_date, return_date,
+            stay_nights, trip_type, source,
+            out_airline, in_airline, is_mixed_airline,
+            out_dep_time, out_arr_time, out_duration_min, out_stops,
+            in_dep_time, in_arr_time, in_duration_min, in_stops,
+            out_arr_airport, in_dep_airport,
+            last_checked_at, out_url, in_url,
+            out_price, in_price, min_price
+        FROM ranked
+        WHERE rn <= 200
+        ORDER BY destination, min_price ASC
+    """, join_params + where_params)
     return [dict(r) for r in cur.fetchall()]
 
 
 _deals_cache: dict[str, tuple[float, list]] = {}
 _DEALS_CACHE_TTL = 300  # 5분
 
+try:
+    import redis as _redis_lib
+    _redis_client = _redis_lib.Redis.from_url(
+        os.environ.get("REDIS_URL", "redis://localhost:6379"),
+        decode_responses=True,
+        socket_connect_timeout=2,
+        socket_timeout=2,
+    )
+    _redis_client.ping()
+    print("[cache] Redis connected", flush=True)
+except Exception as e:
+    print(f"[cache] Redis unavailable, using in-memory fallback: {e}", flush=True)
+    _redis_client = None
+
+
+def _cache_get(key: str) -> list | None:
+    if _redis_client is not None:
+        try:
+            raw = _redis_client.get(key)
+            if raw is not None:
+                return json.loads(raw)
+        except Exception:
+            pass
+    cached = _deals_cache.get(key)
+    if cached and time.time() - cached[0] < _DEALS_CACHE_TTL:
+        return cached[1]
+    return None
+
+
+def _cache_set(key: str, value: list) -> None:
+    if _redis_client is not None:
+        try:
+            _redis_client.setex(key, _DEALS_CACHE_TTL, json.dumps(value, default=str))
+            return
+        except Exception:
+            pass
+    _deals_cache[key] = (time.time(), value)
+
 
 def _query_deals_cached(hours, month, source, trip_type) -> list[dict]:
-    key = f"{hours}:{month}:{source}:{trip_type}"
-    now = time.time()
-    cached = _deals_cache.get(key)
-    if cached and now - cached[0] < _DEALS_CACHE_TTL:
-        return cached[1]
+    key = f"deals:{hours}:{month}:{source}:{trip_type}"
+    cached = _cache_get(key)
+    if cached is not None:
+        return cached
     with get_conn() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         result = _query_deals(cur, hours, month, source, trip_type)
-    _deals_cache[key] = (now, result)
+    _cache_set(key, result)
     return result
 
 
