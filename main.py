@@ -114,6 +114,14 @@ def _collect_and_alert(run_id: int):
         error_log=error_log,
     )
 
+    # --- 캐시 워밍: 크롤링 직후 월별 deals 결과를 Redis에 미리 채워 cold miss 제거 ---
+    try:
+        from flight_front.api.deals_cache import warm_deals_cache
+        stats = warm_deals_cache()
+        print(f"[{_ts()}] [warmup] {stats}", flush=True)
+    except Exception as e:
+        print(f"[{_ts()}] [warmup] skipped due to error: {e}", flush=True)
+
     print(f"[{_ts()}] === 탐색 완료 ===")
 
 
