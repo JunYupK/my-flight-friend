@@ -25,6 +25,7 @@ services:
       - "8000"
     environment:
       DATABASE_URL: postgresql://flight_user:${DB_PASSWORD:?DB_PASSWORD must be set}@db:5432/flights
+      REDIS_URL: redis://redis:6379
     env_file:
       - .env
     networks:
@@ -33,6 +34,21 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   collector:
     build:

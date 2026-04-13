@@ -7,3 +7,4 @@ uvicorn==0.30.0
 aiofiles>=23.0.0
 crawl4ai>=0.8.0
 mcp>=1.0.0
+redis>=5.0.0
