@@ -21,7 +21,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            set -e
+            set -eo pipefail
             cd ~/my-flight-friend
 
             git pull origin master
@@ -32,16 +32,37 @@ jobs:
             # 무중단 재시작
             docker compose -f docker-compose.prod.yml up -d app mcp
 
-            # 헬스체크 (Caddy 경유)
-            sleep 5
-            curl -sf http://localhost/api/config > /dev/null \
-              && echo "App deploy OK" \
-              || (echo "App health check failed" && exit 1)
+            # 헬스체크 (Caddy 경유). `docker compose up` 직후 컨테이너 IP가 바뀌면
+            # Caddy가 upstream 을 재바인딩하는 데 수 초 걸릴 수 있으므로 retry.
+            # 정상이면 수 초 내 통과, 최악이어도 ~60s 안에 판정.
+            for i in $(seq 1 30); do
+              if curl -fsSk --max-time 5 https://localhost/api/config > /dev/null 2>&1; then
+                echo "App deploy OK (attempt $i)"
+                break
+              fi
+              if [ "$i" -eq 30 ]; then
+                echo "App health check failed after 30 attempts"
+                docker compose -f docker-compose.prod.yml logs --tail=80 app caddy
+                exit 1
+              fi
+              sleep 2
+            done
 
-            curl -sk -o /dev/null -w "%{http_code}" https://localhost/mcp/sse \
-              | grep -qE "^(200|401)$" \
-              && echo "MCP deploy OK" \
-              || (echo "MCP health check failed" && exit 1)
+            # MCP: Caddy auth guard 가 Bearer 토큰 없는 요청에 401 반환하면 정상.
+            # SSE 엔드포인트 hang 방지 위해 --max-time 필수.
+            for i in $(seq 1 30); do
+              code=$(curl -sk --max-time 5 -o /dev/null -w "%{http_code}" https://localhost/mcp/sse || echo "000")
+              if [ "$code" = "200" ] || [ "$code" = "401" ]; then
+                echo "MCP deploy OK (attempt $i, code=$code)"
+                break
+              fi
+              if [ "$i" -eq 30 ]; then
+                echo "MCP health check failed after 30 attempts (last code=$code)"
+                docker compose -f docker-compose.prod.yml logs --tail=80 mcp caddy
+                exit 1
+              fi
+              sleep 2
+            done
 
             # 미사용 이미지 정리
             docker image prune -f

@@ -114,6 +114,21 @@ def _collect_and_alert(run_id: int):
         error_log=error_log,
     )
 
+    # --- 캐시 버전 bump + 워밍 ---
+    # 데이터가 1건이라도 저장된 경우에만 버전을 올려서 기존 캐시를 원자 무효화.
+    # 완전 실패(total_saved == 0)면 이전 버전 유지 → graceful degradation.
+    if total_saved > 0:
+        try:
+            from flight_front.api.deals_cache import bump_deals_version, warm_deals_cache
+            new_version = bump_deals_version()
+            print(f"[{_ts()}] [cache] deals version → v{new_version}", flush=True)
+            stats = warm_deals_cache()
+            print(f"[{_ts()}] [warmup] {stats}", flush=True)
+        except Exception as e:
+            print(f"[{_ts()}] [warmup] skipped due to error: {e}", flush=True)
+    else:
+        print(f"[{_ts()}] [warmup] skipped: no data saved this run", flush=True)
+
     print(f"[{_ts()}] === 탐색 완료 ===")
 
 
