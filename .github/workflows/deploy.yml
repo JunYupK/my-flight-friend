@@ -32,11 +32,18 @@ jobs:
             # 무중단 재시작
             docker compose -f docker-compose.prod.yml up -d app mcp
 
-            # 헬스체크 (Caddy 경유). `docker compose up` 직후 컨테이너 IP가 바뀌면
-            # Caddy가 upstream 을 재바인딩하는 데 수 초 걸릴 수 있으므로 retry.
-            # 정상이면 수 초 내 통과, 최악이어도 ~60s 안에 판정.
+            # 헬스체크: Caddy 는 Host/SNI 기반 vhost 라우팅이라 `https://localhost` 로
+            # 찌르면 vhost 매치가 안 돼서 404 로 튕긴다. .env 의 DOMAIN 을 읽어서
+            # --resolve 로 DNS+SNI 를 루프백에 핀 → Caddy 가 정상 라우팅 → app/mcp 까지 도달.
+            # `docker compose up` 직후 Caddy 가 신규 upstream 을 재바인딩하는 race 가 있어 retry.
+            DOMAIN=$(grep -E '^DOMAIN=' .env 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"' | tr -d "'")
+            : "${DOMAIN:=flight-friend.com}"
+            echo "Health check target: https://${DOMAIN} (via --resolve to 127.0.0.1)"
+
             for i in $(seq 1 30); do
-              if curl -fsSk --max-time 5 https://localhost/api/config > /dev/null 2>&1; then
+              if curl -fsSk --max-time 5 \
+                  --resolve "${DOMAIN}:443:127.0.0.1" \
+                  "https://${DOMAIN}/api/config" > /dev/null 2>&1; then
                 echo "App deploy OK (attempt $i)"
                 break
               fi
@@ -51,7 +58,10 @@ jobs:
             # MCP: Caddy auth guard 가 Bearer 토큰 없는 요청에 401 반환하면 정상.
             # SSE 엔드포인트 hang 방지 위해 --max-time 필수.
             for i in $(seq 1 30); do
-              code=$(curl -sk --max-time 5 -o /dev/null -w "%{http_code}" https://localhost/mcp/sse || echo "000")
+              code=$(curl -sk --max-time 5 \
+                  --resolve "${DOMAIN}:443:127.0.0.1" \
+                  -o /dev/null -w "%{http_code}" \
+                  "https://${DOMAIN}/mcp/sse" || echo "000")
               if [ "$code" = "200" ] || [ "$code" = "401" ]; then
                 echo "MCP deploy OK (attempt $i, code=$code)"
                 break
