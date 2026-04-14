@@ -153,7 +153,8 @@ def _query_deals(cur, hours: int | None, month: str | None,
 
 
 def query_deals_cached(hours, month, source, trip_type) -> list[dict]:
-    key = f"deals:{hours}:{month}:{source}:{trip_type}"
+    version = _current_version()
+    key = f"deals:v{version}:{hours}:{month}:{source}:{trip_type}"
     cached = _cache_get(key)
     if cached is not None:
         return cached
@@ -162,6 +163,36 @@ def query_deals_cached(hours, month, source, trip_type) -> list[dict]:
         result = _query_deals(cur, hours, month, source, trip_type)
     _cache_set(key, result)
     return result
+
+
+# ── Version (atomic invalidation) ─────────────────────────
+# 캐시 키에 글로벌 버전을 prefix 로 붙여서, 크롤 성공 시 INCR 한 번으로
+# 네임스페이스 전체를 원자적으로 무효화한다. 이전 버전 키는 TTL 로 자연 소멸.
+# Redis 가 없으면 version = 0 고정 (단일 네임스페이스처럼 동작).
+
+_VERSION_KEY = "deals:version"
+
+
+def _current_version() -> int:
+    if _redis_client is None:
+        return 0
+    try:
+        v = _redis_client.get(_VERSION_KEY)
+        return int(v) if v else 0
+    except Exception:
+        return 0
+
+
+def bump_deals_version() -> int:
+    """크롤이 데이터를 저장한 직후 호출. Redis 네임스페이스 전체를 즉시 무효화.
+    Redis 없으면 0 반환(no-op)."""
+    if _redis_client is None:
+        return 0
+    try:
+        return int(_redis_client.incr(_VERSION_KEY))
+    except Exception as e:
+        print(f"[cache] version bump failed: {e}", flush=True)
+        return 0
 
 
 # ── Warm-up ───────────────────────────────────────────────
@@ -197,7 +228,8 @@ def warm_deals_cache() -> dict:
 
     from flight_monitor.config import SEARCH_CONFIG
     months = _upcoming_months(SEARCH_CONFIG.get("search_range_months", 12))
-    print(f"[warmup] start: {len(months)} months {months[0]}..{months[-1]}", flush=True)
+    version = _current_version()
+    print(f"[warmup] start: v{version}, {len(months)} months {months[0]}..{months[-1]}", flush=True)
 
     warmed = 0
     failed = 0
