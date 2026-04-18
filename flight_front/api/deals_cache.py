@@ -211,11 +211,15 @@ def _upcoming_months(count: int) -> list[str]:
     return months
 
 
-def warm_deals_cache() -> dict:
-    """크롤링 직후 호출. 향후 N개월 deals 결과를 미리 계산해 Redis에 저장.
+_WARM_TRIP_TYPES = [None, "round_trip", "oneway_combo"]
+_WARM_SOURCES = [None, "google_flights", "naver"]
 
-    1차 범위: `(hours=None, month=YYYY-MM, source=None, trip_type=None)` 조합만
-    미리 채움 (캐시 키 폭발 방지). 향후 trip_type 분리 등 확장 여지 있음.
+
+def warm_deals_cache() -> dict:
+    """크롤링 직후 호출. 향후 N개월 × trip_type × source 조합을 미리 계산해 Redis에 저장.
+
+    커버 범위: months(12) × trip_type(3) × source(3) = 108 쿼리.
+    /deals 페이지에서 사용자가 선택할 수 있는 모든 필터 조합을 웜업해 cold miss 제거.
 
     Returns: {"warmed": int, "failed": int, "elapsed_sec": float}
     """
@@ -229,17 +233,20 @@ def warm_deals_cache() -> dict:
     from flight_monitor.config import SEARCH_CONFIG
     months = _upcoming_months(SEARCH_CONFIG.get("search_range_months", 12))
     version = _current_version()
-    print(f"[warmup] start: v{version}, {len(months)} months {months[0]}..{months[-1]}", flush=True)
+    total = len(months) * len(_WARM_TRIP_TYPES) * len(_WARM_SOURCES)
+    print(f"[warmup] start: v{version}, {len(months)} months × {len(_WARM_TRIP_TYPES)} trip_types × {len(_WARM_SOURCES)} sources = {total} queries", flush=True)
 
     warmed = 0
     failed = 0
     for m in months:
-        try:
-            query_deals_cached(hours=None, month=m, source=None, trip_type=None)
-            warmed += 1
-        except Exception as e:
-            failed += 1
-            print(f"[warmup] month={m} failed: {e}", flush=True)
+        for tt in _WARM_TRIP_TYPES:
+            for src in _WARM_SOURCES:
+                try:
+                    query_deals_cached(hours=None, month=m, source=src, trip_type=tt)
+                    warmed += 1
+                except Exception as e:
+                    failed += 1
+                    print(f"[warmup] month={m} trip_type={tt} source={src} failed: {e}", flush=True)
 
     elapsed = round(time.time() - started, 2)
     stats = {"warmed": warmed, "failed": failed, "elapsed_sec": elapsed}
