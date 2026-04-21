@@ -22,6 +22,8 @@ SEARCH_CONFIG = {
     "target_price_krw": 300000,        # 왕복 기준 목표가
     "alert_cooldown_hours": 12,        # 같은 조건 알림 최소 간격
     "alert_realert_drop_krw": 15000,   # 이전 알림 대비 이만큼 내려가면 재알림
+    "median_alert_threshold_pct": 10,  # 출발일별 과거 중앙값 대비 이 % 이상 하락 시 알림
+    "median_min_obs": 5,               # 중앙값 신뢰를 위한 최소 관측일 수
 
     # 조합 정책
     "allow_mixed_airline": True,

@@ -520,6 +520,35 @@ def record_alert(offer: dict):
         """, (key, offer["price"], now_str))
 
 
+def should_notify_median_drop(offer: dict) -> bool:
+    threshold_pct = SEARCH_CONFIG.get("median_alert_threshold_pct", 10)
+    min_obs       = SEARCH_CONFIG.get("median_min_obs", 5)
+
+    with get_conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("""
+            WITH daily_mins AS (
+                SELECT DATE(checked_at) AS check_date, MIN(price) AS daily_min
+                FROM price_history
+                WHERE destination = %s
+                  AND departure_date = %s
+                  AND DATE(checked_at) < CURRENT_DATE
+                GROUP BY check_date
+            )
+            SELECT
+                PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY daily_min) AS median_price,
+                COUNT(*) AS obs_count
+            FROM daily_mins
+        """, (offer["destination"], offer["departure_date"]))
+        row = cur.fetchone()
+
+    if row is None or row["obs_count"] < min_obs:
+        return False
+
+    threshold = row["median_price"] * (1 - threshold_pct / 100.0)
+    return offer["price"] <= threshold
+
+
 def start_collection_run() -> int:
     with get_conn() as conn:
         cur = conn.cursor()
