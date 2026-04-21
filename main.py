@@ -15,7 +15,7 @@ apply_db_config()
 
 from flight_monitor.collector_google_flights import fetch_google_flights_offers
 from flight_monitor.collector_naver          import fetch_naver_offers
-from flight_monitor.storage                  import init_db, should_notify, record_alert, start_collection_run, finish_collection_run
+from flight_monitor.storage                  import init_db, should_notify, should_notify_median_drop, record_alert, start_collection_run, finish_collection_run
 from flight_monitor.notifier                 import notify, send_email
 from flight_monitor.config                   import SEARCH_CONFIG
 
@@ -89,7 +89,7 @@ def _collect_and_alert(run_id: int):
     # --- 알림 처리 ---
     target = SEARCH_CONFIG["target_price_krw"]
     for offer in [o for o in all_offers if o["price"] <= target]:
-        if should_notify(offer):
+        if should_notify(offer) or should_notify_median_drop(offer):
             notify(offer, target_price=target)
             record_alert(offer)
             alerts_sent += 1

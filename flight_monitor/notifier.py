@@ -37,6 +37,19 @@ def send_email(subject: str, body: str):
         server.sendmail(gmail, to, msg.as_string())
 
 
+def send_telegram(message: str):
+    token   = os.environ.get("TELEGRAM_BOT_TOKEN")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+    if not token or not chat_id:
+        print("[알림] Telegram 환경변수 없음, 건너뜀")
+        return
+    requests.post(
+        f"https://api.telegram.org/bot{token}/sendMessage",
+        json={"chat_id": chat_id, "text": message},
+        timeout=10,
+    )
+
+
 def notify(offer: dict, target_price: int):
     dest     = offer["destination_name"]
     dep_date = offer["departure_date"]
@@ -61,3 +74,4 @@ def notify(offer: dict, target_price: int):
     )
     send_whatsapp(msg)
     send_email(subject=f"[항공권 알림] 인천→{dest} 왕복 {price:,}원", body=f"<pre>{msg}</pre>")
+    send_telegram(msg)
