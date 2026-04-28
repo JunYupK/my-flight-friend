@@ -18,7 +18,7 @@ from pydantic import BaseModel
 
 import psycopg2.extras
 
-from flight_monitor.config_db import read_config, write_config
+from flight_monitor.config_db import apply_db_config, read_config, write_config
 from flight_monitor.storage import init_db, get_conn, get_airports, get_recent_runs, get_run_detail
 
 from . import run_state
@@ -36,9 +36,33 @@ app.add_middleware(
 )
 
 
+_PERIODIC_WARM_INTERVAL = 3 * 60 * 60  # 3시간
+
+
+def _periodic_warm_loop():
+    """3시간마다 캐시 웜업. 크롤 실패로 TTL 만료 시에도 캐시를 유지."""
+    import time
+    from .deals_cache import warm_deals_cache
+    while True:
+        time.sleep(_PERIODIC_WARM_INTERVAL)
+        try:
+            warm_deals_cache()
+        except Exception as e:
+            print(f"[periodic-warm] failed: {e}", flush=True)
+
+
 @app.on_event("startup")
 def startup():
     init_db()
+    apply_db_config()
+    def _initial_warm():
+        try:
+            from .deals_cache import warm_deals_cache
+            warm_deals_cache()
+        except Exception as e:
+            print(f"[startup] warm_deals_cache failed: {e}", flush=True)
+    threading.Thread(target=_initial_warm, daemon=True).start()
+    threading.Thread(target=_periodic_warm_loop, daemon=True).start()
 
 
 class ConfigPayload(BaseModel):

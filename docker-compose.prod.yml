@@ -57,12 +57,15 @@ services:
     profiles: [collect]
     environment:
       DATABASE_URL: postgresql://flight_user:${DB_PASSWORD:?DB_PASSWORD must be set}@db:5432/flights
+      REDIS_URL: redis://redis:6379
     env_file:
       - .env
     networks:
       - backend
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
   mcp:
