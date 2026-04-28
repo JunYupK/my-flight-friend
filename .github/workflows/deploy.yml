@@ -20,14 +20,15 @@ jobs:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          command_timeout: 30m
           script: |
             set -eo pipefail
             cd ~/my-flight-friend
 
             git pull origin master
 
-            # app + mcp + collector 이미지 리빌드
-            docker compose -f docker-compose.prod.yml build app mcp collector
+            # app + mcp 이미지 리빌드 (collector 는 헬스체크 이후 별도 빌드)
+            docker compose -f docker-compose.prod.yml build app mcp
 
             # 무중단 재시작
             docker compose -f docker-compose.prod.yml up -d app mcp
@@ -74,6 +75,11 @@ jobs:
               fi
               sleep 2
             done
+
+            # collector 이미지 빌드 (cron 전용, 배포 성공 판정에 영향 없음)
+            # playwright install --with-deps chromium 이 ARM64 에서 캐시 미스 시
+            # 10분+ 소요되므로 헬스체크 이후로 분리.
+            docker compose -f docker-compose.prod.yml build collector
 
             # 미사용 이미지 정리
             docker image prune -f
