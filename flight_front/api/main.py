@@ -39,6 +39,13 @@ app.add_middleware(
 @app.on_event("startup")
 def startup():
     init_db()
+    def _warm():
+        try:
+            from .deals_cache import warm_deals_cache
+            warm_deals_cache()
+        except Exception as e:
+            print(f"[startup] warm_deals_cache failed: {e}", flush=True)
+    threading.Thread(target=_warm, daemon=True).start()
 
 
 class ConfigPayload(BaseModel):
