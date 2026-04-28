@@ -18,7 +18,7 @@ from pydantic import BaseModel
 
 import psycopg2.extras
 
-from flight_monitor.config_db import read_config, write_config
+from flight_monitor.config_db import apply_db_config, read_config, write_config
 from flight_monitor.storage import init_db, get_conn, get_airports, get_recent_runs, get_run_detail
 
 from . import run_state
@@ -39,6 +39,7 @@ app.add_middleware(
 @app.on_event("startup")
 def startup():
     init_db()
+    apply_db_config()
     def _warm():
         try:
             from .deals_cache import warm_deals_cache
