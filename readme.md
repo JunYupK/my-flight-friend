@@ -160,26 +160,24 @@ my-flight-friend/
 ├── mcp_server.py                    # Claude Desktop MCP 서버
 ├── flight_monitor/                  # 핵심 비즈니스 로직
 │   ├── collector_google_flights.py  # crawl4ai + JS injection 크롤러
-│   ├── collector_skyscanner.py      # Skyscanner RapidAPI (미연결)
+│   ├── collector_naver.py           # 네이버 항공 크롤러
 │   ├── storage.py                   # PostgreSQL 스키마 + 데이터 액세스
 │   ├── config.py                    # 검색 설정 기본값
 │   ├── config_db.py                 # DB 기반 설정 로드
-│   └── notifier.py                  # WhatsApp / Email 알림
+│   └── notifier.py                  # Telegram(1순위) → Discord(2순위) 알림
 ├── flight_front/
-│   ├── api/main.py                  # FastAPI 백엔드 (15개 엔드포인트)
-│   └── web/src/                     # React SPA (6개 페이지)
+│   ├── api/main.py                  # FastAPI 백엔드
+│   └── web/src/                     # React SPA
 ├── tests/
-│   └── test_flight_monitor.py       # 32개 PostgreSQL 통합 테스트
-├── scripts/
-│   ├── setup-server.sh              # OCI 서버 초기화 스크립트
-│   └── backup-db.sh                 # DB 백업 (7일 보존)
+│   ├── test_flight_monitor.py       # storage 통합 테스트 (PostgreSQL)
+│   └── test_notifier.py             # 알림 fallback 테스트
 ├── .github/workflows/
 │   ├── ci.yml                       # pytest + React build 검증
 │   └── deploy.yml                   # SSH 자동 배포 + 헬스체크
-├── docker-compose.yml               # 개발용 (PostgreSQL)
-├── docker-compose.prod.yml          # 프로덕션 (4 컨테이너)
+├── docker-compose.yml               # 단일 compose (profiles: full / collect)
 ├── Dockerfile                       # 앱 이미지 (multi-stage build)
 ├── Dockerfile.collector             # 수집기 이미지 (crawl4ai + Playwright)
+├── Dockerfile.mcp                   # MCP 서버 이미지
 └── Caddyfile                        # 리버스 프록시 + 자동 HTTPS
 ```
 
@@ -200,7 +198,7 @@ git clone https://github.com/JunYupK/my-flight-friend.git
 cd my-flight-friend
 cp .env.example .env  # 환경변수 편집
 
-docker compose -f docker-compose.prod.yml up -d --build
+docker compose --profile full up -d --build
 ```
 
 ### 로컬 개발
@@ -233,13 +231,12 @@ cd flight_front/web && npm install && npm run dev
 | 변수 | 필수 | 설명 |
 |------|------|------|
 | `DATABASE_URL` | **필수** | PostgreSQL 연결 문자열 |
-| `CALLMEBOT_PHONE` | 선택 | WhatsApp 알림 전화번호 |
-| `CALLMEBOT_API_KEY` | 선택 | CallMeBot API 키 |
-| `GMAIL_ADDRESS` | 선택 | 이메일 알림 발신 Gmail |
-| `GMAIL_APP_PASSWORD` | 선택 | Gmail 앱 비밀번호 |
-| `ALERT_EMAIL` | 선택 | 알림 수신 이메일 |
+| `REDIS_URL` | 선택 | 캐시. 미설정 시 in-memory fallback |
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | 선택 | 1순위 알림 채널 |
+| `DISCORD_WEBHOOK_URL` | 선택 | 2순위 fallback 알림 채널 |
+| `DB_PASSWORD` / `DOMAIN` | 선택 | docker-compose 풀스택 모드 |
 
-선택 변수가 없으면 해당 알림은 건너뜁니다.
+알림 채널은 Telegram → Discord 순으로 시도하며, 첫 성공 채널만 실제 발송합니다.
 
 ---
 
