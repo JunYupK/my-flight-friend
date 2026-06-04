@@ -566,6 +566,56 @@ def get_price_history(
         return {"mode": mode, "data": [dict(r) for r in cur.fetchall()]}
 
 
+# ── Timing Analytics ──────────────────────────────────────
+
+@app.get("/api/timing/seasonal")
+def get_timing_seasonal():
+    """목적지 × 출발월 최저가 히트맵용 데이터."""
+    with get_conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("""
+            SELECT destination, destination_name,
+                   LEFT(departure_date, 7) AS month,
+                   MIN(price)::int AS min_price
+            FROM price_history
+            WHERE trip_type = 'roundtrip' AND price > 0
+            GROUP BY destination, destination_name, LEFT(departure_date, 7)
+            ORDER BY destination, month
+        """)
+        return [dict(r) for r in cur.fetchall()]
+
+
+@app.get("/api/timing/advance")
+def get_timing_advance(destination: str | None = Query(None)):
+    """출발 N일 전 예약 시점별 평균가 (14일 버킷)."""
+    with get_conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        sql = """
+            SELECT destination, destination_name,
+                   (FLOOR((departure_date::date - DATE(checked_at)) / 14.0) * 14)::int AS days_before,
+                   ROUND(AVG(price)::numeric, 0)::int AS avg_price,
+                   MIN(price)::int AS min_price,
+                   COUNT(*) AS obs_count
+            FROM price_history
+            WHERE trip_type = 'roundtrip' AND price > 0
+              AND departure_date ~ '^\d{4}-\d{2}-\d{2}$'
+              AND departure_date::date > DATE(checked_at)
+              AND (departure_date::date - DATE(checked_at)) BETWEEN 1 AND 180
+        """
+        params: list = []
+        if destination:
+            sql += " AND destination = %s"
+            params.append(destination.upper())
+        sql += """
+            GROUP BY destination, destination_name,
+                     (FLOOR((departure_date::date - DATE(checked_at)) / 14.0) * 14)::int
+            HAVING COUNT(*) >= 3
+            ORDER BY destination, days_before DESC
+        """
+        cur.execute(sql, params)
+        return [dict(r) for r in cur.fetchall()]
+
+
 # ── Static (React SPA) ────────────────────────────────────
 # API 라우트가 모두 등록된 뒤에 마운트해야 우선순위 보장
 _DIST = PROJECT_ROOT / "flight_front" / "web" / "dist"

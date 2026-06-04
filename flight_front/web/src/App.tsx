@@ -10,11 +10,13 @@ import Landing from "./components/Landing";
 import RunControl from "./components/RunControl";
 import Monitor from "./components/Monitor";
 import Search from "./components/Search";
+import Timing from "./components/Timing";
 
 const NAV_ITEMS = [
   { path: "/deals", label: "최저가" },
   { path: "/trends", label: "추이" },
   { path: "/search", label: "검색" },
+  { path: "/timing", label: "타이밍" },
 ];
 
 function Layout() {
@@ -105,6 +107,7 @@ function Layout() {
           <Route path="/deals" element={<Results />} />
           <Route path="/trends" element={<Trends />} />
           <Route path="/search" element={<Search />} />
+          <Route path="/timing" element={<Timing />} />
           <Route path="/monitor" element={<Monitor />} />
           <Route
             path="/settings"
