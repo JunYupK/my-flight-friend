@@ -578,7 +578,7 @@ def get_timing_seasonal():
                    LEFT(departure_date, 7) AS month,
                    MIN(price)::int AS min_price
             FROM price_history
-            WHERE trip_type = 'roundtrip' AND price > 0
+            WHERE trip_type IN ('round_trip', 'oneway_combo') AND price > 0
             GROUP BY destination, destination_name, LEFT(departure_date, 7)
             ORDER BY destination, month
         """)
@@ -597,7 +597,7 @@ def get_timing_advance(destination: str | None = Query(None)):
                    MIN(price)::int AS min_price,
                    COUNT(*) AS obs_count
             FROM price_history
-            WHERE trip_type = 'roundtrip' AND price > 0
+            WHERE trip_type IN ('round_trip', 'oneway_combo') AND price > 0
               AND departure_date ~ '^\d{4}-\d{2}-\d{2}$'
               AND departure_date::date > DATE(checked_at)
               AND (departure_date::date - DATE(checked_at)) BETWEEN 1 AND 180
