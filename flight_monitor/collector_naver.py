@@ -54,7 +54,7 @@ def _build_naver_url(dep: str, arr: str, date_str: str) -> str:
     return (
         f"https://flight.naver.com/flights/international/"
         f"{dep_part}-{arr_part}-{date_compact}"
-        f"?adult=1&isDirect=false&fareType=Y"
+        f"?adult=1&isDirect=false&fareType=Y&tripType=OW"
     )
 
 

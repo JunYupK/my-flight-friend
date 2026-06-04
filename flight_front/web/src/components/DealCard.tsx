@@ -159,6 +159,9 @@ export function DealCard({ deal, rank }: { deal: Deal; rank: number }) {
       {/* 가격 */}
       <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-apple-tertiary/20">
         {!!deal.is_mixed_airline && <span className="text-[11px] text-apple-orange">(혼합 항공사)</span>}
+        {deal.source === "naver" && deal.trip_type === "oneway_combo" && (
+          <span className="text-[10px] text-apple-tertiary" title="편도 검색 2회 합산 추정가. 실제 예약 가격과 다를 수 있습니다.">편도합산 추정가</span>
+        )}
         <span className="text-2xl font-bold text-apple-text tracking-tight">
           {Math.round(deal.min_price).toLocaleString()}
         </span>
