@@ -81,6 +81,22 @@ export interface PriceHistoryResponse {
   data: PriceHistoryPoint[];
 }
 
+export interface SeasonalPoint {
+  destination: string;
+  destination_name: string;
+  month: string;
+  min_price: number;
+}
+
+export interface AdvancePoint {
+  destination: string;
+  destination_name: string;
+  days_before: number;
+  avg_price: number;
+  min_price: number;
+  obs_count: number;
+}
+
 export interface CollectionRun {
   id: number;
   started_at: string;

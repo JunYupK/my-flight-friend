@@ -1,4 +1,4 @@
-import type { ConfigData, RunStatus, DestinationGroup, Airport, PriceHistoryResponse, CollectionRun, Deal } from "./types";
+import type { ConfigData, RunStatus, DestinationGroup, Airport, PriceHistoryResponse, CollectionRun, Deal, SeasonalPoint, AdvancePoint } from "./types";
 
 export async function fetchConfig(): Promise<ConfigData> {
   const res = await fetch("/api/config");
@@ -128,5 +128,20 @@ export async function fetchCollectionRuns(limit = 20): Promise<CollectionRun[]> 
 export async function fetchRunDetail(id: number): Promise<CollectionRun> {
   const res = await fetch(`/api/collection-runs/${id}`);
   if (!res.ok) throw new Error("Failed to fetch run detail");
+  return res.json();
+}
+
+export async function fetchTimingSeasonal(): Promise<SeasonalPoint[]> {
+  const res = await fetch("/api/timing/seasonal");
+  if (!res.ok) throw new Error("Failed to fetch seasonal data");
+  return res.json();
+}
+
+export async function fetchTimingAdvance(destination?: string): Promise<AdvancePoint[]> {
+  const url = destination
+    ? `/api/timing/advance?destination=${encodeURIComponent(destination)}`
+    : "/api/timing/advance";
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("Failed to fetch advance data");
   return res.json();
 }
