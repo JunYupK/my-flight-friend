@@ -5,8 +5,8 @@ __pycache__
 *.pyc
 .venv
 
-# 웹 프론트엔드 — collector에 불필요
-flight_front/
+# React 소스만 제외 — flight_front/api/ 는 main.py가 deals_cache 임포트로 사용
+flight_front/web/
 
 .github
 scripts

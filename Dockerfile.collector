@@ -7,11 +7,11 @@ COPY requirements.txt .
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install -r requirements.txt
 
-# apt 패키지 + Chromium 바이너리를 BuildKit cache mount에 보존
-# requirements.txt 변경으로 위 layer가 무효화돼도 재다운로드 없이 캐시에서 복원
+# apt 패키지를 BuildKit cache mount에 보존 — --with-deps 시스템 패키지 재다운로드 방지
+# Chromium 바이너리(/root/.cache/ms-playwright)는 cache mount 대상에서 제외:
+# cache mount 내용은 이미지 레이어에 커밋되지 않아 런타임에 바이너리가 없어짐
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    --mount=type=cache,target=/root/.cache/ms-playwright \
     playwright install --with-deps chromium
 
 COPY . .
