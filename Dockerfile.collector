@@ -1,11 +1,18 @@
+# syntax=docker/dockerfile:1
 FROM python:3.11-slim
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# pip 다운로드 캐시를 BuildKit cache mount에 보존 — layer 무효화와 무관하게 재사용
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install -r requirements.txt
 
-# Playwright가 필요한 시스템 의존성 + Chromium을 자동 설치
-RUN playwright install --with-deps chromium
+# apt 패키지 + Chromium 바이너리를 BuildKit cache mount에 보존
+# requirements.txt 변경으로 위 layer가 무효화돼도 재다운로드 없이 캐시에서 복원
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    --mount=type=cache,target=/root/.cache/ms-playwright \
+    playwright install --with-deps chromium
 
 COPY . .
 

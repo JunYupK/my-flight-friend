@@ -1,0 +1,23 @@
+.git
+.env
+.env.example
+__pycache__
+*.pyc
+.venv
+
+# 웹 프론트엔드 — collector에 불필요
+flight_front/
+
+.github
+scripts
+backups
+Caddyfile
+docker-compose*.yml
+Dockerfile*
+CLAUDE.md
+ISSUES.md
+readme.md
+test_flight_monitor.py
+tests/
+.claude
+.pytest_cache
