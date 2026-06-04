@@ -573,14 +573,23 @@ def get_timing_seasonal():
     """목적지 × 출발월 최저가 히트맵용 데이터."""
     with get_conn() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        # flight_legs 기반: UPSERT 구조라 row 수가 적고 인덱스 활용 가능.
+        # 월별 최저가는 현재 수집 데이터 기준이면 충분하므로 price_history 불필요.
         cur.execute("""
-            SELECT destination, destination_name,
-                   LEFT(departure_date, 7) AS month,
-                   MIN(price)::int AS min_price
-            FROM price_history
-            WHERE trip_type IN ('round_trip', 'oneway_combo') AND price > 0
-            GROUP BY destination, destination_name, LEFT(departure_date, 7)
-            ORDER BY destination, month
+            SELECT
+                o.destination,
+                o.destination_name,
+                LEFT(o.date, 7) AS month,
+                MIN(o.price + i.price)::int AS min_price
+            FROM flight_legs o
+            JOIN flight_legs i
+              ON o.destination = i.destination
+             AND i.date::date - o.date::date BETWEEN 2 AND 7
+            WHERE o.direction = 'out'
+              AND i.direction = 'in'
+              AND o.price > 0 AND i.price > 0
+            GROUP BY o.destination, o.destination_name, LEFT(o.date, 7)
+            ORDER BY o.destination, month
         """)
         return [dict(r) for r in cur.fetchall()]
 

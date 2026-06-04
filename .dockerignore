@@ -13,6 +13,7 @@ flight_front/web/dist
 .github
 scripts
 backups
+logs
 Caddyfile
 docker-compose*.yml
 Dockerfile*
