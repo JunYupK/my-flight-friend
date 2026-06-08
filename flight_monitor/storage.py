@@ -88,6 +88,12 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_price_history_checked_at
             ON price_history(checked_at)
         """)
+        # advance 쿼리: destination + trip_type 필터 후 departure_date/checked_at 집계
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_price_history_advance
+            ON price_history(destination, trip_type, departure_date, checked_at)
+            WHERE price > 0
+        """)
 
         # checked_at TEXT → TIMESTAMP 마이그레이션 (기존 테이블)
         cur.execute("SAVEPOINT pre_ts")
