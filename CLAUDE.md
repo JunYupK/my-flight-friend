@@ -1,10 +1,13 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+> **프로젝트 명세 / 아키텍처 / 인터페이스 / 금지사항은 [`AGENTS.md`](./AGENTS.md) 로 이전됨.**
+> 본 파일은 LLM 행동 규범과 포트폴리오만 담는다. 충돌 시 AGENTS.md 우선.
 
-Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
+---
 
-**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
+## Behavioral guidelines
+
+Behavioral guidelines to reduce common LLM coding mistakes. **Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
 
 ## 1. Think Before Coding
 
@@ -72,114 +75,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 ICN 출발 일본 항공권 최저가 모니터링 도구. 복수 데이터 소스에서 편도 항공편을 수집해 왕복 조합을 만들고, 목표가 이하 딜을 알림으로 전송한다.
 
-### Commands
-
-```bash
-# PostgreSQL DB 시작 (필수)
-docker compose up -d
-
-# 항공권 수집 실행
-python main.py
-
-# FastAPI 백엔드 실행 (루트에서)
-uvicorn flight_front.api.main:app --reload
-
-# React 프론트엔드 개발 서버 (flight_front/web/)
-cd flight_front/web && npm run dev
-
-# 테스트 실행 (테스트 파일은 루트에 있음)
-pytest test_flight_monitor.py
-
-# 단일 테스트 클래스/함수
-pytest test_flight_monitor.py::TestShouldNotify
-pytest test_flight_monitor.py::TestShouldNotify::test_price_drop_triggers_realert
-```
-
-### Environment Variables
-
-`DATABASE_URL` is required. Others are optional (gracefully skipped if missing):
-```
-DATABASE_URL=postgresql://flight_user:flight_pass@localhost:5432/flights
-AMADEUS_CLIENT_ID=...
-AMADEUS_CLIENT_SECRET=...
-CALLMEBOT_PHONE=...
-CALLMEBOT_API_KEY=...
-GMAIL_ADDRESS=...
-GMAIL_APP_PASSWORD=...
-ALERT_EMAIL=...
-```
-
-### Architecture
-
-**Data flow:** `main.py` → collectors → `storage.save_prices()` → alert check → `notifier.notify()`
-
-**Data sources** (all produce the same offer dict shape):
-- `collector_google_flights.py` — crawl4ai headless browser. Scrapes `li.pIav2d` cards via JS injection. Encodes date into base64 `tfs=` URL parameter by replacing bytes in `_TFS_TEMPLATES`. Only ICN↔TYO is registered; other routes need new tfs= values added. **Wired into `main.py`.**
-- `collector_naver.py` — crawl4ai headless browser. `flight.naver.com` 검색 결과 DOM 파싱. 편도(OW) URL(`SEL:city-{dest}:airport-YYYYMMDD`)로 outbound/inbound 수집 후 왕복 조합. `div[class*="combination_ConcurrentItemContainer"]` 카드 셀렉터 기반. **Wired into `main.py`.**
-- `collector_skyscanner.py` — Skyscanner RapidAPI (`browsequotes/v1.0`). Requires `RAPIDAPI_KEY`. Not wired into `main.py`.
-
-**Offer dict shape** (all collectors must produce these fields):
-```python
-{
-  "source", "trip_type", "origin", "destination", "destination_name",
-  "departure_date", "return_date", "stay_nights", "price", "currency",
-  "out_airline", "in_airline", "is_mixed_airline", "checked_at",
-  "out_url", "in_url",   # Google Flights 검색 URL (Amadeus는 None)
-  # optional: out_dep_time, out_arr_time, out_duration_min, out_stops,
-  #           in_dep_time,  in_arr_time,  in_duration_min,  in_stops,
-  #           out_arr_airport, in_dep_airport
-}
-```
-
-**Storage** (`storage.py`): PostgreSQL via psycopg2. Uses `DATABASE_URL` env var. Tables:
-- `price_history`: 수집된 항공권 append-only. `out_price`/`in_price` 편도 가격 컬럼 포함 (검색 API에서 레그 조합용)
-- `alert_state`: 알림 dedup/cooldown
-- `app_config`: JSONB, search_config만 저장
-- `airports`: 목적지 공항 관리 (code PK, name, tfs_out, tfs_in)
-- `collection_runs`: 수집 실행 이력 (started_at, status, google_count, total_saved, alerts_sent, error_log)
-
-**Alert logic**: `should_notify()` blocks re-alerts within `alert_cooldown_hours` unless price drops by ≥ `alert_realert_drop_krw`.
-
-**Web UI** (`flight_front/`): FastAPI backend (`flight_front/api/main.py`) + React/Vite SPA (`flight_front/web/`).
-
-API endpoints:
-- `GET/PUT /api/config` — search_config read/write
-- `GET /api/airports`, `POST /api/airports`, `DELETE /api/airports/{code}` — airports CRUD
-- `POST /api/run` — spawn `main.py` as subprocess; `GET /api/run/status`; `WS /ws/run` live log
-- `GET /api/collection-runs` — 수집 실행 이력 목록 (limit 쿼리 파라미터)
-- `GET /api/collection-runs/{run_id}` — 특정 실행 상세
-- `GET /api/results` — `price_history` 직접 쿼리. filters: `hours`, `month`, `trip_type`, `source`. 응답: `top_deals`(상위 5개) + `diverse_deals`(시간대 버킷별 다양성 선별) per destination
-- `GET /api/search` — 출발일/귀국일 지정 임의 박수 검색. 편도 레그 추출 후 실시간 cross-product 조합. params: `departure_date`, `return_date`, `destination`, `trip_type`, `source`
-- `GET /api/price-history` — 가격 추이 조회. `mode=calendar`(출발일별 최저가, `month` 필수) / `mode=timeline`(수집 시점별 추이, `departure_date` 필수)
-
-Frontend SPA routes (React Router):
-- `/` — Landing
-- `/deals` — Results.tsx (전체 딜 목록)
-- `/search` — Search.tsx (날짜 지정 검색)
-- `/trends` — Trends.tsx (가격 추이 차트, PriceChart.tsx 사용)
-- `/monitor` — Monitor.tsx (수집 실행 이력)
-- `/settings` — SearchConfig.tsx + AirportList.tsx + RunControl.tsx
-
-**Config persistence** (`flight_monitor/config_db.py`): `apply_db_config()`이 `airports` 테이블에서 `JAPAN_AIRPORTS`/`TFS_TEMPLATES` 패치, `app_config`에서 `SEARCH_CONFIG` 패치. `config.py` 기본값은 fallback.
-
-**MCP server** (`mcp_server.py`): Three query functions (`get_best_deals`, `get_price_history`, `explain_deal`) for use with Claude Desktop. Uses `%s` placeholders and `psycopg2.extras.RealDictCursor`. Date filtering uses `LEFT(departure_date, 7)` (dates stored as TEXT 'YYYY-MM-DD').
-
-**Config** (`config.py`): All tunable parameters live in `SEARCH_CONFIG`. Key settings:
-- `lcc_max_days`: set to `None` for full-month collection
-- `search_months`: list of `"YYYY-MM"` strings
-- `target_price_krw`: alert threshold in KRW
-- `JAPAN_AIRPORTS` / `TFS_TEMPLATES`: 런타임에 `airports` 테이블로 채워짐 — 웹 UI 설정 탭에서 관리
-
-**Tests** (`test_flight_monitor.py` at repo root): PostgreSQL 기반. `clean_db` fixture가 각 테스트 전 `init_db()`, 후 `TRUNCATE ... RESTART IDENTITY CASCADE`로 격리. `pytest` 설치 필요 (`.venv/Scripts/pip install pytest`).
-
-**Windows 주의사항**: subprocess로 `main.py` 실행 시 `PYTHONIOENCODING=utf-8` + `encoding="utf-8"` 필수 (crawl4ai가 `✓` 등 특수문자 출력으로 cp949 오류 발생).
-
-### Known Issues
-
-1. Foreign LCC airlines (Peach, Zipair, etc.) missing from `AIRLINES` list in `_extract_js()` in `collector_google_flights.py`
-2. `collector_skyscanner.py` is not wired into `main.py` — only `fetch_google_flights_offers` is called
-
----
+상세 명세(레이어, 인터페이스, DB 규칙, 환경변수, 명령어 등)는 `AGENTS.md` 참고.
 
 ### Portfolio
 

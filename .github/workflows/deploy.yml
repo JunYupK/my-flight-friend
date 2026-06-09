@@ -28,10 +28,10 @@ jobs:
             git pull origin master
 
             # app + mcp 이미지 리빌드 (collector 는 헬스체크 이후 별도 빌드)
-            docker compose -f docker-compose.prod.yml build app mcp
+            docker compose --profile full build app mcp
 
-            # 무중단 재시작
-            docker compose -f docker-compose.prod.yml up -d app mcp
+            # 무중단 재시작 (caddy 포함 풀스택)
+            docker compose --profile full up -d
 
             # 헬스체크: Caddyfile 의 site block 이 `{$DOMAIN}` 에만 매칭되므로
             # `https://localhost` 로 찌르면 vhost 매칭 실패로 app 까지 도달조차 못 함.
@@ -51,7 +51,7 @@ jobs:
               fi
               if [ "$i" -eq 30 ]; then
                 echo "App health check failed after 30 attempts"
-                docker compose -f docker-compose.prod.yml logs --tail=80 app caddy
+                docker compose --profile full logs --tail=80 app caddy
                 exit 1
               fi
               sleep 2
@@ -70,7 +70,7 @@ jobs:
               fi
               if [ "$i" -eq 30 ]; then
                 echo "MCP health check failed after 30 attempts (last code=$code)"
-                docker compose -f docker-compose.prod.yml logs --tail=80 mcp caddy
+                docker compose --profile full logs --tail=80 mcp caddy
                 exit 1
               fi
               sleep 2
@@ -79,7 +79,7 @@ jobs:
             # collector 이미지 빌드 (cron 전용, 배포 성공 판정에 영향 없음)
             # playwright install --with-deps chromium 이 ARM64 에서 캐시 미스 시
             # 10분+ 소요되므로 헬스체크 이후로 분리.
-            docker compose -f docker-compose.prod.yml build collector
+            docker compose --profile collect build collector
 
             # 미사용 이미지 정리
             docker image prune -f

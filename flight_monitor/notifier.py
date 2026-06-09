@@ -1,61 +1,51 @@
-# flight_monitor/notifier.py
-
-import requests
-import smtplib
 import os
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import sys
+import requests
 
 
-def send_whatsapp(message: str):
-    phone   = os.environ.get("CALLMEBOT_PHONE")
-    api_key = os.environ.get("CALLMEBOT_API_KEY")
-    if not phone or not api_key:
-        print("[알림] WhatsApp 환경변수 없음, 건너뜀")
-        return
-    requests.get(
-        "https://api.callmebot.com/whatsapp.php",
-        params={"phone": phone, "text": message, "apikey": api_key},
-        timeout=10,
-    )
-
-
-def send_email(subject: str, body: str):
-    gmail   = os.environ.get("GMAIL_ADDRESS")
-    pw      = os.environ.get("GMAIL_APP_PASSWORD")
-    to      = os.environ.get("ALERT_EMAIL")
-    if not gmail or not pw or not to:
-        print("[알림] 이메일 환경변수 없음, 건너뜀")
-        return
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"]    = gmail
-    msg["To"]      = to
-    msg.attach(MIMEText(body, "html"))
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-        server.login(gmail, pw)
-        server.sendmail(gmail, to, msg.as_string())
-
-
-def send_telegram(message: str):
-    token   = os.environ.get("TELEGRAM_BOT_TOKEN")
+def send_telegram(message: str) -> bool:
+    token = os.environ.get("TELEGRAM_BOT_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
     if not token or not chat_id:
-        print("[알림] Telegram 환경변수 없음, 건너뜀")
-        return
-    requests.post(
-        f"https://api.telegram.org/bot{token}/sendMessage",
-        json={"chat_id": chat_id, "text": message},
-        timeout=10,
-    )
+        return False
+    try:
+        r = requests.post(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            json={"chat_id": chat_id, "text": message},
+            timeout=10,
+        )
+        return r.ok
+    except requests.RequestException:
+        return False
 
 
-def notify(offer: dict, target_price: int):
-    dest     = offer["destination_name"]
+def send_discord(message: str) -> bool:
+    url = os.environ.get("DISCORD_WEBHOOK_URL")
+    if not url:
+        return False
+    try:
+        r = requests.post(url, json={"content": message}, timeout=10)
+        return r.ok
+    except requests.RequestException:
+        return False
+
+
+def send_alert(message: str) -> str | None:
+    """Telegram(1순위) → Discord(2순위) fallback. 성공한 채널명 반환."""
+    if send_telegram(message):
+        return "telegram"
+    if send_discord(message):
+        return "discord"
+    print("[알림] Telegram/Discord 모두 실패 또는 미설정", file=sys.stderr)
+    return None
+
+
+def notify(offer: dict, target_price: int) -> str | None:
+    dest = offer["destination_name"]
     dep_date = offer["departure_date"]
     ret_date = offer["return_date"]
-    stay     = offer["stay_nights"]
-    price    = int(offer["price"])
+    stay = offer["stay_nights"]
+    price = int(offer["price"])
 
     if offer["is_mixed_airline"]:
         airline_info = (
@@ -72,6 +62,4 @@ def notify(offer: dict, target_price: int):
         f"💰 왕복 총액: {price:,}원\n"
         f"🛫 {airline_info}"
     )
-    send_whatsapp(msg)
-    send_email(subject=f"[항공권 알림] 인천→{dest} 왕복 {price:,}원", body=f"<pre>{msg}</pre>")
-    send_telegram(msg)
+    return send_alert(msg)

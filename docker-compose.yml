@@ -5,17 +5,116 @@ services:
     environment:
       POSTGRES_DB: flights
       POSTGRES_USER: flight_user
-      POSTGRES_PASSWORD: flight_pass
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-flight_pass}
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flight_user -d flights"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7-alpine
     restart: unless-stopped
     ports:
       - "127.0.0.1:6379:6379"
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    restart: unless-stopped
+    profiles: [full]
+    expose:
+      - "8000"
+    environment:
+      DATABASE_URL: postgresql://flight_user:${DB_PASSWORD:-flight_pass}@db:5432/flights
+      REDIS_URL: redis://redis:6379
+    env_file:
+      - .env
+    networks:
+      - frontend
+      - backend
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  collector:
+    build:
+      context: .
+      dockerfile: Dockerfile.collector
+    profiles: [full, collect]
+    environment:
+      DATABASE_URL: postgresql://flight_user:${DB_PASSWORD:-flight_pass}@db:5432/flights
+      REDIS_URL: redis://redis:6379
+    env_file:
+      - .env
+    networks:
+      - backend
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+    restart: unless-stopped
+    profiles: [full]
+    expose:
+      - "8001"
+    environment:
+      DATABASE_URL: postgresql://flight_user:${DB_PASSWORD:-flight_pass}@db:5432/flights
+    env_file:
+      - .env
+    networks:
+      - frontend
+      - backend
+    depends_on:
+      db:
+        condition: service_healthy
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    profiles: [full]
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    env_file:
+      - .env
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - frontend
+    depends_on:
+      - app
+      - mcp
+
+networks:
+  frontend:
+  backend:
 
 volumes:
   pgdata:
+  caddy_data:
+  caddy_config:

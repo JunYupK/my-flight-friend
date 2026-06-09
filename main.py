@@ -16,7 +16,7 @@ apply_db_config()
 from flight_monitor.collector_google_flights import fetch_google_flights_offers
 from flight_monitor.collector_naver          import fetch_naver_offers
 from flight_monitor.storage                  import init_db, should_notify, should_notify_median_drop, record_alert, start_collection_run, finish_collection_run
-from flight_monitor.notifier                 import notify, send_email
+from flight_monitor.notifier                 import notify, send_alert
 from flight_monitor.config                   import SEARCH_CONFIG
 
 
@@ -81,10 +81,7 @@ def _collect_and_alert(run_id: int):
         if errors:
             msg += "에러 목록:\n" + "\n".join(f"  - {e}" for e in errors)
         print(msg)
-        send_email(
-            subject="[항공권 모니터] 수집 결과 0건 경고",
-            body=f"<pre>{msg}</pre>",
-        )
+        send_alert(f"[항공권 모니터] 수집 결과 0건 경고\n{msg}")
 
     # --- 알림 처리 ---
     target = SEARCH_CONFIG["target_price_krw"]
@@ -139,10 +136,7 @@ if __name__ == "__main__":
         print(f"[{datetime.now(KST):%Y-%m-%d %H:%M:%S}] [FATAL] 예상치 못한 오류:")
         traceback.print_exc()
         try:
-            send_email(
-                subject="[항공권 모니터] 크롤링 크래시 발생",
-                body=f"<pre>{traceback.format_exc()}</pre>",
-            )
+            send_alert(f"[항공권 모니터] 크롤링 크래시 발생\n{traceback.format_exc()}")
         except Exception:
             pass
         sys.exit(1)
