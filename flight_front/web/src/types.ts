@@ -38,6 +38,8 @@ export interface Deal {
   stay_nights: number;
   trip_type: string;
   source: string;
+  out_source?: string;
+  in_source?: string;
   out_airline: string;
   in_airline: string;
   is_mixed_airline: boolean;

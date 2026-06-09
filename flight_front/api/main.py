@@ -245,6 +245,7 @@ def get_results(
 
 # ── Search ───────────────────────────────────────────────
 
+
 @app.get("/api/search")
 def search_flights(
     departure_date: str = Query(..., regex=r"^\d{4}-\d{2}-\d{2}$"),

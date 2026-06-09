@@ -399,6 +399,108 @@ q("""
 """, label="등록된 공항 및 tfs 템플릿 보유 여부")
 
 
+# ────────────────────────────────────────────────────────────────
+# 10. Naver vs Google 가격 편차 분석
+# ────────────────────────────────────────────────────────────────
+section("10. Naver vs Google 가격 편차 분석")
+
+q("""
+    SELECT
+        destination,
+        direction,
+        COUNT(*) FILTER (WHERE source='google_flights') AS gf_count,
+        ROUND(AVG(price) FILTER (WHERE source='google_flights')::numeric) AS gf_avg,
+        MIN(price) FILTER (WHERE source='google_flights') AS gf_min,
+        MAX(price) FILTER (WHERE source='google_flights') AS gf_max,
+        COUNT(*) FILTER (WHERE source='naver') AS nv_count,
+        ROUND(AVG(price) FILTER (WHERE source='naver')::numeric) AS nv_avg,
+        MIN(price) FILTER (WHERE source='naver') AS nv_min,
+        MAX(price) FILTER (WHERE source='naver') AS nv_max,
+        ROUND((AVG(price) FILTER (WHERE source='naver') -
+               AVG(price) FILTER (WHERE source='google_flights'))::numeric) AS avg_diff_nv_minus_gf
+    FROM flight_legs
+    WHERE checked_at >= NOW() - INTERVAL '7 days'
+    GROUP BY destination, direction
+    HAVING COUNT(*) FILTER (WHERE source='google_flights') > 0
+       AND COUNT(*) FILTER (WHERE source='naver') > 0
+    ORDER BY ABS(AVG(price) FILTER (WHERE source='naver') -
+                 AVG(price) FILTER (WHERE source='google_flights')) DESC NULLS LAST
+""", label="소스별 편도 가격 비교 (최근 7일, 두 소스 모두 있는 노선)")
+
+q("""
+    SELECT
+        rl.destination, rl.date, rl.direction,
+        rl.price AS naver_price,
+        rl.collected_at,
+        gf_avg.avg_gf_price,
+        ROUND((rl.price - gf_avg.avg_gf_price)::numeric) AS diff
+    FROM raw_legs rl
+    JOIN (
+        SELECT destination, date, direction, AVG(price) AS avg_gf_price
+        FROM raw_legs
+        WHERE source = 'google_flights'
+          AND collected_at >= NOW() - INTERVAL '30 days'
+        GROUP BY destination, date, direction
+    ) gf_avg
+        ON rl.destination = gf_avg.destination
+        AND rl.date = gf_avg.date
+        AND rl.direction = gf_avg.direction
+    WHERE rl.source = 'naver'
+      AND rl.collected_at >= NOW() - INTERVAL '30 days'
+      AND rl.price > gf_avg.avg_gf_price * 1.8
+    ORDER BY diff DESC
+    LIMIT 30
+""", label="Naver 가격이 Google 평균의 180% 초과인 레그 (오염 의심)")
+
+# tripType=OW 추가 이전(2026-06-04) Naver 데이터 가격 분포
+q("""
+    SELECT
+        '2026-06-04 이전' AS period,
+        COUNT(*) AS rows,
+        MIN(price) AS min_p,
+        ROUND(AVG(price)::numeric) AS avg_p,
+        MAX(price) AS max_p,
+        ROUND(STDDEV(price)::numeric) AS stddev_p
+    FROM raw_legs
+    WHERE source = 'naver'
+      AND collected_at < '2026-06-04 00:00:00'
+    UNION ALL
+    SELECT
+        '2026-06-04 이후' AS period,
+        COUNT(*) AS rows,
+        MIN(price) AS min_p,
+        ROUND(AVG(price)::numeric) AS avg_p,
+        MAX(price) AS max_p,
+        ROUND(STDDEV(price)::numeric) AS stddev_p
+    FROM raw_legs
+    WHERE source = 'naver'
+      AND collected_at >= '2026-06-04 00:00:00'
+    ORDER BY period
+""", label="tripType=OW 추가 전후 Naver 가격 분포 비교 (2026-06-04 기준)")
+
+q("""
+    SELECT COUNT(*) AS contaminated_rows
+    FROM raw_legs
+    WHERE source = 'naver'
+      AND collected_at < '2026-06-04 00:00:00'
+      AND price > 200000
+""", label="OW 추가 전 Naver 데이터 중 20만원 초과 (왕복 기준 의심) 건수")
+
+q("""
+    SELECT
+        COUNT(DISTINCT (o.destination, o.date, i.date)) AS cross_source_combos,
+        COUNT(*) AS total_cross_rows
+    FROM flight_legs o
+    JOIN flight_legs i
+        ON o.destination = i.destination
+        AND (i.date::date - o.date::date) BETWEEN 3 AND 5
+    WHERE o.direction = 'out' AND i.direction = 'in'
+      AND o.source != i.source
+      AND o.checked_at >= CURRENT_DATE
+      AND i.checked_at >= CURRENT_DATE
+""", label="현재 교차 소스 왕복 조합 가능 건수 (out≠in source)")
+
+
 print(f"\n\n{'='*60}")
 print("  진단 완료")
 print(f"  실행 시각: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
