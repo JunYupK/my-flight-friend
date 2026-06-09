@@ -384,6 +384,8 @@ def _combine_legs(out_legs: list[dict], in_legs: list[dict],
     for out in out_legs:
         dest = out["destination"]
         for inb in in_by_dest.get(dest, []):
+            if out["source"] != inb["source"]:
+                continue
             is_mixed = (out["out_airline"] or "") != (inb["in_airline"] or "")
             if trip_type_filter == "round_trip" and is_mixed:
                 continue
@@ -399,6 +401,8 @@ def _combine_legs(out_legs: list[dict], in_legs: list[dict],
                 "stay_nights": stay_nights,
                 "trip_type": "oneway_combo" if is_mixed else "round_trip",
                 "source": out["source"],
+                "out_source": out["source"],
+                "in_source": inb["source"],
                 "out_airline": out["out_airline"],
                 "in_airline": inb["in_airline"],
                 "is_mixed_airline": is_mixed,
