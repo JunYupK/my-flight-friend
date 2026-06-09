@@ -9,6 +9,7 @@ import json
 import os
 import time
 from datetime import datetime
+from pathlib import Path
 
 import psycopg2.extras
 
@@ -136,6 +137,7 @@ def _query_deals(cur, hours: int | None, month: str | None,
             FROM flight_legs o
             JOIN flight_legs i
                 ON o.destination = i.destination
+                AND o.source = i.source
                 AND (i.date::date - o.date::date) BETWEEN %s AND %s{trip_join_extra}
             WHERE {where_clause}
         )
@@ -175,11 +177,15 @@ def query_deals_cached(hours, month, source, trip_type) -> list[dict]:
 # Redis 가 없으면 version = 0 고정 (단일 네임스페이스처럼 동작).
 
 _VERSION_KEY = "deals:version"
+_VERSION_FILE = Path("/tmp/deals_version")
 
 
 def _current_version() -> int:
     if _redis_client is None:
-        return 0
+        try:
+            return int(_VERSION_FILE.read_text().strip())
+        except Exception:
+            return 0
     try:
         v = _redis_client.get(_VERSION_KEY)
         return int(v) if v else 0
@@ -188,10 +194,14 @@ def _current_version() -> int:
 
 
 def bump_deals_version() -> int:
-    """크롤이 데이터를 저장한 직후 호출. Redis 네임스페이스 전체를 즉시 무효화.
-    Redis 없으면 0 반환(no-op)."""
+    """크롤이 데이터를 저장한 직후 호출. Redis 네임스페이스 전체를 즉시 무효화."""
     if _redis_client is None:
-        return 0
+        v = _current_version() + 1
+        try:
+            _VERSION_FILE.write_text(str(v))
+        except Exception as e:
+            print(f"[cache] version file write failed: {e}", flush=True)
+        return v
     try:
         return int(_redis_client.incr(_VERSION_KEY))
     except Exception as e:
