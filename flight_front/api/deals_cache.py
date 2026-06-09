@@ -101,6 +101,8 @@ def _query_deals(cur, hours: int | None, month: str | None,
 
     if source is not None:
         where_conds.append("o.source = %s")
+        where_conds.append("i.source = %s")
+        where_params.append(source)
         where_params.append(source)
 
     where_clause = " AND ".join(where_conds)
@@ -114,6 +116,7 @@ def _query_deals(cur, hours: int | None, month: str | None,
                 (i.date::date - o.date::date) AS stay_nights,
                 CASE WHEN o.airline = i.airline THEN 'round_trip' ELSE 'oneway_combo' END AS trip_type,
                 o.source,
+                o.source AS out_source, i.source AS in_source,
                 o.airline AS out_airline, i.airline AS in_airline,
                 (o.airline IS DISTINCT FROM i.airline)::int AS is_mixed_airline,
                 o.dep_time AS out_dep_time, o.arr_time AS out_arr_time,
@@ -139,6 +142,7 @@ def _query_deals(cur, hours: int | None, month: str | None,
         SELECT
             origin, destination, destination_name, departure_date, return_date,
             stay_nights, trip_type, source,
+            out_source, in_source,
             out_airline, in_airline, is_mixed_airline,
             out_dep_time, out_arr_time, out_duration_min, out_stops,
             in_dep_time, in_arr_time, in_duration_min, in_stops,
