@@ -426,5 +426,228 @@ def find_cheapest_month(
     """, tuple(params))
 
 
+@mcp.tool()
+def get_collection_status(limit: int = 10) -> dict:
+    """크롤링 실행 이력 조회 및 이상 자동 감지.
+
+    collection_runs 테이블에서 최근 실행 내역을 조회하고,
+    'running' 30분 초과 / 연속 error / 수집 0건 등을 감지한다.
+
+    Args:
+        limit: 조회할 최근 실행 건수 (기본 10).
+    """
+    runs = _query("""
+        SELECT
+            id,
+            started_at::text,
+            finished_at::text,
+            status,
+            google_count,
+            naver_count,
+            total_saved,
+            alerts_sent,
+            error_log,
+            duration_sec
+        FROM collection_runs
+        ORDER BY started_at DESC
+        LIMIT %s
+    """, (limit,))
+
+    anomalies: list[str] = []
+    valid_runs = [r for r in runs if not r.get("error")]
+
+    for run in valid_runs:
+        rid = run["id"]
+        status = run["status"]
+        if status == "running":
+            stuck = _query("""
+                SELECT id FROM collection_runs
+                WHERE id = %s
+                  AND status = 'running'
+                  AND started_at < NOW() - '30 minutes'::interval
+            """, (rid,))
+            if stuck and not stuck[0].get("error"):
+                anomalies.append(
+                    f"run #{rid}: 30분 이상 'running' 상태 유지 (크래시 의심)"
+                )
+        elif status == "error":
+            snippet = (run.get("error_log") or "")[:200]
+            anomalies.append(f"run #{rid}: status='error' — {snippet}")
+        elif (run.get("total_saved") or 0) == 0 and status != "running":
+            anomalies.append(f"run #{rid}: 수집 결과 0건 (status={status})")
+
+    if len(valid_runs) >= 2 and all(r["status"] == "error" for r in valid_runs[:2]):
+        anomalies.append("최근 2회 연속 error 상태")
+
+    return {"runs": runs, "anomalies": anomalies}
+
+
+@mcp.tool()
+def get_collection_stats(
+    hours: int = 6,
+    stale_threshold_hours: int = 6,
+) -> dict:
+    """노선별 수집 건수 통계 및 이상 감지.
+
+    raw_legs 기준 현재 윈도우 vs 이전 동일 윈도우를 비교해 급감(drop_rate)을 계산하고,
+    flight_legs.checked_at 기준으로 stale 노선을 감지한다.
+
+    Args:
+        hours: 비교 윈도우 크기 (기본 6시간).
+        stale_threshold_hours: 이 시간 이상 미업데이트 노선을 stale로 분류 (기본 6시간).
+    """
+    raw_counts = _query("""
+        SELECT source, origin, destination, COUNT(*) AS count
+        FROM raw_legs
+        WHERE collected_at >= NOW() - (%s || ' hours')::interval
+        GROUP BY source, origin, destination
+        ORDER BY source, origin, destination
+    """, (str(hours),))
+
+    prev_counts = _query("""
+        SELECT source, origin, destination, COUNT(*) AS count
+        FROM raw_legs
+        WHERE collected_at >= NOW() - (%s || ' hours')::interval
+          AND collected_at <  NOW() - (%s || ' hours')::interval
+        GROUP BY source, origin, destination
+        ORDER BY source, origin, destination
+    """, (str(hours * 2), str(hours)))
+
+    prev_map = {
+        (r["source"], r["origin"], r["destination"]): r["count"]
+        for r in prev_counts if not r.get("error")
+    }
+    drop_analysis = []
+    for row in raw_counts:
+        if row.get("error"):
+            continue
+        key = (row["source"], row["origin"], row["destination"])
+        prev = prev_map.get(key, 0)
+        if prev > 0:
+            drop_rate = round((prev - row["count"]) / prev * 100, 1)
+            if drop_rate > 0:
+                drop_analysis.append({
+                    "source": row["source"],
+                    "origin": row["origin"],
+                    "destination": row["destination"],
+                    "current_count": row["count"],
+                    "prev_count": prev,
+                    "drop_rate_pct": drop_rate,
+                })
+
+    stale_routes = _query("""
+        SELECT
+            source,
+            origin,
+            destination,
+            MAX(checked_at)::text AS last_checked_at,
+            ROUND(EXTRACT(EPOCH FROM (NOW() - MAX(checked_at))) / 3600, 1)
+                AS hours_since_update
+        FROM flight_legs
+        GROUP BY source, origin, destination
+        HAVING MAX(checked_at) < NOW() - (%s || ' hours')::interval
+        ORDER BY MAX(checked_at) ASC
+    """, (str(stale_threshold_hours),))
+
+    return {
+        "raw_counts": raw_counts,
+        "drop_analysis": drop_analysis,
+        "stale_routes": stale_routes,
+    }
+
+
+_ALLOWED_SOURCE_FILES = {
+    "mcp_server.py",
+    "main.py",
+    "diagnosis_agent.py",
+    "flight_monitor/storage.py",
+    "flight_monitor/notifier.py",
+    "flight_monitor/collector_google_flights.py",
+    "flight_monitor/collector_naver.py",
+    "flight_monitor/config.py",
+    "flight_monitor/config_db.py",
+}
+
+
+@mcp.tool()
+def read_source_file(
+    path: str,
+    start_line: int | None = None,
+    end_line: int | None = None,
+) -> dict:
+    """/app 내 Python 소스파일 읽기 (화이트리스트 한정).
+
+    진단 에이전트가 파싱 함수나 에러 처리 로직을 참조할 때 사용한다.
+
+    Args:
+        path:       /app 기준 상대경로 (예: flight_monitor/collector_google_flights.py)
+        start_line: 읽기 시작 줄 번호 (1-indexed). None이면 처음부터.
+        end_line:   읽기 종료 줄 번호 (포함). None이면 끝까지.
+    """
+    import os as _os
+
+    normalized = path.lstrip("/")
+    if normalized not in _ALLOWED_SOURCE_FILES:
+        return {
+            "error": f"허용되지 않는 파일: {path}",
+            "allowed": sorted(_ALLOWED_SOURCE_FILES),
+        }
+
+    base = _os.path.realpath("/app")
+    full_path = _os.path.realpath(_os.path.join(base, normalized))
+    if not full_path.startswith(base + _os.sep) and full_path != base:
+        return {"error": "경로 트래버설 감지"}
+
+    try:
+        with open(full_path, encoding="utf-8") as f:
+            lines = f.readlines()
+    except FileNotFoundError:
+        return {"error": f"파일 없음: {normalized}"}
+    except OSError as e:
+        return {"error": str(e)}
+
+    total = len(lines)
+    s = max(0, (start_line - 1) if start_line else 0)
+    e_idx = min(total, end_line if end_line else total)
+    selected = lines[s:e_idx]
+    numbered = "".join(f"{s + i + 1}\t{line}" for i, line in enumerate(selected))
+
+    return {
+        "content": numbered,
+        "total_lines": total,
+        "path": normalized,
+        "lines_returned": f"{s + 1}-{s + len(selected)}",
+    }
+
+
+@mcp.tool()
+def send_telegram_report(message: str) -> dict:
+    """텔레그램으로 진단 리포트 전송.
+
+    환경변수 TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID를 사용한다.
+
+    Args:
+        message: 전송할 메시지 텍스트.
+    """
+    import requests as _req
+
+    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+    if not token or not chat_id:
+        return {"success": False, "error": "TELEGRAM_BOT_TOKEN 또는 TELEGRAM_CHAT_ID 미설정"}
+
+    try:
+        r = _req.post(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            json={"chat_id": chat_id, "text": message},
+            timeout=10,
+        )
+        if r.ok:
+            return {"success": True, "error": None}
+        return {"success": False, "error": f"HTTP {r.status_code}: {r.text[:200]}"}
+    except _req.RequestException as e:
+        return {"success": False, "error": str(e)}
+
+
 if __name__ == "__main__":
     mcp.run(transport="sse")
