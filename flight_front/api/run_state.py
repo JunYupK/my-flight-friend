@@ -1,9 +1,14 @@
 # flight_front/api/run_state.py
 import threading
+from collections import deque
 from typing import Callable
 
+# 장시간 수집 시 메모리 무한 증가 방지 — 최근 N줄만 유지 (WebSocket replay 상한)
+_MAX_OUTPUT_LINES = 2000
+
 _lock = threading.Lock()
-_state: dict = {"status": "idle", "output": "", "pid": None}
+_state: dict = {"status": "idle", "pid": None}
+_output: deque[str] = deque(maxlen=_MAX_OUTPUT_LINES)
 
 # WebSocket 구독자 목록: output 새 라인이 생길 때 호출할 콜백
 _subscribers: list[Callable[[str], None]] = []
@@ -12,7 +17,7 @@ _sub_lock = threading.Lock()
 
 def get() -> dict:
     with _lock:
-        return dict(_state)
+        return {**_state, "output": "".join(_output)}
 
 
 def subscribe(cb: Callable[[str], None]):
@@ -39,14 +44,14 @@ def _notify(msg: str):
 def set_running(pid: int | None = None):
     with _lock:
         _state["status"] = "running"
-        _state["output"] = ""
         _state["pid"] = pid
-    _notify(f"__status__:running")
+        _output.clear()
+    _notify("__status__:running")
 
 
 def append_output(text: str):
     with _lock:
-        _state["output"] += text
+        _output.append(text)
     _notify(text)
 
 
