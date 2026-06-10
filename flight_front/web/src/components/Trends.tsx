@@ -53,7 +53,7 @@ function CalendarChart({ data, month }: { data: PriceHistoryPoint[]; month: stri
   );
 
   return (
-    <div className="bg-white rounded-2xl shadow-apple-sm p-4 sm:p-6">
+    <div className="bg-apple-surface border border-apple-tertiary/50 rounded-2xl shadow-apple-sm p-4 sm:p-6">
       <h3 className="text-sm font-semibold text-apple-text mb-4">출발일별 최저가 ({month})</h3>
       <ResponsiveContainer width="100%" height={280}>
         <LineChart data={chartData}>
@@ -99,7 +99,7 @@ function TimelineChart({ data }: { data: PriceHistoryPoint[] }) {
   );
 
   return (
-    <div className="bg-white rounded-2xl shadow-apple-sm p-4 sm:p-6">
+    <div className="bg-apple-surface border border-apple-tertiary/50 rounded-2xl shadow-apple-sm p-4 sm:p-6">
       <h3 className="text-sm font-semibold text-apple-text mb-4">수집 시점별 가격 변화</h3>
       <ResponsiveContainer width="100%" height={280}>
         <LineChart data={chartData}>
@@ -191,7 +191,7 @@ export default function Trends() {
           <select
             value={dest}
             onChange={(e) => setDest(e.target.value)}
-            className="text-sm bg-white rounded-xl px-3 py-2 shadow-apple-sm appearance-none focus:outline-none focus:ring-2 focus:ring-apple-blue/30 min-w-0"
+            className="text-sm bg-apple-surface border border-apple-tertiary/50 rounded-xl px-3 py-2 shadow-apple-sm appearance-none focus:outline-none focus:ring-2 focus:ring-apple-blue/30 min-w-0"
           >
             {airports.map((a) => (
               <option key={a.code} value={a.code}>{a.name} ({a.code})</option>
@@ -203,7 +203,7 @@ export default function Trends() {
           <select
             value={month}
             onChange={(e) => setMonth(e.target.value)}
-            className="text-sm bg-white rounded-xl px-3 py-2 shadow-apple-sm appearance-none focus:outline-none focus:ring-2 focus:ring-apple-blue/30 min-w-0"
+            className="text-sm bg-apple-surface border border-apple-tertiary/50 rounded-xl px-3 py-2 shadow-apple-sm appearance-none focus:outline-none focus:ring-2 focus:ring-apple-blue/30 min-w-0"
           >
             {getMonthOptions().map((m) => (
               <option key={m} value={m}>{m}</option>
@@ -231,8 +231,8 @@ export default function Trends() {
                   onClick={() => setSelectedTrip({ dep: d, ret: "" })}
                   className={`text-xs px-3 py-1.5 rounded-full font-medium transition-all duration-200 whitespace-nowrap ${
                     selectedTrip?.dep === d
-                      ? "bg-apple-text text-white"
-                      : "bg-white text-apple-secondary shadow-apple-sm hover:text-apple-text"
+                      ? "bg-apple-text text-apple-bg"
+                      : "bg-apple-surface text-apple-secondary shadow-apple-sm hover:text-apple-text"
                   }`}
                 >
                   {d.slice(5)}

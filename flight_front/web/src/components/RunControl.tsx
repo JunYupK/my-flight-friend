@@ -70,7 +70,7 @@ export default function RunControl() {
   };
 
   return (
-    <section className="bg-white rounded-2xl shadow-apple p-5 sm:p-6 space-y-4">
+    <section className="bg-apple-surface border border-apple-tertiary/50 rounded-2xl shadow-apple p-5 sm:p-6 space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-base font-semibold text-apple-text">수집 실행</h2>
         <span className={`text-xs font-medium ${statusColor[status]}`}>
@@ -81,7 +81,7 @@ export default function RunControl() {
       <button
         onClick={handleRun}
         disabled={status === "running"}
-        className="px-5 py-2.5 bg-apple-blue text-white rounded-full text-sm font-medium hover:bg-apple-blue-hover disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200"
+        className="px-5 py-2.5 bg-apple-blue text-apple-bg rounded-full text-sm font-medium hover:bg-apple-blue-hover disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200"
       >
         {status === "running" ? "수집 중…" : "수집 시작"}
       </button>
@@ -91,7 +91,7 @@ export default function RunControl() {
       {output && (
         <pre
           ref={outputRef}
-          className="bg-apple-text text-gray-300 text-[11px] leading-relaxed rounded-2xl p-4 h-64 overflow-y-auto whitespace-pre-wrap"
+          className="bg-zinc-900 text-gray-300 text-[11px] leading-relaxed rounded-2xl p-4 h-64 overflow-y-auto whitespace-pre-wrap"
         >
           {output}
         </pre>

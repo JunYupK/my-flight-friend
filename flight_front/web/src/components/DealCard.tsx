@@ -50,11 +50,11 @@ export const SOURCE_LABELS: Record<string, { label: string; color: string }> = {
   google_flights: { label: "Google", color: "bg-apple-blue/10 text-apple-blue" },
   amadeus:        { label: "Amadeus", color: "bg-apple-orange/10 text-apple-orange" },
   naver:          { label: "네이버", color: "bg-apple-green/10 text-apple-green" },
-  skyscanner:     { label: "Skyscanner", color: "bg-sky-100 text-sky-600" },
+  skyscanner:     { label: "Skyscanner", color: "bg-apple-blue/10 text-apple-blue" },
 };
 
 export function SourceBadge({ source }: { source: string }) {
-  const info = SOURCE_LABELS[source] ?? { label: source, color: "bg-gray-100 text-gray-500" };
+  const info = SOURCE_LABELS[source] ?? { label: source, color: "bg-apple-text/10 text-apple-secondary" };
   return (
     <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${info.color}`}>
       {info.label}
@@ -138,7 +138,7 @@ export function DealCard({ deal, rank }: { deal: Deal; rank: number }) {
   ];
 
   return (
-    <div className="bg-white rounded-2xl shadow-apple-sm hover:shadow-apple transition-all duration-200">
+    <div className="bg-apple-surface border border-apple-tertiary/50 rounded-2xl shadow-apple-sm hover:shadow-apple transition-all duration-200">
       {/* 헤더 */}
       <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 px-4 pt-3 pb-2">
         <span className="text-xs font-bold text-apple-tertiary">#{rank}</span>

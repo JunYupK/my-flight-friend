@@ -90,17 +90,17 @@ function MonthGrid({
                 onMouseLeave={onDayLeave}
                 className={`relative z-10 w-9 h-10 flex flex-col items-center justify-center rounded-full transition-colors duration-100 ${
                   isSelected
-                    ? "bg-apple-blue text-white"
+                    ? "bg-apple-blue text-apple-bg"
                     : isToday
                       ? "ring-1 ring-apple-blue text-apple-blue"
                       : isDisabled
                         ? "text-apple-tertiary/40 cursor-not-allowed"
-                        : "text-apple-text hover:bg-black/5"
+                        : "text-apple-text hover:bg-apple-text/5"
                 }`}
               >
                 <span className="text-xs font-medium leading-none">{day}</span>
                 {price && !isDisabled && (
-                  <span className={`text-[9px] leading-none mt-0.5 ${isSelected ? "text-white/80" : priceColor(price)}`}>
+                  <span className={`text-[9px] leading-none mt-0.5 ${isSelected ? "text-apple-bg/80" : priceColor(price)}`}>
                     {Math.round(price / 1000)}k
                   </span>
                 )}
@@ -194,19 +194,19 @@ function RangePicker({
   };
 
   return (
-    <div className="bg-white rounded-2xl shadow-apple-sm p-4 sm:p-5">
+    <div className="bg-apple-surface border border-apple-tertiary/50 rounded-2xl shadow-apple-sm p-4 sm:p-5">
       <div className="flex items-center justify-between mb-4">
         <span className="text-sm font-medium text-apple-secondary">{statusText}</span>
         <div className="flex gap-1">
           <button
             onClick={() => setViewMonth(new Date(m1y, m1m - 1, 1))}
-            className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-black/5 text-apple-secondary text-sm"
+            className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-apple-text/5 text-apple-secondary text-sm"
           >
             &lt;
           </button>
           <button
             onClick={() => setViewMonth(new Date(m1y, m1m + 1, 1))}
-            className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-black/5 text-apple-secondary text-sm"
+            className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-apple-text/5 text-apple-secondary text-sm"
           >
             &gt;
           </button>
@@ -313,8 +313,8 @@ export default function Search() {
               onClick={() => handleDestinationChange(a.code)}
               className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
                 destination === a.code
-                  ? "bg-apple-text text-white"
-                  : "bg-white text-apple-secondary shadow-apple-sm hover:text-apple-text"
+                  ? "bg-apple-text text-apple-bg"
+                  : "bg-apple-surface text-apple-secondary shadow-apple-sm hover:text-apple-text"
               }`}
             >
               {a.name} <span className="text-xs opacity-60">{a.code}</span>
@@ -340,7 +340,7 @@ export default function Search() {
           <button
             onClick={handleSearch}
             disabled={loading}
-            className="px-6 py-2 bg-apple-blue text-white rounded-full text-sm font-medium hover:bg-apple-blue-hover disabled:opacity-40 transition-all duration-200"
+            className="px-6 py-2 bg-apple-blue text-apple-bg rounded-full text-sm font-medium hover:bg-apple-blue-hover disabled:opacity-40 transition-all duration-200"
           >
             {loading ? "검색 중…" : "검색"}
           </button>
@@ -351,8 +351,8 @@ export default function Search() {
                 onClick={() => setActiveTripType(opt.value)}
                 className={`text-xs px-3 py-1 rounded-full font-medium transition-all duration-200 ${
                   activeTripType === opt.value
-                    ? "bg-apple-text text-white"
-                    : "bg-white text-apple-secondary shadow-apple-sm hover:text-apple-text"
+                    ? "bg-apple-text text-apple-bg"
+                    : "bg-apple-surface text-apple-secondary shadow-apple-sm hover:text-apple-text"
                 }`}
               >
                 {opt.label}
@@ -362,7 +362,7 @@ export default function Search() {
           <select
             value={activeSource}
             onChange={(e) => setActiveSource(e.target.value)}
-            className="text-xs px-3 py-1.5 rounded-full bg-white shadow-apple-sm text-apple-text border-none outline-none cursor-pointer"
+            className="text-xs px-3 py-1.5 rounded-full bg-apple-surface shadow-apple-sm text-apple-text border-none outline-none cursor-pointer"
           >
             {SOURCE_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -409,12 +409,12 @@ export default function Search() {
                       onClick={() => setActiveDest(g.destination)}
                       className={`flex flex-col items-start px-4 py-2.5 rounded-2xl text-left transition-all duration-200 whitespace-nowrap ${
                         isActive
-                          ? "bg-apple-text text-white shadow-apple"
-                          : "bg-white text-apple-text shadow-apple-sm hover:shadow-apple"
+                          ? "bg-apple-text text-apple-bg shadow-apple"
+                          : "bg-apple-surface text-apple-text shadow-apple-sm hover:shadow-apple"
                       }`}
                     >
                       <span className="text-sm font-semibold">{g.destination_name}</span>
-                      <span className={`text-[11px] ${isActive ? "text-white/60" : "text-apple-secondary"}`}>
+                      <span className={`text-[11px] ${isActive ? "text-apple-bg/60" : "text-apple-secondary"}`}>
                         {g.destination} · {Math.round(g.min_price).toLocaleString()}원~
                       </span>
                     </button>

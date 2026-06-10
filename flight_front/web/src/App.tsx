@@ -11,6 +11,7 @@ import RunControl from "./components/RunControl";
 import Monitor from "./components/Monitor";
 import Search from "./components/Search";
 import Timing from "./components/Timing";
+import ThemeToggle from "./components/ThemeToggle";
 
 const NAV_ITEMS = [
   { path: "/deals", label: "최저가" },
@@ -51,7 +52,7 @@ function Layout() {
   return (
     <div className="min-h-screen bg-apple-bg">
       {/* Glass header */}
-      <header className="sticky top-0 z-30 backdrop-blur-xl bg-white/72 border-b border-black/5">
+      <header className="sticky top-0 z-30 backdrop-blur-xl bg-apple-surface/80 border-b border-apple-text/5">
         <div className="max-w-5xl mx-auto px-4 sm:px-6">
           <div className="flex items-center justify-between h-12">
             {/* Left: logo + nav */}
@@ -70,8 +71,8 @@ function Layout() {
                     to={item.path}
                     className={`px-3 py-1 rounded-full text-xs font-medium transition-all duration-200 ${
                       location.pathname === item.path
-                        ? "bg-apple-text text-white"
-                        : "text-apple-secondary hover:text-apple-text hover:bg-black/5"
+                        ? "bg-apple-text text-apple-bg"
+                        : "text-apple-secondary hover:text-apple-text hover:bg-apple-text/5"
                     }`}
                   >
                     {item.label}
@@ -80,23 +81,26 @@ function Layout() {
               </nav>
             </div>
 
-            {/* Right: save button (settings page only) */}
-            {isSettings && (
-              <div className="flex items-center gap-2">
-                {saveMsg && (
-                  <span className={`text-xs ${saveMsg.includes("실패") ? "text-apple-red" : "text-apple-green"}`}>
-                    {saveMsg}
-                  </span>
-                )}
-                <button
-                  onClick={handleSave}
-                  disabled={saving || !config}
-                  className="px-4 py-1.5 bg-apple-blue text-white rounded-full text-xs font-medium hover:bg-apple-blue-hover disabled:opacity-40 transition-all duration-200"
-                >
-                  {saving ? "저장 중…" : "설정 저장"}
-                </button>
-              </div>
-            )}
+            {/* Right: theme toggle + save button (settings page only) */}
+            <div className="flex items-center gap-2">
+              {isSettings && (
+                <>
+                  {saveMsg && (
+                    <span className={`text-xs ${saveMsg.includes("실패") ? "text-apple-red" : "text-apple-green"}`}>
+                      {saveMsg}
+                    </span>
+                  )}
+                  <button
+                    onClick={handleSave}
+                    disabled={saving || !config}
+                    className="px-4 py-1.5 bg-apple-blue text-apple-bg rounded-full text-xs font-medium hover:bg-apple-blue-hover disabled:opacity-40 transition-all duration-200"
+                  >
+                    {saving ? "저장 중…" : "설정 저장"}
+                  </button>
+                </>
+              )}
+              <ThemeToggle />
+            </div>
           </div>
         </div>
       </header>

@@ -43,7 +43,7 @@ function SeasonHeatmap({ data }: { data: SeasonalPoint[] }) {
   const globalMax = Math.max(...allPrices);
 
   return (
-    <div className="bg-white rounded-2xl shadow-apple-sm p-4 sm:p-6 overflow-x-auto">
+    <div className="bg-apple-surface border border-apple-tertiary/50 rounded-2xl shadow-apple-sm p-4 sm:p-6 overflow-x-auto">
       <h3 className="text-sm font-semibold text-apple-text mb-4">월별 시즌 최저가</h3>
       <table className="border-collapse text-xs min-w-max">
         <thead>
@@ -67,7 +67,7 @@ function SeasonHeatmap({ data }: { data: SeasonalPoint[] }) {
                 if (price == null) {
                   return (
                     <td key={m} className="px-1 py-1">
-                      <div className="rounded-lg bg-gray-100 h-10 w-16" />
+                      <div className="rounded-lg bg-apple-text/5 h-10 w-16" />
                     </td>
                   );
                 }
@@ -122,7 +122,7 @@ function AdvanceChart({
     }));
 
   return (
-    <div className="bg-white rounded-2xl shadow-apple-sm p-4 sm:p-6">
+    <div className="bg-apple-surface border border-apple-tertiary/50 rounded-2xl shadow-apple-sm p-4 sm:p-6">
       <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
         <h3 className="text-sm font-semibold text-apple-text">예약 시점별 가격</h3>
         <div className="flex items-center gap-2">

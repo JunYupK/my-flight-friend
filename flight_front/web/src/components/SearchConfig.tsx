@@ -45,7 +45,7 @@ export default function SearchConfigForm({ value, onChange }: Props) {
   };
 
   return (
-    <section className="bg-white rounded-2xl shadow-apple p-5 sm:p-6 space-y-8">
+    <section className="bg-apple-surface border border-apple-tertiary/50 rounded-2xl shadow-apple p-5 sm:p-6 space-y-8">
       <h2 className="text-base font-semibold text-apple-text">검색 설정</h2>
 
       {/* 알림 설정 */}
@@ -86,7 +86,7 @@ export default function SearchConfigForm({ value, onChange }: Props) {
                 onClick={() => toggleStay(n)}
                 className={`w-8 h-8 rounded-lg text-xs font-medium transition-all duration-200 ${
                   value.stay_durations.includes(n)
-                    ? "bg-apple-blue text-white shadow-apple-sm"
+                    ? "bg-apple-blue text-apple-bg shadow-apple-sm"
                     : "bg-apple-bg text-apple-secondary hover:text-apple-text"
                 }`}
               >

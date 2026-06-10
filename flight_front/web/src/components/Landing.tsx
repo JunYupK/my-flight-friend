@@ -35,7 +35,7 @@ export default function Landing() {
           <Link
             key={f.link}
             to={f.link}
-            className="group flex flex-col bg-white rounded-3xl p-7 sm:p-8 shadow-apple hover:shadow-apple-hover hover:-translate-y-0.5 transition-all duration-300"
+            className="group flex flex-col bg-apple-surface border border-apple-tertiary/50 rounded-3xl p-7 sm:p-8 shadow-apple hover:shadow-apple-hover hover:-translate-y-0.5 transition-all duration-300"
           >
             <h2 className="text-xl sm:text-2xl font-bold text-apple-text">{f.title}</h2>
             <p className="mt-3 text-sm text-apple-secondary leading-relaxed flex-1">{f.desc}</p>

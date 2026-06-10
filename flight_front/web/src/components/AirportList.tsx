@@ -75,7 +75,7 @@ export default function AirportList() {
     setEditing((e) => ({ ...e, [code]: { ...e[code], [field]: val } }));
 
   return (
-    <section className="bg-white rounded-2xl shadow-apple p-5 sm:p-6 space-y-5">
+    <section className="bg-apple-surface border border-apple-tertiary/50 rounded-2xl shadow-apple p-5 sm:p-6 space-y-5">
       <div className="flex items-center gap-3">
         <h2 className="text-base font-semibold text-apple-text">목적지 공항</h2>
         {msg && (
@@ -102,7 +102,7 @@ export default function AirportList() {
                 <button
                   onClick={() => handleSave(airport.code)}
                   disabled={saving[airport.code]}
-                  className="text-xs px-3 py-1 rounded-full bg-apple-blue text-white hover:bg-apple-blue-hover disabled:opacity-40 transition-all duration-200 shrink-0"
+                  className="text-xs px-3 py-1 rounded-full bg-apple-blue text-apple-bg hover:bg-apple-blue-hover disabled:opacity-40 transition-all duration-200 shrink-0"
                 >
                   {saving[airport.code] ? "저장 중…" : "저장"}
                 </button>
@@ -119,7 +119,7 @@ export default function AirportList() {
                 {!a.tfs_out && !a.tfs_in && (
                   <p className="text-[11px] text-apple-secondary">
                     구글 플라이트에서 ICN↔{airport.code} 편도 검색 후 URL의{" "}
-                    <code className="bg-white px-1 rounded text-apple-blue">tfs=</code> 값 붙여넣기
+                    <code className="bg-apple-surface px-1 rounded text-apple-blue">tfs=</code> 값 붙여넣기
                   </p>
                 )}
                 <label className="flex flex-col gap-1">
@@ -132,7 +132,7 @@ export default function AirportList() {
                     placeholder="tfs= 값 또는 전체 URL"
                     value={a.tfs_out}
                     onChange={(e) => patch(airport.code, "tfs_out", e.target.value)}
-                    className="bg-white rounded-xl px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-apple-blue/30 shadow-apple-sm"
+                    className="bg-apple-surface border border-apple-tertiary/50 rounded-xl px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-apple-blue/30 shadow-apple-sm"
                   />
                 </label>
                 <label className="flex flex-col gap-1">
@@ -145,7 +145,7 @@ export default function AirportList() {
                     placeholder="tfs= 값 또는 전체 URL"
                     value={a.tfs_in}
                     onChange={(e) => patch(airport.code, "tfs_in", e.target.value)}
-                    className="bg-white rounded-xl px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-apple-blue/30 shadow-apple-sm"
+                    className="bg-apple-surface border border-apple-tertiary/50 rounded-xl px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-apple-blue/30 shadow-apple-sm"
                   />
                 </label>
               </div>
@@ -192,7 +192,7 @@ export default function AirportList() {
           <button
             onClick={handleAdd}
             disabled={adding || !newAirport.code.trim() || !newAirport.name.trim()}
-            className="px-5 py-2 bg-apple-blue text-white rounded-full text-sm font-medium hover:bg-apple-blue-hover disabled:opacity-40 transition-all duration-200 shrink-0"
+            className="px-5 py-2 bg-apple-blue text-apple-bg rounded-full text-sm font-medium hover:bg-apple-blue-hover disabled:opacity-40 transition-all duration-200 shrink-0"
           >
             {adding ? "추가 중…" : "추가"}
           </button>

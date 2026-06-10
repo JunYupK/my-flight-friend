@@ -75,7 +75,7 @@ export default function Monitor() {
 
   return (
     <div className="space-y-6">
-      <section className="bg-white rounded-2xl shadow-apple p-5 sm:p-6 space-y-4">
+      <section className="bg-apple-surface border border-apple-tertiary/50 rounded-2xl shadow-apple p-5 sm:p-6 space-y-4">
         <h2 className="text-base font-semibold text-apple-text">수집 이력</h2>
 
         {runs.length === 0 ? (
@@ -84,7 +84,7 @@ export default function Monitor() {
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
-                <tr className="border-b border-black/5 text-apple-secondary">
+                <tr className="border-b border-apple-text/5 text-apple-secondary">
                   <th className="text-left py-2 px-2 font-medium">시간</th>
                   <th className="text-left py-2 px-2 font-medium">상태</th>
                   <th className="text-right py-2 px-2 font-medium">GF</th>
@@ -101,7 +101,7 @@ export default function Monitor() {
                     <React.Fragment key={run.id}>
                       <tr
                         onClick={() => handleRowClick(run)}
-                        className={`border-b border-black/5 transition-colors cursor-pointer hover:bg-apple-bg ${
+                        className={`border-b border-apple-text/5 transition-colors cursor-pointer hover:bg-apple-bg ${
                           isExpanded ? "bg-apple-bg" : ""
                         }`}
                       >
@@ -133,7 +133,7 @@ export default function Monitor() {
                                 logLoading ? (
                                   <p className="text-xs text-apple-secondary">로딩 중…</p>
                                 ) : (
-                                  <pre className="bg-apple-text text-gray-300 text-[11px] leading-relaxed rounded-xl p-4 max-h-64 overflow-y-auto whitespace-pre-wrap">
+                                  <pre className="bg-zinc-900 text-gray-300 text-[11px] leading-relaxed rounded-xl p-4 max-h-64 overflow-y-auto whitespace-pre-wrap">
                                     {errorLog}
                                   </pre>
                                 )
