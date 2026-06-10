@@ -15,7 +15,6 @@ import base64
 import calendar
 import json
 import re
-from collections import defaultdict
 from datetime import date, datetime, timedelta
 from flight_monitor.config import KST
 from html import unescape
@@ -31,6 +30,8 @@ except ImportError:
     _CRAWL4AI_AVAILABLE = False
 
 from .config import ORIGIN, JAPAN_AIRPORTS, SEARCH_CONFIG, TFS_TEMPLATES
+from .crawler_utils import crawl_one_way_batches, make_scroll_js
+from .offer_utils import combine_roundtrips
 
 _TFS_DATE_RE = re.compile(rb"\d{4}-\d{2}-\d{2}")
 
@@ -169,22 +170,6 @@ def _build_tfs_url(dep: str, arr: str, date_str: str) -> str | None:
         print(f"[GoogleFlights WARN] tfs 템플릿에 날짜 패턴 없음: {dep}_{arr}")
     tfs = base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
     return f"https://www.google.com/travel/flights/search?tfs={tfs}&curr=KRW&hl=ko"
-
-
-def _make_scroll_js() -> str:
-    return """
-(async () => {
-    const sleep = ms => new Promise(r => setTimeout(r, ms));
-    let prev = 0;
-    for (let i = 0; i < 5; i++) {
-        window.scrollTo(0, document.body.scrollHeight);
-        await sleep(1500);
-        const curr = document.body.scrollHeight;
-        if (curr === prev) break;
-        prev = curr;
-    }
-})();
-"""
 
 
 def _extract_js() -> str:
@@ -361,7 +346,7 @@ async def _fetch_one_way(
             url=url,
             config=CrawlerRunConfig(
                 magic=True,
-                js_code=[_make_scroll_js(), _extract_js()],
+                js_code=[make_scroll_js(), _extract_js()],
                 wait_for="js:() => !!document.querySelector('li.pIav2d')",
                 delay_before_return_html=4.0,
                 cache_mode="bypass",
@@ -386,72 +371,6 @@ async def _fetch_one_way(
         booking_url = _build_booking_url(f, dep, arr, date_formatted)
         enriched.append({"date": date_formatted, "search_url": url, "booking_url": booking_url, **f})
     return enriched
-
-
-def _combine_roundtrips(
-    out_flights: list[dict], in_flights: list[dict],
-    dep_airport: str, arr_airport: str, arr_name: str,
-) -> list[dict]:
-    """편도 왕/복편 조합으로 왕복 오퍼 생성."""
-    topk = SEARCH_CONFIG["topk_per_date"]
-
-    out_idx: dict[str, list] = defaultdict(list)
-    in_idx:  dict[str, list] = defaultdict(list)
-    for f in out_flights:
-        out_idx[f["date"]].append(f)
-    for f in in_flights:
-        in_idx[f["date"]].append(f)
-
-    for d in out_idx:
-        out_idx[d] = sorted(out_idx[d], key=lambda x: x["price"])[:topk]
-    for d in in_idx:
-        in_idx[d] = sorted(in_idx[d], key=lambda x: x["price"])[:topk]
-
-    results = []
-    for dep_date, outs in out_idx.items():
-        dep_dt = datetime.strptime(dep_date, "%Y-%m-%d")
-        for stay in SEARCH_CONFIG["stay_durations"]:
-            ret_date = (dep_dt + timedelta(days=stay)).strftime("%Y-%m-%d")
-            ins = in_idx.get(ret_date)
-            if not ins:
-                continue
-            for out in outs:
-                for ret in ins:
-                    out_al = out.get("airline", "")
-                    in_al  = ret.get("airline", "")
-                    results.append({
-                        "source":           "google_flights",
-                        "trip_type":        "oneway_combo",
-                        "origin":           dep_airport,
-                        "destination":      arr_airport,
-                        "destination_name": arr_name,
-                        "departure_date":   dep_date,
-                        "return_date":      ret_date,
-                        "stay_nights":      stay,
-                        "price":            out["price"] + ret["price"],
-                        "currency":         "KRW",
-                        "out_airline":      out_al,
-                        "in_airline":       in_al,
-                        "is_mixed_airline": bool(out_al and in_al and out_al != in_al),
-                        "out_dep_time":     out.get("dep_time"),
-                        "out_arr_time":     out.get("arr_time"),
-                        "out_duration_min": out.get("duration_min"),
-                        "out_stops":        out.get("stops"),
-                        "in_dep_time":      ret.get("dep_time"),
-                        "in_arr_time":      ret.get("arr_time"),
-                        "in_duration_min":  ret.get("duration_min"),
-                        "in_stops":         ret.get("stops"),
-                        "out_arr_airport":  out.get("arr_airport"),
-                        "in_dep_airport":   ret.get("dep_airport"),
-                        "out_url":          out.get("booking_url") or out.get("search_url"),
-                        "in_url":           ret.get("booking_url") or ret.get("search_url"),
-                        "out_price":        out["price"],
-                        "in_price":         ret["price"],
-                        "checked_at":       datetime.now(KST).isoformat(),
-                    })
-
-    results.sort(key=lambda x: x["price"])
-    return results
 
 
 _BATCH_SIZE = 5
@@ -490,7 +409,7 @@ async def _fetch_route(
     # 2) BATCH_SIZE 단위로 arun_many() 호출
     config = CrawlerRunConfig(
         magic=True,
-        js_code=[_make_scroll_js(), _extract_js()],
+        js_code=[make_scroll_js(), _extract_js()],
         wait_for="js:() => !!document.querySelector('li.pIav2d')",
         delay_before_return_html=4.0,
         cache_mode="bypass",
@@ -499,53 +418,32 @@ async def _fetch_route(
 
     out_flights, in_flights = [], []
 
-    for i in range(0, len(urls), _BATCH_SIZE):
-        batch_urls = urls[i:i + _BATCH_SIZE]
-        batch_metas = metas[i:i + _BATCH_SIZE]
-        url_to_meta = {u: m for u, m in zip(batch_urls, batch_metas)}
+    crawled = await crawl_one_way_batches(
+        crawler, urls, metas, config,
+        source_label="GoogleFlights",
+        parse_cards=_parse_flight_cards,
+        request_delay=delay,
+        batch_size=_BATCH_SIZE,
+    )
 
-        try:
-            results = await crawler.arun_many(urls=batch_urls, config=config)
-        except Exception as e:
-            print(f"[GoogleFlights ERROR] batch {i // _BATCH_SIZE}: {e}")
+    for meta, flights in crawled:
+        # 첫 번째 항공편의 dep_airport로 방향 검증
+        sample_dep = flights[0].get("dep_airport")
+        if sample_dep and sample_dep != meta["dep"]:
+            print(f"[GoogleFlights WARN] 공항 불일치: "
+                  f"기대 {meta['dep']}→{meta['arr']}, "
+                  f"실제 출발공항 {sample_dep}. 해당 결과 스킵")
             continue
 
-        for result in results:
-            meta = url_to_meta.get(result.url)
-            if meta is None:
-                print(f"[GoogleFlights WARN] 매칭 메타 없음: {result.url[:80]}")
-                continue
-            if not result.success:
-                print(f"[GoogleFlights FAIL] {meta['dep']}-{meta['arr']} {meta['date']}: {result.error_message}")
-                continue
+        enriched = []
+        for f in flights[:topk]:
+            booking_url = _build_booking_url(f, meta["dep"], meta["arr"], meta["date"])
+            enriched.append({"date": meta["date"], "search_url": meta["url"], "booking_url": booking_url, **f})
 
-            flights = _parse_flight_cards(result.html or "")
-            if not flights:
-                print(f"[GoogleFlights WARN] 카드 추출 0건 {meta['dep']}-{meta['arr']} {meta['date']}")
-                continue
-
-            flights.sort(key=lambda x: x["price"])
-
-            # 첫 번째 항공편의 dep_airport로 방향 검증
-            sample_dep = flights[0].get("dep_airport")
-            if sample_dep and sample_dep != meta["dep"]:
-                print(f"[GoogleFlights WARN] 공항 불일치: "
-                      f"기대 {meta['dep']}→{meta['arr']}, "
-                      f"실제 출발공항 {sample_dep}. 해당 결과 스킵")
-                continue
-
-            enriched = []
-            for f in flights[:topk]:
-                booking_url = _build_booking_url(f, meta["dep"], meta["arr"], meta["date"])
-                enriched.append({"date": meta["date"], "search_url": meta["url"], "booking_url": booking_url, **f})
-
-            if meta["direction"] == "out":
-                out_flights.extend(enriched)
-            else:
-                in_flights.extend(enriched)
-
-        if i + _BATCH_SIZE < len(urls):
-            await asyncio.sleep(delay)
+        if meta["direction"] == "out":
+            out_flights.extend(enriched)
+        else:
+            in_flights.extend(enriched)
 
     # 편도 레그를 flight_legs 테이블에 저장
     from flight_monitor.storage import save_legs
@@ -574,7 +472,13 @@ async def _fetch_route(
             })
     save_legs(leg_records)
 
-    return _combine_roundtrips(out_flights, in_flights, ORIGIN, airport_code, airport_name)
+    return combine_roundtrips(
+        out_flights, in_flights,
+        source="google_flights", origin=ORIGIN,
+        destination=airport_code, destination_name=airport_name,
+        stay_durations=SEARCH_CONFIG["stay_durations"],
+        topk=SEARCH_CONFIG["topk_per_date"],
+    )
 
 
 async def _fetch_airport(
