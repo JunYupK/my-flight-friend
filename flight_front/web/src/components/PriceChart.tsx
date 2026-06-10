@@ -42,11 +42,11 @@ export default function PriceChart({ destination, month }: PriceChartProps) {
   }, [destination, month]);
 
   if (loading)
-    return <p className="text-sm text-gray-400 py-4">차트 로딩 중…</p>;
+    return <p className="text-sm text-apple-secondary py-4">차트 로딩 중…</p>;
   if (error)
     return <p className="text-sm text-red-500 py-4">{error}</p>;
   if (data.length === 0)
-    return <p className="text-sm text-gray-400 py-4">데이터가 아직 없습니다</p>;
+    return <p className="text-sm text-apple-secondary py-4">데이터가 아직 없습니다</p>;
 
   // pivot: departure_date → { date, google_flights, naver_graphql, amadeus }
   const sources = [...new Set(data.map((d) => d.source))];
@@ -61,7 +61,7 @@ export default function PriceChart({ destination, month }: PriceChartProps) {
   );
 
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-4">
+    <div className="bg-apple-surface border border-apple-tertiary/40 rounded-xl p-4">
       <ResponsiveContainer width="100%" height={260}>
         <LineChart data={chartData}>
           <CartesianGrid strokeDasharray="3 3" />

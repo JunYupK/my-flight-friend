@@ -6,7 +6,6 @@
 # 실행: python mcp_server.py (SSE transport, port 8001)
 
 import os
-from datetime import datetime, timedelta
 
 import psycopg2
 import psycopg2.extras
@@ -61,7 +60,6 @@ def get_best_deals(
     month_filter = ""
     if month:
         # LIKE 대신 range 쿼리로 인덱스 활용
-        from datetime import date
         import calendar
         y, m = int(month[:4]), int(month[5:7])
         last_day = calendar.monthrange(y, m)[1]

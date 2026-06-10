@@ -34,8 +34,8 @@ function MonthFilter({ activeMonth, onChange }: { activeMonth: string; onChange:
             onClick={() => onChange(m)}
             className={`text-xs px-3 py-1.5 rounded-full font-medium transition-all duration-200 whitespace-nowrap ${
               activeMonth === m
-                ? "bg-apple-text text-white"
-                : "bg-white text-apple-secondary hover:text-apple-text shadow-apple-sm"
+                ? "bg-apple-text text-apple-bg"
+                : "bg-apple-surface text-apple-secondary hover:text-apple-text shadow-apple-sm"
             }`}
           >
             {formatMonth(m)}
@@ -109,12 +109,12 @@ export default function Results() {
                   onClick={() => setActiveDest(g.destination)}
                   className={`flex flex-col items-start px-4 py-2.5 rounded-2xl text-left transition-all duration-200 whitespace-nowrap ${
                     isActive
-                      ? "bg-apple-text text-white shadow-apple"
-                      : "bg-white text-apple-text shadow-apple-sm hover:shadow-apple"
+                      ? "bg-apple-text text-apple-bg shadow-apple"
+                      : "bg-apple-surface text-apple-text shadow-apple-sm hover:shadow-apple"
                   }`}
                 >
                   <span className="text-sm font-semibold">{g.destination_name}</span>
-                  <span className={`text-[11px] ${isActive ? "text-white/60" : "text-apple-secondary"}`}>
+                  <span className={`text-[11px] ${isActive ? "text-apple-bg/60" : "text-apple-secondary"}`}>
                     {g.destination} · {Math.round(g.min_price).toLocaleString()}원~
                   </span>
                 </button>
@@ -144,8 +144,8 @@ export default function Results() {
               onClick={() => setActiveTripType(opt.value)}
               className={`text-xs px-3 py-1 rounded-full font-medium transition-all duration-200 ${
                 activeTripType === opt.value
-                  ? "bg-apple-text text-white"
-                  : "bg-white text-apple-secondary shadow-apple-sm hover:text-apple-text"
+                  ? "bg-apple-text text-apple-bg"
+                  : "bg-apple-surface text-apple-secondary shadow-apple-sm hover:text-apple-text"
               }`}
             >
               {opt.label}
@@ -154,7 +154,7 @@ export default function Results() {
           <select
             value={activeSource}
             onChange={(e) => setActiveSource(e.target.value)}
-            className="text-xs px-3 py-1.5 rounded-full bg-white shadow-apple-sm text-apple-text border-none outline-none cursor-pointer"
+            className="text-xs px-3 py-1.5 rounded-full bg-apple-surface shadow-apple-sm text-apple-text border-none outline-none cursor-pointer"
           >
             {SOURCE_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>{opt.label}</option>

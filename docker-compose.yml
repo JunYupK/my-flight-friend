@@ -50,6 +50,13 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      # python:3.11-slim 베이스에 curl/wget 없음 → 표준 라이브러리 사용
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/config', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
 
   collector:
     build:
@@ -87,6 +94,13 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    healthcheck:
+      # FastMCP SSE 서버는 GET /sse 가 hang 하므로 TCP 연결 확인만 수행
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('localhost', 8001), 5).close()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
   caddy:
     image: caddy:2-alpine
@@ -109,6 +123,12 @@ services:
     depends_on:
       - app
       - mcp
+    healthcheck:
+      # Caddy admin API (컨테이너 내부 전용 포트 2019)
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:2019/config/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
 networks:
   frontend:

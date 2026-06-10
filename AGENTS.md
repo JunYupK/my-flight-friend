@@ -63,6 +63,9 @@ ui      → storage     (프론트엔드가 DB 모듈 import 금지)
 |----------------|------|
 | DB 쿼리 함수 | `flight_monitor/storage.py` |
 | 캐시 / 조합 로직 | `flight_front/api/deals_cache.py` (또는 새 service 파일) |
+| 검색/딜 선별 Service 로직 | `flight_front/api/search_service.py` |
+| collector 공통 왕복 조합 | `flight_monitor/offer_utils.py` |
+| collector 공통 크롤 유틸 (배치/스크롤 JS) | `flight_monitor/crawler_utils.py` |
 | 새 데이터 소스 collector | `flight_monitor/collector_{source}.py` |
 | API 엔드포인트 | `flight_front/api/main.py` |
 | MCP RPC 함수 | `mcp_server.py` (Service 레이어) |
@@ -294,9 +297,9 @@ PYTHONIOENCODING=utf-8
 
 ## 11. Known Issues (작업 전 참고)
 
-1. `api/main.py` 의 다음 함수가 Router에 있지만 Service 로직이다 — 추후 `flight_front/api/services/` 로 이동 예정. 해당 함수를 만지는 PR은 가능하면 이전도 함께 수행:
-   - `_combine_legs`, `_select_diverse_deals`
-   - `_query_outbound_legs`, `_query_inbound_legs`
+1. ~~`api/main.py` 의 `_combine_legs`, `_select_diverse_deals`, `_query_outbound_legs`, `_query_inbound_legs`~~
+   → `flight_front/api/search_service.py` 로 이동 완료 (2026-06).
+   남은 항목 — 해당 부분을 만지는 PR은 가능하면 이전도 함께 수행:
    - `/api/calendar-prices` 본체의 `get_conn()` 직접 호출
    - `/api/price-history` 본체의 `get_conn()` 직접 호출
 

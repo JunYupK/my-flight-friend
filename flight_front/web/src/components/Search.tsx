@@ -1,236 +1,8 @@
-import React, { useState, useEffect, useMemo } from "react";
-import { searchFlights, fetchAirports, fetchCalendarPrices } from "../api";
-import type { CalendarPrices } from "../api";
+import { useState, useEffect } from "react";
+import { searchFlights, fetchAirports } from "../api";
 import type { DestinationGroup, Airport } from "../types";
-import { DAY_NAMES } from "../utils";
 import { DealCard, TRIP_TYPE_OPTIONS, SOURCE_LABELS } from "./DealCard";
-
-/* ── helpers ────────────────────────────────────────────── */
-function toDateStr(y: number, m: number, d: number) {
-  return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-}
-
-/* ── MonthGrid ──────────────────────────────────────────── */
-function MonthGrid({
-  year, month, today,
-  departureDate, returnDate, hoverDate,
-  prices, priceThresholds,
-  onDayClick, onDayHover, onDayLeave,
-}: {
-  year: number; month: number; today: string;
-  departureDate: string | null; returnDate: string | null; hoverDate: string | null;
-  prices: Record<string, number>;
-  priceThresholds: { low: number; high: number };
-  onDayClick: (d: string) => void;
-  onDayHover: (d: string) => void;
-  onDayLeave: () => void;
-}) {
-  const firstDay = new Date(year, month, 1).getDay();
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const cells: (number | null)[] = [];
-  for (let i = 0; i < firstDay; i++) cells.push(null);
-  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
-
-  // range end: actual return date or hover preview (only when hovering after departure)
-  const rangeEnd = returnDate || (departureDate && hoverDate && hoverDate > departureDate ? hoverDate : null);
-
-  const priceColor = (price: number) => {
-    if (price <= priceThresholds.low) return "text-apple-green";
-    if (price >= priceThresholds.high) return "text-apple-orange";
-    return "text-apple-secondary";
-  };
-
-  return (
-    <div>
-      <div className="text-sm font-semibold text-apple-text text-center mb-3">
-        {year}년 {month + 1}월
-      </div>
-      <div className="grid grid-cols-7 mb-1">
-        {DAY_NAMES.map((d) => (
-          <div key={d} className="text-center text-[10px] font-medium text-apple-tertiary py-1">{d}</div>
-        ))}
-      </div>
-      <div className="grid grid-cols-7">
-        {cells.map((day, i) => {
-          if (day == null) return <div key={i} className="h-12" />;
-          const dateStr = toDateStr(year, month + 1, day);
-          const isDisabled = dateStr < today;
-          const isDeparture = dateStr === departureDate;
-          const isReturn = !!returnDate && dateStr === returnDate;
-          const isSelected = isDeparture || isReturn;
-          const isToday = dateStr === today;
-
-          // range highlight logic
-          const rangeActive = !!(departureDate && rangeEnd && departureDate !== rangeEnd);
-          const rangeMin = rangeActive ? (departureDate! < rangeEnd! ? departureDate! : rangeEnd!) : null;
-          const rangeMax = rangeActive ? (departureDate! < rangeEnd! ? rangeEnd! : departureDate!) : null;
-          const inRange = !!(rangeMin && rangeMax && dateStr > rangeMin && dateStr < rangeMax);
-          const isRangeStart = rangeActive && dateStr === rangeMin;
-          const isRangeEnd = rangeActive && dateStr === rangeMax;
-
-          const price = prices[dateStr];
-
-          return (
-            <div key={i} className="relative h-12 flex items-center justify-center">
-              {/* Range background strip */}
-              {(inRange || isRangeStart || isRangeEnd) && (
-                <div
-                  className="absolute inset-y-1.5 bg-apple-blue/10 pointer-events-none"
-                  style={{
-                    left: isRangeStart ? "50%" : 0,
-                    right: isRangeEnd ? "50%" : 0,
-                  }}
-                />
-              )}
-              {/* Day button */}
-              <button
-                disabled={isDisabled}
-                onClick={() => !isDisabled && onDayClick(dateStr)}
-                onMouseEnter={() => !isDisabled && onDayHover(dateStr)}
-                onMouseLeave={onDayLeave}
-                className={`relative z-10 w-9 h-10 flex flex-col items-center justify-center rounded-full transition-colors duration-100 ${
-                  isSelected
-                    ? "bg-apple-blue text-white"
-                    : isToday
-                      ? "ring-1 ring-apple-blue text-apple-blue"
-                      : isDisabled
-                        ? "text-apple-tertiary/40 cursor-not-allowed"
-                        : "text-apple-text hover:bg-black/5"
-                }`}
-              >
-                <span className="text-xs font-medium leading-none">{day}</span>
-                {price && !isDisabled && (
-                  <span className={`text-[9px] leading-none mt-0.5 ${isSelected ? "text-white/80" : priceColor(price)}`}>
-                    {Math.round(price / 1000)}k
-                  </span>
-                )}
-              </button>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-/* ── RangePicker ────────────────────────────────────────── */
-function RangePicker({
-  departureDate, returnDate, destination,
-  onDepartureChange, onReturnChange,
-}: {
-  departureDate: string | null;
-  returnDate: string | null;
-  destination: string;
-  onDepartureChange: (d: string) => void;
-  onReturnChange: (d: string | null) => void;
-}) {
-  const today = useMemo(() => {
-    const d = new Date();
-    return toDateStr(d.getFullYear(), d.getMonth() + 1, d.getDate());
-  }, []);
-
-  const [viewMonth, setViewMonth] = useState(() => {
-    const now = new Date();
-    return new Date(now.getFullYear(), now.getMonth(), 1);
-  });
-  const [hoverDate, setHoverDate] = useState<string | null>(null);
-  const [calPrices, setCalPrices] = useState<CalendarPrices>({ out: {}, in: {} });
-
-  const m1y = viewMonth.getFullYear();
-  const m1m = viewMonth.getMonth();
-  const m2 = new Date(m1y, m1m + 1, 1);
-  const m2y = m2.getFullYear();
-  const m2m = m2.getMonth();
-
-  useEffect(() => {
-    const from = toDateStr(m1y, m1m + 1, 1);
-    const to = toDateStr(m2y, m2m + 1, new Date(m2y, m2m + 1, 0).getDate());
-    fetchCalendarPrices({ destination, from, to }).then(setCalPrices).catch(() => {});
-  }, [destination, m1y, m1m]);
-
-  // Show out_price when selecting departure, in_price when selecting return
-  const selectingReturn = !!(departureDate && !returnDate);
-  const activePrices = selectingReturn ? calPrices.in : calPrices.out;
-
-  const priceThresholds = useMemo(() => {
-    const vals = Object.values(activePrices);
-    if (!vals.length) return { low: Infinity, high: 0 };
-    const sorted = [...vals].sort((a, b) => a - b);
-    return {
-      low: sorted[Math.floor(sorted.length * 0.33)],
-      high: sorted[Math.floor(sorted.length * 0.67)],
-    };
-  }, [activePrices]);
-
-  const handleDayClick = (dateStr: string) => {
-    if (!departureDate || returnDate) {
-      onDepartureChange(dateStr);
-      onReturnChange(null);
-    } else if (dateStr <= departureDate) {
-      onDepartureChange(dateStr);
-    } else {
-      onReturnChange(dateStr);
-    }
-  };
-
-  const stayNights = departureDate && returnDate
-    ? Math.round((new Date(returnDate).getTime() - new Date(departureDate).getTime()) / 86400000)
-    : null;
-
-  const statusText = returnDate && departureDate
-    ? `${departureDate} → ${returnDate} (${stayNights}박)`
-    : departureDate
-      ? "귀국일을 선택하세요"
-      : "출발일을 선택하세요";
-
-  const monthGridProps = {
-    today,
-    departureDate, returnDate, hoverDate,
-    prices: activePrices,
-    priceThresholds,
-    onDayClick: handleDayClick,
-    onDayHover: setHoverDate,
-    onDayLeave: () => setHoverDate(null),
-  };
-
-  return (
-    <div className="bg-white rounded-2xl shadow-apple-sm p-4 sm:p-5">
-      <div className="flex items-center justify-between mb-4">
-        <span className="text-sm font-medium text-apple-secondary">{statusText}</span>
-        <div className="flex gap-1">
-          <button
-            onClick={() => setViewMonth(new Date(m1y, m1m - 1, 1))}
-            className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-black/5 text-apple-secondary text-sm"
-          >
-            &lt;
-          </button>
-          <button
-            onClick={() => setViewMonth(new Date(m1y, m1m + 1, 1))}
-            className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-black/5 text-apple-secondary text-sm"
-          >
-            &gt;
-          </button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 sm:divide-x sm:divide-apple-tertiary/30">
-        <MonthGrid year={m1y} month={m1m} {...monthGridProps} />
-        <div className="sm:pl-6">
-          <MonthGrid year={m2y} month={m2m} {...monthGridProps} />
-        </div>
-      </div>
-
-      {Object.keys(activePrices).length > 0 && (
-        <div className="flex items-center gap-4 mt-4 pt-3 border-t border-apple-tertiary/30 text-[10px] text-apple-secondary">
-          <span>{selectingReturn ? "귀국 편 최저가" : "출발 편 최저가"}:</span>
-          <span className="text-apple-green font-medium">저렴</span>
-          <span>보통</span>
-          <span className="text-apple-orange font-medium">비쌈</span>
-        </div>
-      )}
-    </div>
-  );
-}
+import RangePicker from "./Calendar";
 
 /* ── Source filter options ──────────────────────────────── */
 const SOURCE_OPTIONS = [
@@ -313,8 +85,8 @@ export default function Search() {
               onClick={() => handleDestinationChange(a.code)}
               className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
                 destination === a.code
-                  ? "bg-apple-text text-white"
-                  : "bg-white text-apple-secondary shadow-apple-sm hover:text-apple-text"
+                  ? "bg-apple-text text-apple-bg"
+                  : "bg-apple-surface text-apple-secondary shadow-apple-sm hover:text-apple-text"
               }`}
             >
               {a.name} <span className="text-xs opacity-60">{a.code}</span>
@@ -340,7 +112,7 @@ export default function Search() {
           <button
             onClick={handleSearch}
             disabled={loading}
-            className="px-6 py-2 bg-apple-blue text-white rounded-full text-sm font-medium hover:bg-apple-blue-hover disabled:opacity-40 transition-all duration-200"
+            className="px-6 py-2 bg-apple-blue text-apple-bg rounded-full text-sm font-medium hover:bg-apple-blue-hover disabled:opacity-40 transition-all duration-200"
           >
             {loading ? "검색 중…" : "검색"}
           </button>
@@ -351,8 +123,8 @@ export default function Search() {
                 onClick={() => setActiveTripType(opt.value)}
                 className={`text-xs px-3 py-1 rounded-full font-medium transition-all duration-200 ${
                   activeTripType === opt.value
-                    ? "bg-apple-text text-white"
-                    : "bg-white text-apple-secondary shadow-apple-sm hover:text-apple-text"
+                    ? "bg-apple-text text-apple-bg"
+                    : "bg-apple-surface text-apple-secondary shadow-apple-sm hover:text-apple-text"
                 }`}
               >
                 {opt.label}
@@ -362,7 +134,7 @@ export default function Search() {
           <select
             value={activeSource}
             onChange={(e) => setActiveSource(e.target.value)}
-            className="text-xs px-3 py-1.5 rounded-full bg-white shadow-apple-sm text-apple-text border-none outline-none cursor-pointer"
+            className="text-xs px-3 py-1.5 rounded-full bg-apple-surface shadow-apple-sm text-apple-text border-none outline-none cursor-pointer"
           >
             {SOURCE_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -409,12 +181,12 @@ export default function Search() {
                       onClick={() => setActiveDest(g.destination)}
                       className={`flex flex-col items-start px-4 py-2.5 rounded-2xl text-left transition-all duration-200 whitespace-nowrap ${
                         isActive
-                          ? "bg-apple-text text-white shadow-apple"
-                          : "bg-white text-apple-text shadow-apple-sm hover:shadow-apple"
+                          ? "bg-apple-text text-apple-bg shadow-apple"
+                          : "bg-apple-surface text-apple-text shadow-apple-sm hover:shadow-apple"
                       }`}
                     >
                       <span className="text-sm font-semibold">{g.destination_name}</span>
-                      <span className={`text-[11px] ${isActive ? "text-white/60" : "text-apple-secondary"}`}>
+                      <span className={`text-[11px] ${isActive ? "text-apple-bg/60" : "text-apple-secondary"}`}>
                         {g.destination} · {Math.round(g.min_price).toLocaleString()}원~
                       </span>
                     </button>

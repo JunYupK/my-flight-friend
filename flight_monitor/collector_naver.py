@@ -14,7 +14,6 @@ import asyncio
 import calendar
 import json
 import re
-from collections import defaultdict
 from datetime import date, datetime, timedelta
 from html import unescape
 from typing import TYPE_CHECKING
@@ -29,6 +28,8 @@ except ImportError:
     _CRAWL4AI_AVAILABLE = False
 
 from .config import JAPAN_AIRPORTS, SEARCH_CONFIG, KST
+from .crawler_utils import crawl_one_way_batches, make_scroll_js
+from .offer_utils import combine_roundtrips
 
 ORIGIN = "ICN"
 ORIGIN_NAVER = "SEL:city"
@@ -56,22 +57,6 @@ def _build_naver_url(dep: str, arr: str, date_str: str) -> str:
         f"{dep_part}-{arr_part}-{date_compact}"
         f"?adult=1&isDirect=false&fareType=Y&tripType=OW"
     )
-
-
-def _make_scroll_js() -> str:
-    return """
-(async () => {
-    const sleep = ms => new Promise(r => setTimeout(r, ms));
-    let prev = 0;
-    for (let i = 0; i < 5; i++) {
-        window.scrollTo(0, document.body.scrollHeight);
-        await sleep(1500);
-        const curr = document.body.scrollHeight;
-        if (curr === prev) break;
-        prev = curr;
-    }
-})();
-"""
 
 
 def _extract_js() -> str:
@@ -154,72 +139,6 @@ def _parse_cards(raw_html: str) -> list[dict]:
         return []
 
 
-def _combine_roundtrips(
-    out_flights: list[dict], in_flights: list[dict],
-    dep_airport: str, arr_airport: str, arr_name: str,
-) -> list[dict]:
-    """편도 왕/복편 조합으로 왕복 오퍼 생성."""
-    topk = SEARCH_CONFIG["topk_per_date"]
-
-    out_idx: dict[str, list] = defaultdict(list)
-    in_idx:  dict[str, list] = defaultdict(list)
-    for f in out_flights:
-        out_idx[f["date"]].append(f)
-    for f in in_flights:
-        in_idx[f["date"]].append(f)
-
-    for d in out_idx:
-        out_idx[d] = sorted(out_idx[d], key=lambda x: x["price"])[:topk]
-    for d in in_idx:
-        in_idx[d] = sorted(in_idx[d], key=lambda x: x["price"])[:topk]
-
-    results = []
-    for dep_date, outs in out_idx.items():
-        dep_dt = datetime.strptime(dep_date, "%Y-%m-%d")
-        for stay in SEARCH_CONFIG["stay_durations"]:
-            ret_date = (dep_dt + timedelta(days=stay)).strftime("%Y-%m-%d")
-            ins = in_idx.get(ret_date)
-            if not ins:
-                continue
-            for out in outs:
-                for ret in ins:
-                    out_al = out.get("airline", "")
-                    in_al  = ret.get("airline", "")
-                    results.append({
-                        "source":           SOURCE,
-                        "trip_type":        "oneway_combo",
-                        "origin":           dep_airport,
-                        "destination":      arr_airport,
-                        "destination_name": arr_name,
-                        "departure_date":   dep_date,
-                        "return_date":      ret_date,
-                        "stay_nights":      stay,
-                        "price":            out["price"] + ret["price"],
-                        "currency":         "KRW",
-                        "out_airline":      out_al,
-                        "in_airline":       in_al,
-                        "is_mixed_airline": bool(out_al and in_al and out_al != in_al),
-                        "out_dep_time":     out.get("dep_time"),
-                        "out_arr_time":     out.get("arr_time"),
-                        "out_duration_min": out.get("duration_min"),
-                        "out_stops":        out.get("stops"),
-                        "in_dep_time":      ret.get("dep_time"),
-                        "in_arr_time":      ret.get("arr_time"),
-                        "in_duration_min":  ret.get("duration_min"),
-                        "in_stops":         ret.get("stops"),
-                        "out_arr_airport":  out.get("arr_airport"),
-                        "in_dep_airport":   ret.get("dep_airport"),
-                        "out_url":          out.get("search_url"),
-                        "in_url":           ret.get("search_url"),
-                        "out_price":        out["price"],
-                        "in_price":         ret["price"],
-                        "checked_at":       datetime.now(KST).isoformat(),
-                    })
-
-    results.sort(key=lambda x: x["price"])
-    return results
-
-
 async def _fetch_route(
     crawler: AsyncWebCrawler,
     airport_code: str, airport_name: str,
@@ -256,7 +175,7 @@ async def _fetch_route(
     # 2) BATCH_SIZE 단위로 arun_many() 호출
     config = CrawlerRunConfig(
         magic=True,
-        js_code=[_make_scroll_js(), _extract_js()],
+        js_code=[make_scroll_js(), _extract_js()],
         wait_for="js:() => !!document.querySelector('div[class*=\"combination_ConcurrentItemContainer\"]')",
         delay_before_return_html=8.0,
         cache_mode="bypass",
@@ -265,43 +184,23 @@ async def _fetch_route(
 
     out_flights, in_flights = [], []
 
-    for i in range(0, len(urls), _BATCH_SIZE):
-        batch_urls = urls[i:i + _BATCH_SIZE]
-        batch_metas = metas[i:i + _BATCH_SIZE]
-        url_to_meta = {u: m for u, m in zip(batch_urls, batch_metas)}
+    crawled = await crawl_one_way_batches(
+        crawler, urls, metas, config,
+        source_label="Naver",
+        parse_cards=_parse_cards,
+        request_delay=delay,
+        batch_size=_BATCH_SIZE,
+    )
 
-        try:
-            results = await crawler.arun_many(urls=batch_urls, config=config)
-        except Exception as e:
-            print(f"[Naver ERROR] batch {i // _BATCH_SIZE}: {e}")
-            continue
+    for meta, flights in crawled:
+        enriched = []
+        for f in flights[:topk]:
+            enriched.append({"date": meta["date"], "search_url": meta["url"], **f})
 
-        for result in results:
-            meta = url_to_meta.get(result.url)
-            if meta is None:
-                print(f"[Naver WARN] 매칭 메타 없음: {result.url[:80]}")
-                continue
-            if not result.success:
-                print(f"[Naver FAIL] {meta['dep']}-{meta['arr']} {meta['date']}: {result.error_message}")
-                continue
-
-            flights = _parse_cards(result.html or "")
-            if not flights:
-                print(f"[Naver WARN] 카드 추출 0건 {meta['dep']}-{meta['arr']} {meta['date']}")
-                continue
-
-            flights.sort(key=lambda x: x["price"])
-            enriched = []
-            for f in flights[:topk]:
-                enriched.append({"date": meta["date"], "search_url": meta["url"], **f})
-
-            if meta["direction"] == "out":
-                out_flights.extend(enriched)
-            else:
-                in_flights.extend(enriched)
-
-        if i + _BATCH_SIZE < len(urls):
-            await asyncio.sleep(delay)
+        if meta["direction"] == "out":
+            out_flights.extend(enriched)
+        else:
+            in_flights.extend(enriched)
 
     # 편도 레그를 raw_legs / flight_legs 테이블에 저장
     from flight_monitor.storage import save_legs
@@ -330,7 +229,13 @@ async def _fetch_route(
             })
     save_legs(leg_records)
 
-    return _combine_roundtrips(out_flights, in_flights, ORIGIN, airport_code, airport_name)
+    return combine_roundtrips(
+        out_flights, in_flights,
+        source=SOURCE, origin=ORIGIN,
+        destination=airport_code, destination_name=airport_name,
+        stay_durations=SEARCH_CONFIG["stay_durations"],
+        topk=SEARCH_CONFIG["topk_per_date"],
+    )
 
 
 async def _fetch_airport(

@@ -4,9 +4,8 @@ import os
 import time
 import calendar
 import requests
-from collections import defaultdict
-from datetime import datetime, timedelta
-from .config import ORIGIN, JAPAN_AIRPORTS, SEARCH_CONFIG, KST
+from .config import ORIGIN, JAPAN_AIRPORTS, SEARCH_CONFIG
+from .offer_utils import combine_roundtrips
 
 RAPIDAPI_HOST = "skyscanner-skyscanner-flight-search-v1.p.rapidapi.com"
 BROWSE_QUOTES_URL = (
@@ -51,56 +50,6 @@ def _fetch_quotes(session, origin, destination, date_str):
     return results
 
 
-def _index_topk_by_date(flights, k):
-    by_date = defaultdict(list)
-    for f in flights:
-        by_date[f["date"]].append(f)
-    return {d: sorted(fs, key=lambda x: x["price"])[:k] for d, fs in by_date.items()}
-
-
-def _combine_roundtrips(out_flights, in_flights, airport_code, airport_name):
-    topk = SEARCH_CONFIG["lcc_topk_per_date"]
-    out_idx = _index_topk_by_date(out_flights, topk)
-    in_idx = _index_topk_by_date(in_flights, topk)
-
-    results = []
-    for dep_date, outs in out_idx.items():
-        dep_dt = datetime.strptime(dep_date, "%Y-%m-%d")
-        for stay in SEARCH_CONFIG["stay_durations"]:
-            ret_date = (dep_dt + timedelta(days=stay)).strftime("%Y-%m-%d")
-            ins = in_idx.get(ret_date)
-            if not ins:
-                continue
-            for out in outs:
-                for ret in ins:
-                    is_mixed = out["airline"] != ret["airline"]
-                    if is_mixed and not SEARCH_CONFIG["allow_mixed_airline"]:
-                        continue
-                    results.append({
-                        "source": "skyscanner",
-                        "trip_type": "round_trip",
-                        "origin": ORIGIN,
-                        "destination": airport_code,
-                        "destination_name": airport_name,
-                        "departure_date": dep_date,
-                        "return_date": ret_date,
-                        "stay_nights": stay,
-                        "price": out["price"] + ret["price"],
-                        "currency": "KRW",
-                        "out_airline": out["airline"],
-                        "in_airline": ret["airline"],
-                        "is_mixed_airline": is_mixed,
-                        "checked_at": datetime.now(KST).isoformat(),
-                        "out_url": None,
-                        "in_url": None,
-                        "out_price": out["price"],
-                        "in_price": ret["price"],
-                    })
-
-    results.sort(key=lambda x: x["price"])
-    return results
-
-
 def fetch_skyscanner_offers() -> list[dict]:
     if not os.environ.get("RAPIDAPI_KEY"):
         print("[Skyscanner] RAPIDAPI_KEY 환경변수 없음, 건너뜀")
@@ -114,7 +63,13 @@ def fetch_skyscanner_offers() -> list[dict]:
     all_results = []
     request_count = 0
 
-    for month_str in SEARCH_CONFIG["search_months"]:
+    # search_months 미설정 시 수집 스킵 (KeyError 방지)
+    search_months = SEARCH_CONFIG.get("search_months", [])
+    if not search_months:
+        print("[Skyscanner] SEARCH_CONFIG['search_months'] 미설정, 건너뜀")
+        return []
+
+    for month_str in search_months:
         year, month = map(int, month_str.split("-"))
         days_in_month = calendar.monthrange(year, month)[1]
         max_days = SEARCH_CONFIG.get("lcc_max_days")
@@ -134,7 +89,14 @@ def fetch_skyscanner_offers() -> list[dict]:
                 request_count += 1
                 time.sleep(SEARCH_CONFIG["request_delay"])
 
-            offers = _combine_roundtrips(out_flights, in_flights, airport_code, airport_name)
+            offers = combine_roundtrips(
+                out_flights, in_flights,
+                source="skyscanner", origin=ORIGIN,
+                destination=airport_code, destination_name=airport_name,
+                stay_durations=SEARCH_CONFIG["stay_durations"],
+                topk=SEARCH_CONFIG.get("lcc_topk_per_date", SEARCH_CONFIG["topk_per_date"]),
+                allow_mixed_airline=SEARCH_CONFIG["allow_mixed_airline"],
+            )
             all_results.extend(offers)
             print(f"[Skyscanner] {airport_name}({airport_code}) {month_str}: {len(offers)}건")
 

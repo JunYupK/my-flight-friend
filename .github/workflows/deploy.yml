@@ -6,6 +6,11 @@ on:
     types: [completed]
     branches: [master]
 
+# 동시 배포 직렬화 (진행 중인 배포는 중단하지 않음)
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -26,6 +31,16 @@ jobs:
             cd ~/my-flight-friend
 
             git pull origin master
+
+            # 롤백 포인트: 현재 가동 중인 app/mcp 이미지를 :prev 로 태깅.
+            # (docker image prune -f 는 dangling 만 제거하므로 태그가 살아남는다)
+            # 수동 롤백:
+            #   docker tag flight-friend-app:prev my-flight-friend-app:latest
+            #   docker compose --profile full up -d app
+            APP_ID=$(docker compose --profile full images -q app 2>/dev/null | head -1 || true)
+            [ -n "$APP_ID" ] && docker tag "$APP_ID" flight-friend-app:prev || true
+            MCP_ID=$(docker compose --profile full images -q mcp 2>/dev/null | head -1 || true)
+            [ -n "$MCP_ID" ] && docker tag "$MCP_ID" flight-friend-mcp:prev || true
 
             # app + mcp 이미지 리빌드 (collector 는 헬스체크 이후 별도 빌드)
             docker compose --profile full build app mcp
@@ -76,9 +91,11 @@ jobs:
               sleep 2
             done
 
-            # collector 이미지 빌드 (cron 전용, 배포 성공 판정에 영향 없음)
-            # playwright install --with-deps chromium 이 ARM64 에서 캐시 미스 시
-            # 10분+ 소요되므로 헬스체크 이후로 분리.
+            # collector 이미지 빌드 — playwright install --with-deps chromium 이
+            # ARM64 에서 캐시 미스 시 10분+ 소요되므로 헬스체크 이후로 분리.
+            # 단, 빌드 실패 시 set -e 로 워크플로 전체가 실패한다 (cron 이 stale
+            # 이미지를 계속 쓰는 상황을 조용히 넘기지 않기 위함).
+            echo "Building collector image (failure fails this workflow)"
             docker compose --profile collect build collector
 
             # 미사용 이미지 정리
