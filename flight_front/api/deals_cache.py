@@ -84,8 +84,8 @@ def _query_deals(cur, hours: int | None, month: str | None,
         where_params.append(f"{hours} hours")
         where_params.append(f"{hours} hours")
     else:
-        where_conds.append("o.checked_at >= CURRENT_DATE")
-        where_conds.append("i.checked_at >= CURRENT_DATE")
+        where_conds.append("o.checked_at >= NOW() - INTERVAL '24 hours'")
+        where_conds.append("i.checked_at >= NOW() - INTERVAL '24 hours'")
 
     if month is not None:
         # date is TEXT in 'YYYY-MM-DD' — lexicographic range matches date range
