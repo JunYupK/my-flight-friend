@@ -1,9 +1,11 @@
 #!/bin/bash
 # SessionStart hook: .env에서 MCP_API_KEY를 읽어 settings.json에 MCP 서버 설정 주입
 
-MCP_KEY=$(grep '^MCP_API_KEY=' .env 2>/dev/null | cut -d= -f2)
+# 1) 환경변수에서 먼저 확인 (Claude Code 웹 Environment 설정)
+# 2) 없으면 .env 파일에서 읽기 (로컬/OCI 서버)
+MCP_KEY="${MCP_API_KEY:-$(grep '^MCP_API_KEY=' .env 2>/dev/null | cut -d= -f2)}"
 if [ -z "$MCP_KEY" ]; then
-  echo "[session-start] MCP_API_KEY not found in .env, skipping MCP setup"
+  echo "[session-start] MCP_API_KEY not found, skipping MCP setup"
   exit 0
 fi
 
