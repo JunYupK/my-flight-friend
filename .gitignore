@@ -12,7 +12,7 @@ flight_front/web/dist/
 backups/
 
 # 로컬 설정 / IDE / OS
-.claude/
+.claude/settings.local.json
 .idea/
 .vscode/
 *.egg-info/
