@@ -197,28 +197,37 @@ def _query_timing_seasonal(cur) -> list[dict]:
 
 
 def _query_timing_advance(cur, destination: str | None) -> list[dict]:
+    """raw_legs의 out/in 레그를 같은 크롤 회차(collected_at ±1시간) 기준으로 묶어
+    왕복 조합 가격을 근사한다. price_history는 2026-04-03 이후 신규 데이터가 없어 사용하지 않음."""
     sql = """
-        SELECT destination, destination_name,
-               (FLOOR((departure_date::date - DATE(checked_at)) / 14.0) * 14)::int AS days_before,
-               ROUND(AVG(price)::numeric, 0)::int AS avg_price,
-               MIN(price)::int AS min_price,
+        SELECT o.destination, o.destination_name,
+               (FLOOR((o.date::date - DATE(o.collected_at)) / 14.0) * 14)::int AS days_before,
+               ROUND(AVG(o.price + i.price)::numeric, 0)::int AS avg_price,
+               MIN(o.price + i.price)::int AS min_price,
                COUNT(*) AS obs_count
-        FROM price_history
-        WHERE trip_type IN ('round_trip', 'oneway_combo') AND price > 0
-          AND length(departure_date) = 10
-          AND departure_date::date > DATE(checked_at)
-          AND (departure_date::date - DATE(checked_at)) BETWEEN 1 AND 180
-          AND checked_at >= NOW() - INTERVAL '90 days'
+        FROM raw_legs o
+        JOIN raw_legs i
+          ON o.destination = i.destination
+         AND i.direction = 'in'
+         AND i.date > o.date
+         AND i.date <= to_char(o.date::date + 7, 'YYYY-MM-DD')
+         AND i.date >= to_char(o.date::date + 2, 'YYYY-MM-DD')
+         AND i.collected_at BETWEEN o.collected_at - INTERVAL '1 hour' AND o.collected_at + INTERVAL '1 hour'
+        WHERE o.direction = 'out'
+          AND o.price > 0 AND i.price > 0
+          AND o.date::date > DATE(o.collected_at)
+          AND (o.date::date - DATE(o.collected_at)) BETWEEN 1 AND 180
+          AND o.collected_at >= NOW() - INTERVAL '90 days'
     """
     params: list = []
     if destination:
-        sql += " AND destination = %s"
+        sql += " AND o.destination = %s"
         params.append(destination.upper())
     sql += """
-        GROUP BY destination, destination_name,
-                 (FLOOR((departure_date::date - DATE(checked_at)) / 14.0) * 14)::int
+        GROUP BY o.destination, o.destination_name,
+                 (FLOOR((o.date::date - DATE(o.collected_at)) / 14.0) * 14)::int
         HAVING COUNT(*) >= 3
-        ORDER BY destination, days_before DESC
+        ORDER BY o.destination, days_before DESC
     """
     cur.execute(sql, params)
     return [dict(r) for r in cur.fetchall()]
