@@ -73,6 +73,7 @@ def _out_leg(dest="NRT", airline="KE", price=100000):
 def _in_leg(dest="NRT", airline="KE", price=120000):
     return {
         "destination": dest,
+        "source": "google_flights",
         "in_airline": airline,
         "in_dep_time": "18:00",
         "in_arr_time": "20:00",
