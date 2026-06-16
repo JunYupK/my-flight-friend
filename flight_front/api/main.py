@@ -22,7 +22,7 @@ from flight_monitor.config_db import apply_db_config, read_config, write_config
 from flight_monitor.storage import init_db, get_conn, get_airports, get_recent_runs, get_run_detail
 
 from . import run_state
-from .deals_cache import query_deals_cached
+from .deals_cache import query_deals_cached, query_timing_seasonal_cached, query_timing_advance_cached
 from .search_service import search_deals, select_diverse_deals
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
@@ -198,6 +198,52 @@ def get_collection_run(run_id: int):
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
     return run
+
+
+@app.get("/api/monitor/coverage")
+def get_monitor_coverage(days: int = Query(14, ge=1, le=90)):
+    """크론 실행 차수별 × 목적지별 × 월별 수집 현황.
+
+    raw_legs.collected_at이 해당 run의 [started_at, finished_at] 윈도우에 속한다는
+    사실만으로 별도 스키마 변경 없이 run × destination × month breakdown을 만든다.
+    """
+    with get_conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("""
+            SELECT cr.id AS run_id, cr.started_at, cr.status AS run_status,
+                   rl.destination, rl.destination_name, rl.source,
+                   LEFT(rl.date, 7) AS month,
+                   COUNT(*) AS legs
+            FROM collection_runs cr
+            JOIN raw_legs rl
+              ON rl.collected_at BETWEEN cr.started_at AND COALESCE(cr.finished_at, NOW())
+            WHERE cr.started_at >= NOW() - (%s || ' days')::interval
+            GROUP BY cr.id, cr.started_at, cr.status, rl.destination, rl.destination_name, rl.source, month
+            ORDER BY cr.started_at DESC
+        """, (days,))
+        rows = [dict(r) for r in cur.fetchall()]
+
+    by_destination_month: dict[tuple[str, str], dict] = {}
+    for r in rows:
+        key = (r["destination"], r["month"])
+        entry = by_destination_month.get(key)
+        if entry is None or r["started_at"] > entry["last_run_at"]:
+            by_destination_month[key] = {
+                "destination": r["destination"],
+                "destination_name": r["destination_name"],
+                "month": r["month"],
+                "last_run_at": r["started_at"],
+                "legs": r["legs"],
+            }
+        elif r["started_at"] == entry["last_run_at"]:
+            entry["legs"] += r["legs"]
+
+    return {
+        "by_destination_month": sorted(
+            by_destination_month.values(), key=lambda d: (d["destination"], d["month"])
+        ),
+        "by_run": rows,
+    }
 
 
 # ── Results ───────────────────────────────────────────────
@@ -376,63 +422,14 @@ def get_price_history(
 
 @app.get("/api/timing/seasonal")
 def get_timing_seasonal():
-    """목적지 × 출발월 최저가 히트맵용 데이터."""
-    with get_conn() as conn:
-        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        # flight_legs 기반: UPSERT 구조라 row 수가 적고 인덱스 활용 가능.
-        # 월별 최저가는 현재 수집 데이터 기준이면 충분하므로 price_history 불필요.
-        cur.execute("""
-            SELECT
-                o.destination,
-                o.destination_name,
-                LEFT(o.date, 7) AS month,
-                MIN(o.price + i.price)::int AS min_price
-            FROM flight_legs o
-            JOIN flight_legs i
-              ON o.destination = i.destination
-             AND i.date > o.date
-             AND i.date <= to_char(o.date::date + 7, 'YYYY-MM-DD')
-             AND i.date >= to_char(o.date::date + 2, 'YYYY-MM-DD')
-            WHERE o.direction = 'out'
-              AND i.direction = 'in'
-              AND o.price > 0 AND i.price > 0
-              AND o.date >= to_char(NOW() - INTERVAL '12 months', 'YYYY-MM-DD')
-            GROUP BY o.destination, o.destination_name, LEFT(o.date, 7)
-            ORDER BY o.destination, month
-        """)
-        return [dict(r) for r in cur.fetchall()]
+    """목적지 × 출발월 최저가 히트맵용 데이터. 크롤 직후에만 바뀌므로 버전 기반 캐시 사용."""
+    return query_timing_seasonal_cached()
 
 
 @app.get("/api/timing/advance")
 def get_timing_advance(destination: str | None = Query(None)):
-    """출발 N일 전 예약 시점별 평균가 (14일 버킷)."""
-    with get_conn() as conn:
-        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        sql = """
-            SELECT destination, destination_name,
-                   (FLOOR((departure_date::date - DATE(checked_at)) / 14.0) * 14)::int AS days_before,
-                   ROUND(AVG(price)::numeric, 0)::int AS avg_price,
-                   MIN(price)::int AS min_price,
-                   COUNT(*) AS obs_count
-            FROM price_history
-            WHERE trip_type IN ('round_trip', 'oneway_combo') AND price > 0
-              AND length(departure_date) = 10
-              AND departure_date::date > DATE(checked_at)
-              AND (departure_date::date - DATE(checked_at)) BETWEEN 1 AND 180
-              AND checked_at >= NOW() - INTERVAL '90 days'
-        """
-        params: list = []
-        if destination:
-            sql += " AND destination = %s"
-            params.append(destination.upper())
-        sql += """
-            GROUP BY destination, destination_name,
-                     (FLOOR((departure_date::date - DATE(checked_at)) / 14.0) * 14)::int
-            HAVING COUNT(*) >= 3
-            ORDER BY destination, days_before DESC
-        """
-        cur.execute(sql, params)
-        return [dict(r) for r in cur.fetchall()]
+    """출발 N일 전 예약 시점별 평균가 (14일 버킷). 크롤 직후에만 바뀌므로 버전 기반 캐시 사용."""
+    return query_timing_advance_cached(destination)
 
 
 # ── Static (React SPA) ────────────────────────────────────

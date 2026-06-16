@@ -1,6 +1,83 @@
 import React, { useEffect, useState } from "react";
-import { fetchCollectionRuns, fetchRunDetail } from "../api";
-import type { CollectionRun } from "../types";
+import { fetchCollectionRuns, fetchRunDetail, fetchCoverage } from "../api";
+import type { CollectionRun, CoverageByDestMonth } from "../types";
+
+const STALE_HOURS = 6; // cron 주기(3h)의 2배 — 이보다 오래되면 경고
+
+function coverageColor(legs: number, hoursSinceRun: number): string {
+  if (legs === 0) return "bg-apple-red/15 text-apple-red";
+  if (hoursSinceRun > STALE_HOURS) return "bg-yellow-100 text-yellow-700";
+  return "bg-apple-green/15 text-apple-green";
+}
+
+function CoverageHeatmap({ data }: { data: CoverageByDestMonth[] }) {
+  if (data.length === 0)
+    return <p className="text-sm text-apple-secondary py-4">데이터가 없습니다.</p>;
+
+  const destNames: Record<string, string> = {};
+  const pivot: Record<string, Record<string, CoverageByDestMonth>> = {};
+  for (const pt of data) {
+    destNames[pt.destination] = pt.destination_name;
+    if (!pivot[pt.destination]) pivot[pt.destination] = {};
+    pivot[pt.destination][pt.month] = pt;
+  }
+
+  const months = [...new Set(data.map((d) => d.month))].sort();
+  const destinations = Object.keys(pivot).sort();
+  const now = Date.now();
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="border-collapse text-xs min-w-max">
+        <thead>
+          <tr>
+            <th className="text-left pr-4 pb-2 text-apple-secondary font-medium min-w-[80px]">목적지</th>
+            {months.map((m) => (
+              <th key={m} className="pb-2 px-1 text-apple-secondary font-medium min-w-[64px]">
+                {m.slice(5)}월
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {destinations.map((dest) => (
+            <tr key={dest}>
+              <td className="pr-4 py-1 text-apple-text font-medium whitespace-nowrap">
+                {destNames[dest]}
+              </td>
+              {months.map((m) => {
+                const cell = pivot[dest][m];
+                if (!cell) {
+                  return (
+                    <td key={m} className="px-1 py-1">
+                      <div className="rounded-lg bg-apple-text/5 h-10 w-16" />
+                    </td>
+                  );
+                }
+                const hoursSinceRun = (now - new Date(cell.last_run_at).getTime()) / 3_600_000;
+                return (
+                  <td key={m} className="px-1 py-1">
+                    <div
+                      className={`rounded-lg h-10 w-16 flex items-center justify-center font-semibold ${coverageColor(cell.legs, hoursSinceRun)}`}
+                      title={`최근 실행: ${cell.last_run_at}`}
+                    >
+                      {cell.legs}건
+                    </div>
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="text-xs text-apple-secondary mt-3">
+        <span className="inline-block w-3 h-3 rounded-sm mr-1 align-middle bg-apple-green/40" />정상
+        <span className="inline-block w-3 h-3 rounded-sm ml-3 mr-1 align-middle bg-yellow-200" />지연
+        <span className="inline-block w-3 h-3 rounded-sm ml-3 mr-1 align-middle bg-apple-red/40" />0건
+      </p>
+    </div>
+  );
+}
 
 const STATUS_STYLE: Record<string, { color: string; label: string }> = {
   running: { color: "text-apple-blue",      label: "실행 중" },
@@ -36,11 +113,21 @@ export default function Monitor() {
   const [errorLog, setErrorLog] = useState<string | null>(null);
   const [logLoading, setLogLoading] = useState(false);
 
+  const [coverage, setCoverage] = useState<CoverageByDestMonth[]>([]);
+  const [coverageLoading, setCoverageLoading] = useState(true);
+
   useEffect(() => {
     fetchCollectionRuns(50)
       .then(setRuns)
       .catch(console.error)
       .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    fetchCoverage()
+      .then((res) => setCoverage(res.by_destination_month))
+      .catch(console.error)
+      .finally(() => setCoverageLoading(false));
   }, []);
 
   const handleRowClick = async (run: CollectionRun) => {
@@ -152,6 +239,15 @@ export default function Monitor() {
               </tbody>
             </table>
           </div>
+        )}
+      </section>
+
+      <section className="bg-apple-surface border border-apple-tertiary/50 rounded-2xl shadow-apple p-5 sm:p-6 space-y-4">
+        <h2 className="text-base font-semibold text-apple-text">목적지 × 월별 수집 현황</h2>
+        {coverageLoading ? (
+          <p className="text-sm text-apple-secondary py-4">로딩 중…</p>
+        ) : (
+          <CoverageHeatmap data={coverage} />
         )}
       </section>
     </div>

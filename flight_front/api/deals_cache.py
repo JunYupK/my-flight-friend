@@ -171,6 +171,85 @@ def query_deals_cached(hours, month, source, trip_type) -> list[dict]:
     return result
 
 
+# ── Timing analytics query (moved from main.py, cached) ──
+
+def _query_timing_seasonal(cur) -> list[dict]:
+    cur.execute("""
+        SELECT
+            o.destination,
+            o.destination_name,
+            LEFT(o.date, 7) AS month,
+            MIN(o.price + i.price)::int AS min_price
+        FROM flight_legs o
+        JOIN flight_legs i
+          ON o.destination = i.destination
+         AND i.date > o.date
+         AND i.date <= to_char(o.date::date + 7, 'YYYY-MM-DD')
+         AND i.date >= to_char(o.date::date + 2, 'YYYY-MM-DD')
+        WHERE o.direction = 'out'
+          AND i.direction = 'in'
+          AND o.price > 0 AND i.price > 0
+          AND o.date >= to_char(NOW() - INTERVAL '12 months', 'YYYY-MM-DD')
+        GROUP BY o.destination, o.destination_name, LEFT(o.date, 7)
+        ORDER BY o.destination, month
+    """)
+    return [dict(r) for r in cur.fetchall()]
+
+
+def _query_timing_advance(cur, destination: str | None) -> list[dict]:
+    sql = """
+        SELECT destination, destination_name,
+               (FLOOR((departure_date::date - DATE(checked_at)) / 14.0) * 14)::int AS days_before,
+               ROUND(AVG(price)::numeric, 0)::int AS avg_price,
+               MIN(price)::int AS min_price,
+               COUNT(*) AS obs_count
+        FROM price_history
+        WHERE trip_type IN ('round_trip', 'oneway_combo') AND price > 0
+          AND length(departure_date) = 10
+          AND departure_date::date > DATE(checked_at)
+          AND (departure_date::date - DATE(checked_at)) BETWEEN 1 AND 180
+          AND checked_at >= NOW() - INTERVAL '90 days'
+    """
+    params: list = []
+    if destination:
+        sql += " AND destination = %s"
+        params.append(destination.upper())
+    sql += """
+        GROUP BY destination, destination_name,
+                 (FLOOR((departure_date::date - DATE(checked_at)) / 14.0) * 14)::int
+        HAVING COUNT(*) >= 3
+        ORDER BY destination, days_before DESC
+    """
+    cur.execute(sql, params)
+    return [dict(r) for r in cur.fetchall()]
+
+
+def query_timing_seasonal_cached() -> list[dict]:
+    version = _current_version()
+    key = f"timing:v{version}:seasonal"
+    cached = _cache_get(key)
+    if cached is not None:
+        return cached
+    with get_conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        result = _query_timing_seasonal(cur)
+    _cache_set(key, result)
+    return result
+
+
+def query_timing_advance_cached(destination: str | None) -> list[dict]:
+    version = _current_version()
+    key = f"timing:v{version}:advance:{destination}"
+    cached = _cache_get(key)
+    if cached is not None:
+        return cached
+    with get_conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        result = _query_timing_advance(cur, destination)
+    _cache_set(key, result)
+    return result
+
+
 # ── Version (atomic invalidation) ─────────────────────────
 # 캐시 키에 글로벌 버전을 prefix 로 붙여서, 크롤 성공 시 INCR 한 번으로
 # 네임스페이스 전체를 원자적으로 무효화한다. 이전 버전 키는 TTL 로 자연 소멸.
@@ -261,6 +340,17 @@ def warm_deals_cache() -> dict:
                 except Exception as e:
                     failed += 1
                     print(f"[warmup] month={m} trip_type={tt} source={src} failed: {e}", flush=True)
+
+    try:
+        seasonal = query_timing_seasonal_cached()
+        warmed += 1
+        destinations = {d["destination"] for d in seasonal}
+        for dest in [None, *destinations]:
+            query_timing_advance_cached(dest)
+            warmed += 1
+    except Exception as e:
+        failed += 1
+        print(f"[warmup] timing failed: {e}", flush=True)
 
     elapsed = round(time.time() - started, 2)
     stats = {"warmed": warmed, "failed": failed, "elapsed_sec": elapsed}

@@ -1,4 +1,4 @@
-import type { ConfigData, RunStatus, DestinationGroup, Airport, PriceHistoryResponse, CollectionRun, Deal, SeasonalPoint, AdvancePoint } from "./types";
+import type { ConfigData, RunStatus, DestinationGroup, Airport, PriceHistoryResponse, CollectionRun, Deal, SeasonalPoint, AdvancePoint, CoverageResponse } from "./types";
 
 export async function fetchConfig(): Promise<ConfigData> {
   const res = await fetch("/api/config");
@@ -143,5 +143,11 @@ export async function fetchTimingAdvance(destination?: string): Promise<AdvanceP
     : "/api/timing/advance";
   const res = await fetch(url);
   if (!res.ok) throw new Error("Failed to fetch advance data");
+  return res.json();
+}
+
+export async function fetchCoverage(days = 14): Promise<CoverageResponse> {
+  const res = await fetch(`/api/monitor/coverage?days=${days}`);
+  if (!res.ok) throw new Error("Failed to fetch coverage data");
   return res.json();
 }
