@@ -192,16 +192,23 @@ export default function Timing() {
   const [advance, setAdvance] = useState<AdvancePoint[]>([]);
   const [dest, setDest] = useState("");
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [advLoading, setAdvLoading] = useState(false);
 
   useEffect(() => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
     Promise.all([fetchTimingSeasonal(), fetchTimingAdvance()])
       .then(([s, a]) => {
+        clearTimeout(timer);
         setSeasonal(s);
         setAdvance(a);
         if (a.length > 0 && !dest) setDest(a[0].destination);
       })
-      .catch(console.error)
+      .catch((e) => {
+        clearTimeout(timer);
+        setError(e?.name === "AbortError" ? "데이터 로딩 시간이 초과되었습니다. 새로고침 해주세요." : "데이터를 불러오지 못했습니다.");
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -236,6 +243,8 @@ export default function Timing() {
 
       {loading ? (
         <p className="text-sm text-apple-secondary py-8">로딩 중…</p>
+      ) : error ? (
+        <p className="text-sm text-red-500 py-8">{error}</p>
       ) : (
         <>
           <SeasonHeatmap data={seasonal} />

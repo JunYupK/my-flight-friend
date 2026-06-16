@@ -388,10 +388,13 @@ def get_timing_seasonal():
             FROM flight_legs o
             JOIN flight_legs i
               ON o.destination = i.destination
-             AND i.date::date - o.date::date BETWEEN 2 AND 7
+             AND i.date > o.date
+             AND i.date <= to_char(o.date::date + 7, 'YYYY-MM-DD')
+             AND i.date >= to_char(o.date::date + 2, 'YYYY-MM-DD')
             WHERE o.direction = 'out'
               AND i.direction = 'in'
               AND o.price > 0 AND i.price > 0
+              AND o.date >= to_char(NOW() - INTERVAL '12 months', 'YYYY-MM-DD')
             GROUP BY o.destination, o.destination_name, LEFT(o.date, 7)
             ORDER BY o.destination, month
         """)
@@ -411,9 +414,10 @@ def get_timing_advance(destination: str | None = Query(None)):
                    COUNT(*) AS obs_count
             FROM price_history
             WHERE trip_type IN ('round_trip', 'oneway_combo') AND price > 0
-              AND departure_date ~ '^\d{4}-\d{2}-\d{2}$'
+              AND length(departure_date) = 10
               AND departure_date::date > DATE(checked_at)
               AND (departure_date::date - DATE(checked_at)) BETWEEN 1 AND 180
+              AND checked_at >= NOW() - INTERVAL '90 days'
         """
         params: list = []
         if destination:
