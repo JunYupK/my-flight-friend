@@ -18,6 +18,7 @@ const NAV_ITEMS = [
   { path: "/trends", label: "추이" },
   { path: "/search", label: "검색" },
   { path: "/timing", label: "타이밍" },
+  { path: "/monitor", label: "모니터링" },
 ];
 
 function Layout() {

@@ -111,3 +111,27 @@ export interface CollectionRun {
   duration_sec: number | null;
   error_log?: string | null;
 }
+
+export interface CoverageByDestMonth {
+  destination: string;
+  destination_name: string;
+  month: string;
+  last_run_at: string;
+  legs: number;
+}
+
+export interface CoverageByRun {
+  run_id: number;
+  started_at: string;
+  run_status: string;
+  destination: string;
+  destination_name: string;
+  source: string;
+  month: string;
+  legs: number;
+}
+
+export interface CoverageResponse {
+  by_destination_month: CoverageByDestMonth[];
+  by_run: CoverageByRun[];
+}
