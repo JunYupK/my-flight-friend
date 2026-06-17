@@ -15,7 +15,7 @@ apply_db_config()
 
 from flight_monitor.collector_google_flights import fetch_google_flights_offers
 from flight_monitor.collector_naver          import fetch_naver_offers
-from flight_monitor.storage                  import init_db, should_notify, should_notify_median_drop, record_alert, start_collection_run, finish_collection_run
+from flight_monitor.storage                  import init_db, should_notify, record_alert, start_collection_run, finish_collection_run, save_deals, cleanup_old_data
 from flight_monitor.notifier                 import notify, send_alert
 from flight_monitor.config                   import SEARCH_CONFIG
 
@@ -83,10 +83,26 @@ def _collect_and_alert(run_id: int):
         print(msg)
         send_alert(f"[항공권 모니터] 수집 결과 0건 경고\n{msg}")
 
-    # --- 알림 처리 ---
+    # --- deals 사전계산 저장 (읽기 최적화) ---
+    try:
+        save_deals(all_offers)
+    except Exception as e:
+        errors.append(f"save_deals 에러: {e}\n{traceback.format_exc()}")
+        print(f"[{_ts()}] [ERROR] save_deals 실패: {e}")
+
+    # --- 알림 처리 (목적지 × 출발월 단위 집약) ---
+    # all_offers를 (destination, month)별 최저가 1건으로 줄여서 알림 폭주 방지.
     target = SEARCH_CONFIG["target_price_krw"]
-    for offer in [o for o in all_offers if o["price"] <= target]:
-        if should_notify(offer) or should_notify_median_drop(offer):
+    best_by_dest_month: dict[tuple[str, str], dict] = {}
+    for o in all_offers:
+        if o["price"] > target:
+            continue
+        key = (o["destination"], o["departure_date"][:7])
+        if key not in best_by_dest_month or o["price"] < best_by_dest_month[key]["price"]:
+            best_by_dest_month[key] = o
+
+    for offer in best_by_dest_month.values():
+        if should_notify(offer):
             notify(offer, target_price=target)
             record_alert(offer)
             alerts_sent += 1
@@ -125,6 +141,13 @@ def _collect_and_alert(run_id: int):
             print(f"[{_ts()}] [warmup] skipped due to error: {e}", flush=True)
     else:
         print(f"[{_ts()}] [warmup] skipped: no data saved this run", flush=True)
+
+    # --- raw_legs 90일 보존 정리 ---
+    try:
+        deleted = cleanup_old_data()
+        print(f"[{_ts()}] [cleanup] raw_legs {deleted}건 삭제 (90일 초과)", flush=True)
+    except Exception as e:
+        print(f"[{_ts()}] [cleanup] skipped due to error: {e}", flush=True)
 
     print(f"[{_ts()}] === 탐색 완료 ===")
 

@@ -22,7 +22,7 @@ from flight_monitor.config_db import apply_db_config, read_config, write_config
 from flight_monitor.storage import init_db, get_conn, get_airports, get_recent_runs, get_run_detail
 
 from . import run_state
-from .deals_cache import query_deals_cached, query_timing_seasonal_cached, query_timing_advance_cached
+from .deals_cache import query_deals, query_timing_seasonal_cached, query_timing_advance_cached, _cache_get, _cache_set
 from .search_service import search_deals, select_diverse_deals
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
@@ -207,6 +207,11 @@ def get_monitor_coverage(days: int = Query(14, ge=1, le=90)):
     raw_legs.collected_at이 해당 run의 [started_at, finished_at] 윈도우에 속한다는
     사실만으로 별도 스키마 변경 없이 run × destination × month breakdown을 만든다.
     """
+    cache_key = f"monitor:coverage:{days}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
     with get_conn() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cur.execute("""
@@ -238,12 +243,14 @@ def get_monitor_coverage(days: int = Query(14, ge=1, le=90)):
         elif r["started_at"] == entry["last_run_at"]:
             entry["legs"] += r["legs"]
 
-    return {
+    result = {
         "by_destination_month": sorted(
             by_destination_month.values(), key=lambda d: (d["destination"], d["month"])
         ),
         "by_run": rows,
     }
+    _cache_set(cache_key, result, ttl=300)  # 5분 — 과거 run 집계는 거의 불변
+    return result
 
 
 # ── Results ───────────────────────────────────────────────
@@ -257,7 +264,7 @@ def get_results(
 ):
     """여행지별 항공권 조회. 서버에서 top_deals/diverse_deals 분류."""
     try:
-        rows = query_deals_cached(hours, month, source, trip_type)
+        rows = query_deals(hours, month, source, trip_type)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -382,6 +389,16 @@ def get_price_history(
 ):
     """가격 히스토리 조회. calendar(출발일별 최저가) / timeline(가격 변동 이력)."""
     dest = destination.upper()
+
+    # timeline은 raw_legs를 collected_at별로 GROUP BY하는 무거운 쿼리 → 캐시.
+    # calendar는 flight_legs 인덱스 조회라 빠름 → 캐시 불필요.
+    cache_key = None
+    if mode == "timeline" and departure_date:
+        cache_key = f"price-history:timeline:{dest}:{departure_date}"
+        cached = _cache_get(cache_key)
+        if cached is not None:
+            return cached
+
     with get_conn() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
@@ -415,7 +432,11 @@ def get_price_history(
                 ORDER BY date
             """, (dest, f"{month}%"))
 
-        return {"mode": mode, "data": [dict(r) for r in cur.fetchall()]}
+        result = {"mode": mode, "data": [dict(r) for r in cur.fetchall()]}
+
+    if cache_key is not None:
+        _cache_set(cache_key, result, ttl=3600)  # 1시간
+    return result
 
 
 # ── Timing Analytics ──────────────────────────────────────
