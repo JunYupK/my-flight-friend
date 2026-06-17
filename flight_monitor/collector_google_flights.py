@@ -413,7 +413,7 @@ async def _fetch_route(
         wait_for="js:() => !!document.querySelector('li.pIav2d')",
         delay_before_return_html=4.0,
         cache_mode="bypass",
-        page_timeout=SEARCH_CONFIG.get("page_timeout_ms", 30000),
+        page_timeout=SEARCH_CONFIG.get("gf_page_timeout_ms", 15000),
     )
 
     out_flights, in_flights = [], []

@@ -36,5 +36,8 @@ SEARCH_CONFIG = {
     # 성능/안전
     "request_delay": 1.0,
     "parallel_airports": 3,      # 동시 실행 공항 수
-    "page_timeout_ms": 30000,    # CrawlerRunConfig page_timeout (ms)
+    "page_timeout_ms": 30000,    # CrawlerRunConfig page_timeout (ms) — Naver(delay 8s)용 기본값
+    # GF는 차단/타임아웃 시 wait_for가 page_timeout을 URL마다 꽉 채워 run 시간을 폭증시킨다.
+    # GF 정상 로드는 scroll(~7.5s)+goto/wait이 각각 timeout 미만이라 15s로도 충분 → fast-fail.
+    "gf_page_timeout_ms": 15000,
 }

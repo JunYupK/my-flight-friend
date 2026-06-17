@@ -232,8 +232,9 @@ pytest tests/test_notifier.py::TestSendAlertFallback          # fallback 검증
 
 ### 수집 트리거 & run 안정화
 
-- **호스트 crontab**이 3시간 주기로 `scripts/collect_and_diagnose.sh`를 실행한다 (`docker compose --profile collect run --rm collector python main.py`).
+- **호스트 crontab**은 반드시 `scripts/collect_and_diagnose.sh`를 호출해야 한다 (`docker compose run`을 직접 부르면 flock 직렬화가 우회되어 run이 중첩 누적된다). 권장 entry: `0 */3 * * * cd /path/to/my-flight-friend && bash scripts/collect_and_diagnose.sh >> /var/log/collector.log 2>&1`.
 - **동시 실행 금지**: 래퍼 스크립트가 `flock`(`/tmp/my-flight-friend-collector.lock`)으로 직렬화한다. 이전 수집이 cron 주기보다 오래 걸려도 새 run이 중첩 누적되지 않는다 (flock은 프로세스 종료 시 자동 해제).
+- **단일 run hard timeout**: 래퍼가 `timeout`(기본 150m, `COLLECT_TIMEOUT` 환경변수로 조정)으로 collector run을 감싼다. 크롤이 hang 해 lock을 영원히 쥐는 사태를 막는다. 진입 시 남은 one-off collector 컨테이너(좀비)를 `docker rm -f`로 청소한다.
 - **좀비 run 청소**: `start_collection_run()`이 1시간 넘게 `running`에 박제된 row를 `error`로 마감한다 (강제 종료로 `finish`가 안 불린 경우).
 - collector 컨테이너 이미지는 `Dockerfile.collector` (crawl4ai + Playwright). 빌드 시간이 길어 배포 헬스체크와 분리되어 있음 (`.github/workflows/deploy.yml` 참고).
 - 환경변수는 `.env` 로딩 후 진입.

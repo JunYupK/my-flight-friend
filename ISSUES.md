@@ -29,8 +29,8 @@ _최종 업데이트: 2026-06-17_
 
 ### 1. Google Flights 간헐적 0건 수집
 - GF가 간헐적으로 차단/타임아웃되어 특정 run에서 0건 반환 (Naver는 정상).
-- `page_timeout=30s`를 URL마다 꽉 채우고 실패 → run 시간 증가.
-- 미해결. 후속: `page_timeout` 단축 + 실패 빠른 종료/재시도, 차단 원인(DOM 셀렉터 드리프트 vs 안티봇) 진단.
+- ~~`page_timeout=30s`를 URL마다 꽉 채우고 실패 → run 시간 증가.~~ → GF 전용 `gf_page_timeout_ms=15s`로 분리(fast-fail). Naver는 30s 유지. (2026-06)
+- 후속(남음): 차단 원인(DOM 셀렉터 드리프트 vs 안티봇) 진단 + 실패 재시도 정책.
 
 ### 2. 수집 run 시간 자체가 김
 - 첫-run-of-day는 12개월 × 공항 × 양방향을 한 번에 수집 → 수 시간 소요.
