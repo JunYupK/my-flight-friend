@@ -11,9 +11,9 @@
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.110-009688?logo=fastapi&logoColor=white)
 
-Google Flights에서 편도 항공편을 크롤링하고, 왕복 조합을 자동 생성하여 목표가 이하의 딜을 WhatsApp/이메일로 알려주는 풀스택 모니터링 도구입니다. crawl4ai 헤드리스 브라우저와 JS injection 기반 크롤링, PostgreSQL trigger 이벤트 소싱, WebSocket 실시간 로그 스트리밍 등 다양한 기술적 도전을 해결하며 구축했습니다.
+Google Flights·Naver에서 편도 항공편을 크롤링하고, 왕복 조합을 자동 생성하여 목표가 이하의 딜을 Telegram/Discord로 알려주는 풀스택 모니터링 도구입니다. crawl4ai 헤드리스 브라우저와 JS injection 기반 크롤링, PostgreSQL trigger 이벤트 소싱, 왕복 조합 사전계산(materialized) 읽기 최적화, WebSocket 실시간 로그 스트리밍 등 다양한 기술적 도전을 해결하며 구축했습니다.
 
-> Python 3,000줄 + TypeScript 2,200줄 | 32개 통합 테스트 | 122 커밋
+> Python 3,000줄 + TypeScript 2,200줄 | 48개 테스트
 
 <!-- 스크린샷: 웹 대시보드 이미지를 추가하면 임팩트가 큽니다
 ![Dashboard](docs/screenshot-deals.png)
@@ -39,7 +39,7 @@ graph TB
     GF["Google Flights"]
     Claude["Claude Desktop"]
     MCP["MCP Server"]
-    Alert["WhatsApp / Email"]
+    Alert["Telegram / Discord"]
 
     User -->|HTTPS| Caddy
     Caddy -->|reverse proxy| App
@@ -59,18 +59,22 @@ graph TB
 ### 데이터 흐름
 
 ```
-Google Flights  ──crawl4ai──▶  raw_legs (append-only)
-                                    │
-                              flight_legs (UPSERT)
-                                    │
-                         ┌──────────┼──────────┐
-                         ▼          ▼          ▼
-                  price_events   왕복 조합    알림 판단
-                  (DB trigger)   (cross-     (cooldown +
-                                 product)    가격 하락)
-                                    │          │
-                                 Web UI     WhatsApp
-                                            / Email
+GF · Naver  ──crawl4ai──▶  raw_legs (append-only, 90일 보존)
+                                │
+                          flight_legs (UPSERT)
+                                │
+              ┌─────────────────┼─────────────────┐
+              ▼                 ▼                 ▼
+       price_events        왕복 조합          알림 판단
+       (DB trigger)     (combine_roundtrips)  (목적지×월 집약
+              │                 │              + cooldown/하락)
+              │          ┌──────┴──────┐           │
+              ▼          ▼             ▼           ▼
+           Trends    deals 테이블   알림 offer   Telegram
+                    (사전계산)         │         / Discord
+                        │              │
+                   /api/results    record_alert
+                    (인덱스 조회)
 ```
 
 ---
@@ -80,9 +84,11 @@ Google Flights  ──crawl4ai──▶  raw_legs (append-only)
 - **Google Flights 크롤링** — crawl4ai 헤드리스 브라우저 + JavaScript injection으로 DOM 파싱, 무한 스크롤 처리
 - **Protobuf 기반 예약 URL 생성** — Google Flights `tfs=` 파라미터의 protobuf 인코딩을 역공학하여 직접 예약 페이지 링크 생성
 - **편도→왕복 자동 조합** — 편도 운임 수집 후 서버사이드 cross-product로 최적 왕복가 산출 (혼합 항공사 지원)
+- **왕복 조합 사전계산** — 수집 시 만든 조합을 `deals` 테이블에 materialize → `/api/results`를 카테시안 조인에서 인덱스 조회로 전환 (cold miss 제거)
 - **WebSocket 실시간 로그** — 수집 실행 시 진행 상황을 브라우저에서 실시간 스트리밍
 - **이벤트 소싱** — PostgreSQL `AFTER UPDATE` trigger가 가격 변동을 `price_events` 테이블에 자동 기록
-- **스마트 알림** — 쿨다운 기반 중복 방지 + 가격 하락 시 재알림 트리거 (WhatsApp / Email)
+- **스마트 알림** — 목적지×출발월 단위 집약 + 쿨다운/가격 하락 dedup (Telegram / Discord)
+- **수집 run 안정화** — `flock` 동시 실행 금지 + 좀비 run 자동 청소로 중첩 누적 방지
 - **캘린더 히트맵 + 가격 추이 차트** — 출발일별 최저가 시각화, 수집 시점별 가격 추이 그래프
 - **MCP 서버** — Claude Desktop 연동, 자연어로 항공권 조회 가능 (3개 query tool 제공)
 
@@ -111,7 +117,7 @@ Google Flights  ──crawl4ai──▶  raw_legs (append-only)
 | **Database** | PostgreSQL 16 (trigger, view, event sourcing) |
 | **Infra** | Docker Compose (multi-stage build), Caddy (자동 HTTPS), OCI Korea Region |
 | **CI/CD** | GitHub Actions (pytest + React build → SSH 자동 배포 + 헬스체크) |
-| **알림** | WhatsApp (CallMeBot), Gmail SMTP |
+| **알림** | Telegram Bot (1순위) → Discord Webhook (2순위 fallback) |
 | **AI 연동** | MCP Server (Claude Desktop) |
 
 ---
@@ -242,7 +248,7 @@ cd flight_front/web && npm install && npm run dev
 
 ## 테스트
 
-PostgreSQL 기반 32개 통합 테스트. 각 테스트 전후로 `TRUNCATE ... RESTART IDENTITY CASCADE`를 실행하여 테스트 간 완전한 DB 격리를 보장합니다.
+PostgreSQL 기반 통합 테스트 48개. 각 테스트 전후로 `TRUNCATE ... RESTART IDENTITY CASCADE`를 실행하여 테스트 간 완전한 DB 격리를 보장합니다.
 
 ```bash
 # PostgreSQL 실행 필요

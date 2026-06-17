@@ -1,13 +1,9 @@
 
-## DB 정리 정책 구현
-**What:** crontab에 raw_legs 90일 이상 삭제 cron + price_history DROP 조건 스크립트 추가
-**Why:** raw_legs가 무한정 쌓이면 price_history와 동일한 데이터 폭증 재현
-**Pros:** DB 용량 제어, 성능 유지
-**Cons:** 90일 이전 원본 데이터 손실 (포트폴리오 원본 보존 강조와 트레이드오프)
-**Context:** price_history는 /api/price-history가 price_events 기반으로 전환된 후 안전하게 DROP 가능.
-  raw_legs는 `DELETE FROM raw_legs WHERE collected_at < NOW() - INTERVAL '90 days'` cron으로 처리.
-  price_history DROP 전에 Trends 페이지 정상 동작 확인 필수.
-**Depends on:** 3-레이어 파이프라인 PR 완료 + price_events 데이터 충분히 누적 (최소 2주, ~2026-04-21 이후)
+## ✅ raw_legs 90일 정리 — 완료 (2026-06)
+**What:** raw_legs 90일 이상 삭제
+**상태:** `storage.cleanup_old_data()` 구현 → `main.py` 수집 완료 후 매 run마다 호출.
+  별도 crontab 불필요 (수집 파이프라인에 내장). `DELETE FROM raw_legs WHERE collected_at < NOW() - INTERVAL '90 days'`.
+**남은 것:** price_history DROP은 아래 항목 참조 (별개).
 
 ## price_history DROP 시 코드 정리 (price_events 2주 누적 후 ~2026-04-21)
 **What:** price_history 테이블 DROP 후 아래 코드 제거
@@ -20,6 +16,8 @@
   - 모든 API는 flight_legs / raw_legs / price_events 기반으로 전환 완료
   - 2026-06-16: `/api/timing/advance`(`deals_cache.py::_query_timing_advance`)가 price_history를 읽던
     마지막 누락 소비자였음. raw_legs 기반 self-join으로 이전 완료 — DROP 차단 요소 해소됨.
+  - 2026-06-17: `should_notify_median_drop()`(price_history 기반 중앙값 알림) 제거됨 — 알림이
+    `(목적지, 출발월)` 집약 + 목표가/쿨다운/하락 dedup으로 단순화. price_history 읽는 코드 더 줄어듦.
 **Depends on:** DB에서 price_history 테이블 DROP 완료 확인 후
 
 ## flight_legs 보존 정책
