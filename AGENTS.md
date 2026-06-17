@@ -90,7 +90,7 @@ ui      → storage     (프론트엔드가 DB 모듈 import 금지)
 ### Offer Dict 인터페이스
 
 모든 collector는 반드시 아래 필드를 포함하는 dict를 생산해야 한다.
-누락 필드가 있으면 `save_prices()`에서 런타임 에러가 발생한다.
+이 offer dict는 알림 판단과 `save_deals()`(deals 사전계산 테이블 저장)에서 소비된다.
 
 ```python
 {
@@ -149,14 +149,20 @@ ui      → storage     (프론트엔드가 DB 모듈 import 금지)
 
 | 테이블 | 역할 | 쓰기 위치 |
 |--------|------|-----------|
-| `raw_legs` | 수집 원본 append-only 로그 | `save_legs()` 전용 |
+| `raw_legs` | 수집 원본 append-only 로그 (90일 보존, `cleanup_old_data()`) | `save_legs()` 전용 |
 | `flight_legs` | 소스별 현재 최저가 (UPSERT) | `save_legs()` 전용 |
+| `deals` | 왕복 조합 사전계산(materialized) — `/api/results` 읽기 최적화 | `save_deals()` 전용 |
 | `price_events` | 가격 하락 이벤트 (DB 트리거 자동 기록) | **직접 INSERT 금지** |
-| `price_history` | 레거시 왕복 조합 기록 | `save_prices()` 전용 |
-| `alert_state` | 알림 dedup/cooldown 상태 | `record_alert()` 전용 |
+| `price_history` | 레거시 왕복 조합 기록 (deprecated, 신규 쓰기 없음 — DROP 예정) | `save_prices()` 전용 |
+| `alert_state` | 알림 dedup/cooldown 상태 (키: `destination\|YYYY-MM`) | `record_alert()` 전용 |
 | `airports` | 목적지 공항 설정 | 웹 UI API 또는 `config_db.py` |
 | `app_config` | JSONB 설정 | `write_config()` 전용 |
-| `collection_runs` | 수집 실행 이력 | `start/finish_collection_run()` 전용 |
+| `collection_runs` | 수집 실행 이력 (좀비 run은 `start_collection_run()`에서 청소) | `start/finish_collection_run()` 전용 |
+
+> **deals 테이블:** 수집 시 `combine_roundtrips()`가 이미 만든 왕복 offer를 `save_deals()`로
+> 그대로 저장한다. `(source, destination)`별 최저가 top-N만 보관(조합 폭발 방지). `/api/results`는
+> 카테시안 조인 없이 이 테이블을 인덱스 조회한다. source별 DELETE→INSERT 원자 교체이므로
+> 한 소스(예: GF) 수집이 0건이면 그 소스의 기존 deals는 유지된다(graceful degradation).
 
 ### 마이그레이션 규칙
 
@@ -211,19 +217,23 @@ pytest tests/test_notifier.py::TestSendAlertFallback          # fallback 검증
 
 ### 캐시
 
-- Redis 연결 실패 시 in-memory fallback 자동 전환 (현재 구현 유지)
-- TTL: `DEALS_CACHE_TTL = 11400` (3시간 10분). 크롤 주기(3h)보다 길게 유지.
-- 크롤 완료 후 반드시 `bump_deals_version()` + `warm_deals_cache()` 호출 순서 보장
+- Redis 연결 실패 시 in-memory fallback 자동 전환 (현재 구현 유지). `_cache_set(key, value, ttl)`로 키별 TTL 지정.
+- **deals(`/api/results`)는 캐시 대상이 아니다.** `save_deals()`가 채우는 materialized 테이블을 직접 조회하므로 버전 무효화/웜업이 불필요하다.
+- `warm_deals_cache()`는 timing 분석 캐시(`/api/timing/*`)만 미리 계산한다. `bump_deals_version()`은 이 timing 네임스페이스 무효화 용도로만 남아 있다.
+- 무거운 read 엔드포인트는 직접 캐시: `/api/monitor/coverage`(TTL 5분), `/api/price-history` timeline(TTL 1시간).
 
 ### 알림
 
 - **채널 우선순위 고정**: Telegram(1순위) → Discord(2순위) fallback. **첫 성공 채널만 발송**, 둘 다 보내지 않는다.
 - 채널 추가는 `notifier.send_alert()` 의 fallback 체인 끝에 append. 우선순위 재배치 시 fallback 테스트(`test_notifier.py`) 동시 갱신.
 - `notify(offer, target_price)` 는 사용자 알림 (왕복 딜), `send_alert(message)` 는 운영 알림 (수집 0건 / 크래시).
+- **알림 집약**: `make_alert_key()`는 `destination|YYYY-MM` 단위. `main.py`는 목표가 이하 offer를 `(목적지, 출발월)`별 최저가 1건으로 줄여 알림한다 (날짜·항공사 조합마다 폭주하던 문제 해결). 쿨다운/가격하락 dedup은 `should_notify()`가 담당.
 
-### 수집 트리거
+### 수집 트리거 & run 안정화
 
-- **호스트 crontab**이 3시간 주기로 collector 컨테이너를 실행한다 (`docker compose --profile collect run --rm collector python main.py`).
+- **호스트 crontab**이 3시간 주기로 `scripts/collect_and_diagnose.sh`를 실행한다 (`docker compose --profile collect run --rm collector python main.py`).
+- **동시 실행 금지**: 래퍼 스크립트가 `flock`(`/tmp/my-flight-friend-collector.lock`)으로 직렬화한다. 이전 수집이 cron 주기보다 오래 걸려도 새 run이 중첩 누적되지 않는다 (flock은 프로세스 종료 시 자동 해제).
+- **좀비 run 청소**: `start_collection_run()`이 1시간 넘게 `running`에 박제된 row를 `error`로 마감한다 (강제 종료로 `finish`가 안 불린 경우).
 - collector 컨테이너 이미지는 `Dockerfile.collector` (crawl4ai + Playwright). 빌드 시간이 길어 배포 헬스체크와 분리되어 있음 (`.github/workflows/deploy.yml` 참고).
 - 환경변수는 `.env` 로딩 후 진입.
 

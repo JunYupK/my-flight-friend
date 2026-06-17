@@ -169,15 +169,22 @@ class TestMakeAlertKey:
         b = _make_offer(destination="TYO")
         assert storage.make_alert_key(a) != storage.make_alert_key(b)
 
-    def test_different_dates_different_key(self):
+    def test_same_month_same_key(self):
+        """같은 달 다른 날짜 → 동일 키 (목적지×월 단위 집약, 알림 폭주 방지)"""
         a = _make_offer(departure_date="2026-05-10")
         b = _make_offer(departure_date="2026-05-11")
+        assert storage.make_alert_key(a) == storage.make_alert_key(b)
+
+    def test_different_month_different_key(self):
+        a = _make_offer(departure_date="2026-05-10")
+        b = _make_offer(departure_date="2026-06-10")
         assert storage.make_alert_key(a) != storage.make_alert_key(b)
 
-    def test_different_mixed_flag_different_key(self):
+    def test_mixed_flag_same_key(self):
+        """항공사 조합이 달라도 동일 키 — 목적지×월 최저가만 추적"""
         a = _make_offer(is_mixed_airline=False)
         b = _make_offer(is_mixed_airline=True)
-        assert storage.make_alert_key(a) != storage.make_alert_key(b)
+        assert storage.make_alert_key(a) == storage.make_alert_key(b)
 
 
 # ---------------------------------------------------------------------------

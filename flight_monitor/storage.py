@@ -238,6 +238,50 @@ def init_db():
             ON raw_legs (source, destination, date, direction)
         """)
 
+        # ── deals: 왕복 조합 사전계산(materialized) — /api/results 읽기 최적화 ──
+        # 수집 시 combine_roundtrips()로 이미 만든 왕복 offer를 그대로 저장.
+        # 읽기 경로가 flight_legs 카테시안 조인을 매번 돌리던 비용을 제거한다.
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS deals (
+                id               SERIAL PRIMARY KEY,
+                origin           TEXT NOT NULL,
+                destination      TEXT NOT NULL,
+                destination_name TEXT,
+                departure_date   TEXT NOT NULL,
+                return_date      TEXT NOT NULL,
+                stay_nights      INTEGER,
+                trip_type        TEXT,
+                source           TEXT NOT NULL,
+                out_airline      TEXT,
+                in_airline       TEXT,
+                is_mixed_airline INTEGER,
+                out_dep_time     TEXT,
+                out_arr_time     TEXT,
+                out_duration_min INTEGER,
+                out_stops        INTEGER,
+                in_dep_time      TEXT,
+                in_arr_time      TEXT,
+                in_duration_min  INTEGER,
+                in_stops         INTEGER,
+                out_arr_airport  TEXT,
+                in_dep_airport   TEXT,
+                out_url          TEXT,
+                in_url           TEXT,
+                out_price        REAL,
+                in_price         REAL,
+                min_price        REAL NOT NULL,
+                last_checked_at  TIMESTAMP
+            )
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_deals_dest_dep_price
+            ON deals (destination, departure_date, min_price)
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_deals_source_dest
+            ON deals (source, destination)
+        """)
+
         # ── price_events: 가격 변동 이력 (event-sourced) ──
         cur.execute("""
             CREATE TABLE IF NOT EXISTS price_events (
@@ -455,6 +499,77 @@ def save_legs(legs: list[dict]):
         """, flight_rows)
 
 
+# (source, destination)별로 보관할 최저가 조합 수. 조합 폭발(수십만 row)을 막고
+# /api/results가 보여주는 목적지당 top-200을 충분히 커버한다.
+_DEALS_TOPN_PER_SOURCE_DEST = 300
+
+
+def save_deals(offers: list[dict]):
+    """왕복 조합 offer를 deals 테이블에 사전계산 저장 (읽기 최적화).
+
+    offers에 등장한 source만 DELETE 후 INSERT → 원자 교체.
+    GF 실패로 google_flights offer가 0건이면 해당 source를 건드리지 않아
+    이전 deals가 유지된다 (graceful degradation).
+    (source, destination)별 가격 오름차순 top-N만 보관.
+    """
+    if not offers:
+        return
+
+    grouped: dict[tuple[str, str], list[dict]] = {}
+    for o in offers:
+        grouped.setdefault((o["source"], o["destination"]), []).append(o)
+
+    bounded: list[dict] = []
+    for items in grouped.values():
+        items.sort(key=lambda x: x["price"])
+        bounded.extend(items[:_DEALS_TOPN_PER_SOURCE_DEST])
+
+    sources = list({o["source"] for o in offers})
+
+    rows = [
+        (
+            o["origin"], o["destination"], o.get("destination_name"),
+            o["departure_date"], o["return_date"], o["stay_nights"],
+            "oneway_combo" if o["is_mixed_airline"] else "round_trip",
+            o["source"],
+            o.get("out_airline"), o.get("in_airline"), int(o["is_mixed_airline"]),
+            o.get("out_dep_time"), o.get("out_arr_time"), o.get("out_duration_min"), o.get("out_stops"),
+            o.get("in_dep_time"), o.get("in_arr_time"), o.get("in_duration_min"), o.get("in_stops"),
+            o.get("out_arr_airport"), o.get("in_dep_airport"),
+            o.get("out_url"), o.get("in_url"),
+            o.get("out_price"), o.get("in_price"), o["price"],
+            o["checked_at"],
+        )
+        for o in bounded
+    ]
+
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM deals WHERE source = ANY(%s)", (sources,))
+        psycopg2.extras.execute_batch(cur, """
+            INSERT INTO deals
+            (origin, destination, destination_name,
+             departure_date, return_date, stay_nights,
+             trip_type, source,
+             out_airline, in_airline, is_mixed_airline,
+             out_dep_time, out_arr_time, out_duration_min, out_stops,
+             in_dep_time, in_arr_time, in_duration_min, in_stops,
+             out_arr_airport, in_dep_airport,
+             out_url, in_url,
+             out_price, in_price, min_price,
+             last_checked_at)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        """, rows)
+
+
+def cleanup_old_data():
+    """raw_legs 90일 보존 정리. append-only 테이블의 무한 증가를 막는다."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM raw_legs WHERE collected_at < NOW() - INTERVAL '90 days'")
+        return cur.rowcount
+
+
 def get_collected_today(source: str) -> set[tuple[str, str, str]]:
     """오늘(KST) 이미 수집한 (destination, date, direction) 집합 반환.
 
@@ -475,14 +590,10 @@ def get_collected_today(source: str) -> set[tuple[str, str, str]]:
 
 
 def make_alert_key(offer: dict) -> str:
-    return "|".join([
-        offer["destination"],
-        offer["departure_date"],
-        offer["return_date"],
-        offer["out_airline"],
-        offer["in_airline"],
-        str(int(offer["is_mixed_airline"])),
-    ])
+    # 목적지 × 출발월 단위로 집약 — 날짜·항공사 조합마다 알림이 폭주하던 문제 해결.
+    # 같은 목적지·같은 달의 최저가가 갱신될 때만 알림.
+    month = offer["departure_date"][:7]
+    return f"{offer['destination']}|{month}"
 
 
 def should_notify(offer: dict) -> bool:
@@ -526,38 +637,20 @@ def record_alert(offer: dict):
         """, (key, offer["price"], now_str))
 
 
-def should_notify_median_drop(offer: dict) -> bool:
-    threshold_pct = SEARCH_CONFIG.get("median_alert_threshold_pct", 10)
-    min_obs       = SEARCH_CONFIG.get("median_min_obs", 5)
-
-    with get_conn() as conn:
-        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute("""
-            WITH daily_mins AS (
-                SELECT DATE(checked_at) AS check_date, MIN(price) AS daily_min
-                FROM price_history
-                WHERE destination = %s
-                  AND departure_date = %s
-                  AND DATE(checked_at) < CURRENT_DATE
-                GROUP BY check_date
-            )
-            SELECT
-                PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY daily_min) AS median_price,
-                COUNT(*) AS obs_count
-            FROM daily_mins
-        """, (offer["destination"], offer["departure_date"]))
-        row = cur.fetchone()
-
-    if row is None or row["obs_count"] < min_obs:
-        return False
-
-    threshold = row["median_price"] * (1 - threshold_pct / 100.0)
-    return offer["price"] <= threshold
-
-
 def start_collection_run() -> int:
     with get_conn() as conn:
         cur = conn.cursor()
+        # 좀비 run 청소: 프로세스 강제 종료(OOM/컨테이너 재시작)로 finish가 안 불려
+        # 'running'에 박제된 row를 error로 마감. 모니터링 화면·평균 소요시간 왜곡 방지.
+        cur.execute("""
+            UPDATE collection_runs
+            SET status       = 'error',
+                finished_at  = NOW(),
+                error_log    = 'Orphaned: process crashed or was killed',
+                duration_sec = EXTRACT(EPOCH FROM (NOW() - started_at))
+            WHERE status = 'running'
+              AND started_at < NOW() - INTERVAL '1 hour'
+        """)
         cur.execute(
             "INSERT INTO collection_runs (started_at) VALUES (%s) RETURNING id",
             (datetime.now(KST),),
