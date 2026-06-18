@@ -62,7 +62,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.collector
-    profiles: [full, collect]
+    # collect 전용: full에 넣으면 배포(--profile full up -d)가 main.py를 flock 우회로
+    # 자동 실행해 cron run과 중첩된다. 수집은 cron 래퍼(run --rm collector)로만 실행.
+    profiles: [collect]
     environment:
       DATABASE_URL: postgresql://flight_user:${DB_PASSWORD:-flight_pass}@db:5432/flights
       REDIS_URL: redis://redis:6379
