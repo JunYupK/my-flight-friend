@@ -21,8 +21,22 @@ if ! flock -n 9; then
     exit 0
 fi
 
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] === 수집 시작 ==="
-docker compose --profile collect run --rm collector python main.py || true
+# 좀비 청소: timeout/크래시로 --rm 정리가 안 된 one-off collector 컨테이너 제거.
+# flock으로 직렬화되어 있으므로(여기 도달 = lock 보유) 살아있는 정상 수집은 없다 →
+# 남아 있는 컨테이너는 전부 좀비. (이전 직렬화 미적용 시절 쌓인 잔재 포함)
+docker ps -aq \
+    --filter "label=com.docker.compose.service=collector" \
+    --filter "label=com.docker.compose.oneoff=True" \
+  | xargs -r docker rm -f >/dev/null 2>&1 || true
+
+# 단일 run hard timeout: 크롤이 wedge 되어도 cron 주기를 넘기기 전에 강제 종료.
+# flock은 중첩을 막지만, hang 한 run은 lock을 영원히 쥐어 수집을 영구 정지시킬 수 있다.
+# SIGTERM 후 2분 내 미종료 시 SIGKILL. --rm + compose 시그널 전파로 컨테이너도 정리됨.
+COLLECT_TIMEOUT="${COLLECT_TIMEOUT:-150m}"
+
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] === 수집 시작 (timeout ${COLLECT_TIMEOUT}) ==="
+timeout --signal=SIGTERM --kill-after=2m "$COLLECT_TIMEOUT" \
+    docker compose --profile collect run --rm collector python main.py || true
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] === 진단 시작 ==="
 docker compose --profile collect run --rm collector python diagnosis_agent.py
