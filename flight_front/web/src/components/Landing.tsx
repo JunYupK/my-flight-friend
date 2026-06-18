@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { fetchResults } from "../api";
 import type { DestinationGroup } from "../types";
 import { formatDate } from "../utils";
-import { SourceBadge, TripTypeBadge } from "./DealCard";
+import { SourceBadge, TripTypeBadge, FreshnessBanner } from "./DealCard";
 
 const FEATURES = [
   {
@@ -85,6 +85,7 @@ export default function Landing() {
               전체 보기 →
             </Link>
           </div>
+          <FreshnessBanner groups={groups} />
           <div className="space-y-2.5">
             {groups.map((g) => (
               <BestDealRow key={g.destination} group={g} />

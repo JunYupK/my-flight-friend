@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { fetchResults } from "../api";
 import type { DestinationGroup } from "../types";
-import { DealCard, TRIP_TYPE_OPTIONS, SOURCE_LABELS } from "./DealCard";
+import { DealCard, FreshnessBanner, TRIP_TYPE_OPTIONS, SOURCE_LABELS } from "./DealCard";
 
 const SOURCE_OPTIONS = [
   { label: "전체", value: "" },
@@ -88,6 +88,9 @@ export default function Results() {
 
   return (
     <div className="space-y-5">
+      {/* 데이터 신선도 배너 */}
+      {groups.length > 0 && <FreshnessBanner groups={groups} />}
+
       {/* 월 필터 */}
       <MonthFilter activeMonth={activeMonth} onChange={setActiveMonth} />
 

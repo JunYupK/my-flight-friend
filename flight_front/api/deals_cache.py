@@ -90,10 +90,14 @@ def query_deals(hours, month, source, trip_type) -> list[dict]:
         params.append(trip_type)
 
     if hours is not None:
+        # 호출자가 명시적으로 신선도 윈도우를 요구한 경우에만 좁게 필터.
         where_conds.append("last_checked_at >= NOW() - %s::interval")
         params.append(f"{hours} hours")
     else:
-        where_conds.append("last_checked_at >= NOW() - INTERVAL '24 hours'")
+        # 기본: 하드 신선도 컷오프 없음. 수집이 며칠 실패해도 화면이 비지 않도록
+        # 보유한 최신 deal을 그대로 보여주고, 오래됨 여부는 UI가 last_checked_at으로
+        # 표기한다. 14일 안전망은 노선 제거 등으로 갱신이 끊긴 좀비 행만 배제한다.
+        where_conds.append("last_checked_at >= NOW() - INTERVAL '14 days'")
 
     where_clause = " AND ".join(where_conds)
 
