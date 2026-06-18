@@ -51,7 +51,7 @@ service → router      (역방향 금지)
 ui      → storage     (프론트엔드가 DB 모듈 import 금지)
 ```
 
-> 본 규칙은 추후 `tests/test_architecture.py`에서 기계 검증 예정 (§11 참조).
+> 본 규칙은 `tests/test_architecture.py`에서 기계 검증한다 (정적 분석, DB 불필요).
 
 ---
 
@@ -180,7 +180,7 @@ ui      → storage     (프론트엔드가 DB 모듈 import 금지)
 tests/
 ├── test_flight_monitor.py    # storage 레이어 통합 테스트 (PostgreSQL 필요)
 ├── test_notifier.py          # 알림 fallback 단위 테스트 (HTTP mock)
-└── test_architecture.py      # 레이어 경계 위반 감지 (예정, §11 참조)
+└── test_architecture.py      # 레이어 경계 위반 감지 (ast 정적 분석, DB 불필요)
 ```
 
 ### 필수 원칙
@@ -196,13 +196,14 @@ pytest tests/test_flight_monitor.py::TestSaveLegs             # 클래스 단위
 pytest tests/test_notifier.py::TestSendAlertFallback          # fallback 검증
 ```
 
-### 아키텍처 테스트 (`tests/test_architecture.py`, 예정)
+### 아키텍처 테스트 (`tests/test_architecture.py`)
 
-§2의 의존성 규칙을 기계적으로 검증할 테스트가 추가될 예정. 검증 대상:
+§2의 의존성 규칙·§8 금지사항을 `ast` 정적 분석으로 검증한다 (DB·크롤러 불필요, CI 항상 실행). 검증 대상:
 
-1. `api/main.py`가 `storage.py`의 `get_conn()`을 직접 호출하지 않음
-2. `collector_*.py`가 `fastapi`를 import하지 않음
-3. `web/src/` TypeScript 파일이 Python 모듈을 import하지 않음 (당연하지만 명시)
+1. Repository/Collector 가 `fastapi`/`starlette` 를 import 하지 않음 (§8)
+2. `storage.py` 가 상위 레이어(collector/service/router)를 import 하지 않음 (최하위 레이어)
+3. Router 가 collector 를 직접 import 하지 않음, Service 가 Router(`api/main.py`)를 import 하지 않음 (역방향 금지)
+4. `api/main.py` 의 `get_conn()` 직접 호출은 `_GET_CONN_ALLOWLIST`(§11 잔여 항목) 로 **동결** — 새 위반 차단, 마이그레이션 시 목록 축소 강제(래칫)
 
 ---
 
@@ -316,8 +317,10 @@ PYTHONIOENCODING=utf-8
 2. LCC 항공사(Peach, Zipair 등) 일부가 `_AIRLINE_IATA` 매핑에 누락 →
    `collector_google_flights.py` 의 `_AIRLINE_IATA` dict 에 추가 가능.
 
-3. `tests/test_architecture.py` 미작성 상태.
-   §2의 의존성 규칙은 현재 컨벤션이며, 본 테스트가 추가되면 CI에서 자동 강제된다.
+3. `tests/test_architecture.py` 작성 완료 — §2 의존성 규칙·§8 금지사항이 CI에서 자동 강제된다.
+   남은 직접-SQL 엔드포인트(`upsert_airport`, `delete_airport`, `get_monitor_coverage`,
+   `get_calendar_prices`, `get_price_history`)는 `_GET_CONN_ALLOWLIST` 로 동결돼 있다.
+   이들을 storage 계층으로 옮기면 allowlist 에서도 제거해야 한다(`test_no_stale_allowlist` 강제).
 
 4. `mcp_server.py` 는 Service 레이어로 분류했으나 물리적으로는 레포 루트에 있음.
    추후 `flight_front/api/services/` 로 이동 예정 — 위치 이동만으로 import 경로 깨짐 주의.

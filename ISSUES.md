@@ -21,6 +21,7 @@ _최종 업데이트: 2026-06-17_
 - **알림 집약** — `(목적지, 출발월)` 단위로 축소, 하루 1000건+ 폭주 해결 (2026-06)
 - `/api/monitor/coverage`, `/api/price-history` timeline Redis 캐시
 - raw_legs 90일 보존 정리 (`cleanup_old_data()`)
+- **아키텍처 테스트** — `tests/test_architecture.py` 로 AGENTS §2/§8 레이어 경계를 ast 정적 분석으로 강제 (2026-06)
 
 ---
 
@@ -43,4 +44,4 @@ _최종 업데이트: 2026-06-17_
 1. 크롤링 효율 — `page_timeout` 단축 + 재시도, 작업 분산 (위 이슈 1·2)
 2. `price_history` 테이블 DROP + 관련 코드 정리 (`TODOS.md` 참조)
 3. `flight_legs` 13개월 보존 정리 (`TODOS.md` 참조)
-4. `tests/test_architecture.py` 작성 — 레이어 경계 기계 검증 (`AGENTS.md` §11)
+4. ~~`tests/test_architecture.py` 작성 — 레이어 경계 기계 검증~~ → 완료 (2026-06, ast 정적 분석 7 테스트)
