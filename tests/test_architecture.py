@@ -22,16 +22,39 @@ SERVICES = [
 ]
 
 
+def _module_name(path: pathlib.Path) -> str:
+    """파일 경로를 절대 모듈 경로로 변환 (flight_front/api/main.py → flight_front.api.main)."""
+    rel = path.resolve().relative_to(ROOT).with_suffix("")
+    return ".".join(rel.parts)
+
+
 def _imported_modules(path: pathlib.Path) -> set[str]:
-    """파일이 import 하는 절대 모듈 경로 집합."""
+    """파일이 import 하는 모듈/심볼의 절대 경로 집합.
+
+    `from pkg import name` 은 `pkg` 뿐 아니라 `pkg.name` 도 포함시킨다 — 그래야
+    `from flight_monitor import collector_x` 같은 레이어 위반을 잡을 수 있다.
+    상대 import(`from . import main`)는 파일 위치 기준으로 절대 경로로 해석한다.
+    """
+    pkg_parts = _module_name(path).split(".")[:-1]  # 이 모듈을 담은 패키지
     tree = ast.parse(path.read_text(encoding="utf-8"))
     mods: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
                 mods.add(alias.name)
-        elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
-            mods.add(node.module)
+        elif isinstance(node, ast.ImportFrom):
+            if node.level == 0:
+                base = node.module or ""
+            else:
+                # 상대 import: 패키지에서 (level-1) 단계 위로 올라간 경로가 기준
+                anchor = pkg_parts[: len(pkg_parts) - (node.level - 1)]
+                base = ".".join(anchor)
+                if node.module:
+                    base = f"{base}.{node.module}" if base else node.module
+            if base:
+                mods.add(base)
+            for alias in node.names:
+                mods.add(f"{base}.{alias.name}" if base else alias.name)
     return mods
 
 
@@ -117,6 +140,18 @@ _GET_CONN_ALLOWLIST = frozenset(
 )
 
 
+def _is_get_conn_call(node: ast.AST) -> bool:
+    """get_conn() / storage.get_conn() / flight_monitor.storage.get_conn() 모두 탐지."""
+    if not isinstance(node, ast.Call):
+        return False
+    func = node.func
+    if isinstance(func, ast.Name):
+        return func.id == "get_conn"
+    if isinstance(func, ast.Attribute):  # 모듈/별칭 경유 호출
+        return func.attr == "get_conn"
+    return False
+
+
 def _functions_calling_get_conn(path: pathlib.Path) -> set[str]:
     """get_conn() 을 직접 호출하는, 가장 안쪽으로 감싸는 함수 이름들."""
     tree = ast.parse(path.read_text(encoding="utf-8"))
@@ -127,11 +162,7 @@ def _functions_calling_get_conn(path: pathlib.Path) -> set[str]:
     ]
     callers: set[str] = set()
     for node in ast.walk(tree):
-        if (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Name)
-            and node.func.id == "get_conn"
-        ):
+        if _is_get_conn_call(node):
             enclosing = min(
                 (f for f in funcs if f[1] <= node.lineno <= f[2]),
                 key=lambda f: f[2] - f[1],
