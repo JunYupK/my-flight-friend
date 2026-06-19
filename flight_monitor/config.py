@@ -31,6 +31,10 @@ SEARCH_CONFIG = {
 
     # 수집 범위
     "search_range_months": 12,         # 오늘 기준 몇 개월 앞까지 수집
+    # 한 cron tick이 수집할 개월 슬라이스 폭. range_months 전체를 이 단위로 나눠
+    # 근미래부터 round-robin으로 tick마다 한 조각씩만 수집 → 첫-run-of-day의 12개월
+    # full-sweep이 3h 주기를 넘겨 죽던 death spiral 차단. range_months 이상이면 비활성.
+    "sweep_tick_months": 3,
     "topk_per_date": 5,                # 날짜별 Top-K 유지
 
     # 성능/안전
