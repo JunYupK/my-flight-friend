@@ -127,10 +127,11 @@ services:
       - mcp
     healthcheck:
       # Caddy admin API (컨테이너 내부 전용 포트 2019).
-      # --spider 는 HEAD 요청을 보내는데 admin /config/ 는 GET만 받아 HEAD엔 405를
-      # 반환 → 헬스체크가 영구 실패(caddy는 정상인데 unhealthy)했다. -O /dev/null 로
-      # GET 후 본문만 버린다.
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:2019/config/"]
+      # admin 은 127.0.0.1:2019 (IPv4 전용) 에 바인딩되는데, 기존 healthcheck 가
+      # `localhost` 로 붙으면 busybox wget 이 ::1(IPv6) 로 시도해 connection refused →
+      # caddy 는 정상인데 영구 unhealthy 였다. 127.0.0.1 로 명시해 IPv4 로 직접 붙는다.
+      # (-O /dev/null = GET 후 본문 버림)
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:2019/config/"]
       interval: 30s
       timeout: 5s
       retries: 3
