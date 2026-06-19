@@ -7,10 +7,56 @@
 from __future__ import annotations
 
 import asyncio
+import calendar
+import math
+from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
     from crawl4ai import AsyncWebCrawler, CrawlerRunConfig
+
+
+def _add_months(base: date, months: int) -> date:
+    """base가 속한 달의 1일 기준 months개월 뒤 달의 1일."""
+    total = (base.year * 12 + (base.month - 1)) + months
+    return date(total // 12, total % 12 + 1, 1)
+
+
+def compute_sweep_window(
+    today: date,
+    now: datetime,
+    range_months: int,
+    tick_months: int,
+    max_stay: int,
+) -> tuple[date, date]:
+    """이번 cron tick이 수집할 [start_date, end_date] 슬라이스를 stateless하게 계산.
+
+    전체 range_months(예: 12)를 tick_months(예: 3) 단위 슬라이스로 나누고, 3시간 cron
+    tick마다 근미래 슬라이스부터 round-robin으로 하나만 고른다. 한 run의 크롤 분량을
+    1/num_slices로 줄여, 첫-run-of-day의 12개월 full-sweep이 cron 주기(3h)를 넘겨 죽고
+    save_deals에 도달 못 해 데이터가 0건이 되던 death spiral을 끊는다.
+
+    tick_index는 시각에서 유도(stateless) — 별도 커서 저장 없이 ephemeral collector
+    컨테이너에서도 동작한다. tick_months >= range_months(또는 <=0)면 슬라이싱 비활성
+    → 전체 범위(기존 동작). end_date는 마지막 출발일의 복귀편까지 담도록 max_stay만큼
+    연장한다.
+    """
+    if tick_months <= 0 or tick_months >= range_months:
+        slice_start_month = 0
+        slice_len = range_months
+    else:
+        num_slices = math.ceil(range_months / tick_months)
+        tick_index = (now.hour // 3) % num_slices
+        slice_start_month = tick_index * tick_months
+        slice_len = min(tick_months, range_months - slice_start_month)
+
+    base = date(today.year, today.month, 1)
+    start_date = max(today, _add_months(base, slice_start_month))
+
+    last_month_first = _add_months(base, slice_start_month + slice_len - 1)
+    _, last_day = calendar.monthrange(last_month_first.year, last_month_first.month)
+    end_date = date(last_month_first.year, last_month_first.month, last_day) + timedelta(days=max_stay)
+    return start_date, end_date
 
 
 def make_scroll_js() -> str:

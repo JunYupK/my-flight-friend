@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import calendar
 import json
 import re
 from datetime import date, datetime, timedelta
@@ -30,7 +29,7 @@ except ImportError:
     _CRAWL4AI_AVAILABLE = False
 
 from .config import ORIGIN, JAPAN_AIRPORTS, SEARCH_CONFIG, TFS_TEMPLATES
-from .crawler_utils import crawl_one_way_batches, make_scroll_js
+from .crawler_utils import compute_sweep_window, crawl_one_way_batches, make_scroll_js
 from .offer_utils import combine_roundtrips
 
 _TFS_DATE_RE = re.compile(rb"\d{4}-\d{2}-\d{2}")
@@ -484,7 +483,7 @@ async def _fetch_route(
 async def _fetch_airport(
     airport_code: str,
     airport_name: str,
-    today: date,
+    start_date: date,
     end_date: date,
     skip_set: set[tuple[str, str, str]],
     on_route_done,
@@ -494,7 +493,7 @@ async def _fetch_airport(
     async with semaphore:
         async with AsyncWebCrawler(config=browser_config) as crawler:
             offers = await _fetch_route(
-                crawler, airport_code, airport_name, today, end_date, skip_set
+                crawler, airport_code, airport_name, start_date, end_date, skip_set
             )
         if on_route_done and offers:
             loop = asyncio.get_event_loop()
@@ -523,16 +522,16 @@ async def _fetch_all(on_route_done=None) -> list[dict]:
         print("[GoogleFlights] JAPAN_AIRPORTS 비어 있음 — airports 테이블 확인 필요")
         return []
 
-    # 오늘부터 search_range_months 개월 뒤까지 수집
+    # 이번 tick이 담당할 개월 슬라이스만 수집 (sweep 분산). tick_months >= range_months면
+    # 전체 범위(기존 동작). end_date는 복귀편까지 담도록 max_stay만큼 연장됨.
     today = date.today()
     range_months = SEARCH_CONFIG.get("search_range_months", 12)
-    end_date = date(today.year, today.month, 1) + timedelta(days=32 * range_months)
-    # end_date를 해당 월 말일로 보정
-    _, last_day = calendar.monthrange(end_date.year, end_date.month)
-    end_date = date(end_date.year, end_date.month, last_day)
-    # 마지막 출발일의 복귀편도 수집되도록 stay 최대 박수만큼 연장
+    tick_months = SEARCH_CONFIG.get("sweep_tick_months", range_months)
     max_stay = max(SEARCH_CONFIG["stay_durations"])
-    end_date = end_date + timedelta(days=max_stay)
+    start_date, end_date = compute_sweep_window(
+        today, datetime.now(KST), range_months, tick_months, max_stay
+    )
+    print(f"[GoogleFlights] sweep 윈도우 {start_date} ~ {end_date} (tick_months={tick_months})")
 
     # Option D: 오늘 이미 수집한 URL 스킵
     from flight_monitor.storage import get_collected_today
@@ -545,7 +544,7 @@ async def _fetch_all(on_route_done=None) -> list[dict]:
     semaphore = asyncio.Semaphore(parallel)
 
     tasks = [
-        _fetch_airport(code, name, today, end_date, skip_set, on_route_done, semaphore, browser_config)
+        _fetch_airport(code, name, start_date, end_date, skip_set, on_route_done, semaphore, browser_config)
         for code, name in JAPAN_AIRPORTS.items()
     ]
     results = await asyncio.gather(*tasks, return_exceptions=True)

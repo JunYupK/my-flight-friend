@@ -54,7 +54,13 @@ def _periodic_warm_loop():
 
 @app.on_event("startup")
 def startup():
-    init_db()
+    # 장기 수집 run과 배포가 겹치면 init_db의 DDL이 collector의 쓰기 락 뒤에서 막힐 수
+    # 있다. init_db는 lock_timeout으로 빨리 포기하므로, 그 실패가 startup(=헬스체크)을
+    # 막지 않게 삼킨다. 스키마는 이미 존재하므로 진행해도 안전하다.
+    try:
+        init_db()
+    except Exception as e:
+        print(f"[startup] init_db skipped (likely lock contention): {e}", flush=True)
     apply_db_config()
     def _initial_warm():
         try:
