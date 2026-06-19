@@ -1,6 +1,67 @@
 import React, { useEffect, useState } from "react";
-import { fetchCollectionRuns, fetchRunDetail, fetchCoverage } from "../api";
-import type { CollectionRun, CoverageByDestMonth } from "../types";
+import { fetchCollectionRuns, fetchRunDetail, fetchCoverage, fetchSystemStats } from "../api";
+import type { CollectionRun, CoverageByDestMonth, SystemStats } from "../types";
+
+function formatBytes(bytes: number): string {
+  if (bytes <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  return `${(bytes / 1024 ** i).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
+function usageColor(percent: number): string {
+  if (percent >= 90) return "bg-apple-red";
+  if (percent >= 75) return "bg-yellow-500";
+  return "bg-apple-green";
+}
+
+function ResourceBar({
+  label,
+  percent,
+  detail,
+}: {
+  label: string;
+  percent: number;
+  detail: string;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-baseline justify-between">
+        <span className="text-sm font-medium text-apple-text">{label}</span>
+        <span className="text-sm text-apple-secondary tabular-nums">{percent.toFixed(1)}%</span>
+      </div>
+      <div className="h-2 rounded-full bg-apple-text/10 overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all ${usageColor(percent)}`}
+          style={{ width: `${Math.min(percent, 100)}%` }}
+        />
+      </div>
+      <p className="text-xs text-apple-secondary tabular-nums">{detail}</p>
+    </div>
+  );
+}
+
+function SystemStatsCard({ stats }: { stats: SystemStats }) {
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+      <ResourceBar
+        label="CPU"
+        percent={stats.cpu.percent}
+        detail={`${stats.cpu.cores} cores · load ${stats.cpu.load1} / ${stats.cpu.load5} / ${stats.cpu.load15}`}
+      />
+      <ResourceBar
+        label="메모리"
+        percent={stats.memory.percent}
+        detail={`${formatBytes(stats.memory.used)} / ${formatBytes(stats.memory.total)}`}
+      />
+      <ResourceBar
+        label={stats.disk.host ? "디스크" : "디스크 (컨테이너)"}
+        percent={stats.disk.percent}
+        detail={`${formatBytes(stats.disk.used)} / ${formatBytes(stats.disk.total)} · 여유 ${formatBytes(stats.disk.free)}`}
+      />
+    </div>
+  );
+}
 
 const STALE_HOURS = 6; // cron 주기(3h)의 2배 — 이보다 오래되면 경고
 
@@ -116,6 +177,27 @@ export default function Monitor() {
   const [coverage, setCoverage] = useState<CoverageByDestMonth[]>([]);
   const [coverageLoading, setCoverageLoading] = useState(true);
 
+  const [system, setSystem] = useState<SystemStats | null>(null);
+  const [systemError, setSystemError] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    const load = () =>
+      fetchSystemStats()
+        .then((s) => {
+          if (!active) return;
+          setSystem(s);
+          setSystemError(false);
+        })
+        .catch(() => active && setSystemError(true));
+    load();
+    const id = setInterval(load, 5000); // 5초마다 갱신
+    return () => {
+      active = false;
+      clearInterval(id);
+    };
+  }, []);
+
   useEffect(() => {
     fetchCollectionRuns(50)
       .then(setRuns)
@@ -162,6 +244,20 @@ export default function Monitor() {
 
   return (
     <div className="space-y-6">
+      <section className="bg-apple-surface border border-apple-tertiary/50 rounded-2xl shadow-apple p-5 sm:p-6 space-y-4">
+        <div className="flex items-baseline justify-between">
+          <h2 className="text-base font-semibold text-apple-text">서버 리소스</h2>
+          <span className="text-xs text-apple-secondary">5초마다 갱신</span>
+        </div>
+        {systemError ? (
+          <p className="text-sm text-apple-red">서버 지표를 불러오지 못했습니다.</p>
+        ) : system ? (
+          <SystemStatsCard stats={system} />
+        ) : (
+          <p className="text-sm text-apple-secondary py-4">로딩 중…</p>
+        )}
+      </section>
+
       <section className="bg-apple-surface border border-apple-tertiary/50 rounded-2xl shadow-apple p-5 sm:p-6 space-y-4">
         <h2 className="text-base font-semibold text-apple-text">수집 이력</h2>
 
