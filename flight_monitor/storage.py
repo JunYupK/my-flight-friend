@@ -35,6 +35,15 @@ def init_db():
     with get_conn() as conn:
         cur = conn.cursor()
 
+        # 배포가 장기 수집 run과 겹치면 collector가 flight_legs/deals 등에 계속 쓰기
+        # 락(ROW EXCLUSIVE)을 잡고 있어, init_db의 DDL(CREATE INDEX=SHARE, ALTER=
+        # ACCESS EXCLUSIVE)이 그 뒤에서 무한 대기 → app startup이 영구 hang → 헬스체크
+        # 실패로 배포가 깨진다. 락을 빨리 못 잡으면 포기하게 해 startup을 막지 않는다.
+        # (이미 프로비저닝된 DB에선 아래 DDL이 전부 IF [NOT] EXISTS no-op이라 스킵해도
+        #  안전하고, 신규 DB는 collector가 없어 경합 자체가 없다.) SET LOCAL이라 이 트랜잭션
+        # 한정으로만 적용된다.
+        cur.execute("SET LOCAL lock_timeout = '10s'")
+
         # ALTER COLUMN checked_at가 뷰 의존성으로 실패하지 않도록 먼저 drop
         cur.execute("DROP VIEW IF EXISTS v_best_observed")
 
