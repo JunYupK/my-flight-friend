@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import calendar
 import json
 import re
 from datetime import date, datetime, timedelta

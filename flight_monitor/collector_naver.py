@@ -11,7 +11,6 @@
 from __future__ import annotations
 
 import asyncio
-import calendar
 import json
 import re
 from datetime import date, datetime, timedelta
