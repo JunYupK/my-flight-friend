@@ -507,8 +507,10 @@ _DEALS_TOPN_PER_SOURCE_DEST = 300
 def save_deals(offers: list[dict]):
     """왕복 조합 offer를 deals 테이블에 사전계산 저장 (읽기 최적화).
 
-    offers에 등장한 source만 DELETE 후 INSERT → 원자 교체.
-    GF 실패로 google_flights offer가 0건이면 해당 source를 건드리지 않아
+    offers에 등장한 (source, destination)만 DELETE 후 INSERT → 원자 교체.
+    공항별 증분 호출(on_route_done)에서도 다른 목적지의 deal을 지우지 않으므로,
+    run이 중간에 죽어도 완료된 공항만큼은 deals가 신선하게 갱신된다.
+    특정 (source, destination)이 0건이면 그 조합은 호출에 등장하지 않아
     이전 deals가 유지된다 (graceful degradation).
     (source, destination)별 가격 오름차순 top-N만 보관.
     """
@@ -524,7 +526,7 @@ def save_deals(offers: list[dict]):
         items.sort(key=lambda x: x["price"])
         bounded.extend(items[:_DEALS_TOPN_PER_SOURCE_DEST])
 
-    sources = list({o["source"] for o in offers})
+    pairs = sorted({(o["source"], o["destination"]) for o in offers})
 
     rows = [
         (
@@ -545,7 +547,13 @@ def save_deals(offers: list[dict]):
 
     with get_conn() as conn:
         cur = conn.cursor()
-        cur.execute("DELETE FROM deals WHERE source = ANY(%s)", (sources,))
+        # offers에 등장한 (source, destination)만 교체. 증분 호출 안전.
+        psycopg2.extras.execute_values(
+            cur,
+            "DELETE FROM deals USING (VALUES %s) AS t(source, destination) "
+            "WHERE deals.source = t.source AND deals.destination = t.destination",
+            pairs,
+        )
         psycopg2.extras.execute_batch(cur, """
             INSERT INTO deals
             (origin, destination, destination_name,

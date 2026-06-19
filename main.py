@@ -47,9 +47,11 @@ def _collect_and_alert(run_id: int):
     alerts_sent = 0
 
     # --- Google Flights + Naver 병렬 수집 ---
+    # on_route_done=save_deals: 공항별 수집 완료 즉시 deals를 증분 갱신한다.
+    # run이 중간에 죽어도 완료된 공항만큼은 사이트에 신선하게 반영 → 유사 장애 방지.
     with ThreadPoolExecutor(max_workers=2) as pool:
-        gf_future: Future = pool.submit(fetch_google_flights_offers)
-        nv_future: Future = pool.submit(fetch_naver_offers)
+        gf_future: Future = pool.submit(fetch_google_flights_offers, save_deals)
+        nv_future: Future = pool.submit(fetch_naver_offers, save_deals)
 
     gf_offers: list[dict] = []
     nv_offers: list[dict] = []

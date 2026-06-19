@@ -161,8 +161,15 @@ ui      → storage     (프론트엔드가 DB 모듈 import 금지)
 
 > **deals 테이블:** 수집 시 `combine_roundtrips()`가 이미 만든 왕복 offer를 `save_deals()`로
 > 그대로 저장한다. `(source, destination)`별 최저가 top-N만 보관(조합 폭발 방지). `/api/results`는
-> 카테시안 조인 없이 이 테이블을 인덱스 조회한다. source별 DELETE→INSERT 원자 교체이므로
-> 한 소스(예: GF) 수집이 0건이면 그 소스의 기존 deals는 유지된다(graceful degradation).
+> 카테시안 조인 없이 이 테이블을 인덱스 조회한다. **`(source, destination)`별 DELETE→INSERT 원자
+> 교체**라, 공항별 증분 호출(`on_route_done=save_deals`)에서도 다른 목적지를 지우지 않는다 →
+> run이 중간에 죽어도 완료된 공항만큼은 deals가 신선하게 갱신된다. 특정 조합 0건이면 그
+> 조합의 기존 deals는 유지된다(graceful degradation).
+>
+> **표시 신선도 정책:** `/api/results`(`query_deals`)는 **하드 신선도 컷오프가 없다**. 수집이
+> 며칠 실패해도 화면이 비지 않도록 보유한 최신 deal을 그대로 반환하고(14일 안전망으로 좀비 행만
+> 배제), 오래됨 여부는 프론트가 `last_checked_at` 기반 상대시간 + 지연 배지/배너로 표기한다.
+> 호출자가 `hours`를 명시하면 그때만 좁은 윈도우로 필터한다.
 
 ### 마이그레이션 규칙
 

@@ -1,6 +1,6 @@
 import React from "react";
-import type { Deal } from "../types";
-import { formatDate, normalizeTime, formatDuration } from "../utils";
+import type { Deal, DestinationGroup } from "../types";
+import { formatDate, normalizeTime, formatDuration, timeAgo, hoursSince, STALE_HOURS } from "../utils";
 
 export function StopsBadge({ stops }: { stops: number | null }) {
   if (stops == null)
@@ -18,10 +18,47 @@ export function CheckedAtLabel({ checkedAt }: { checkedAt: string }) {
   const dd = String(d.getDate()).padStart(2, "0");
   const hh = String(d.getHours()).padStart(2, "0");
   const mi = String(d.getMinutes()).padStart(2, "0");
+  const stale = hoursSince(checkedAt) >= STALE_HOURS;
   return (
-    <span className="text-[10px] text-apple-tertiary">
-      {mm}.{dd} {hh}:{mi} 수집
+    <span
+      className={`text-[10px] ${stale ? "text-apple-orange font-medium" : "text-apple-tertiary"}`}
+      title={`${mm}.${dd} ${hh}:${mi} 수집`}
+    >
+      {timeAgo(checkedAt)} 수집{stale ? " · 지연" : ""}
     </span>
+  );
+}
+
+/** 그룹 전체에서 가장 최근 수집 시각 ISO 반환 (없으면 null) */
+export function freshestCheckedAt(groups: DestinationGroup[]): string | null {
+  let best: number | null = null;
+  let bestIso: string | null = null;
+  for (const g of groups) {
+    for (const deal of [...g.top_deals, ...g.diverse_deals]) {
+      if (!deal.last_checked_at) continue;
+      const t = new Date(deal.last_checked_at).getTime();
+      if (isNaN(t)) continue;
+      if (best == null || t > best) { best = t; bestIso = deal.last_checked_at; }
+    }
+  }
+  return bestIso;
+}
+
+/** 데이터 신선도 배너. 수집이 지연되면 주황 경고, 정상이면 옅은 안내. */
+export function FreshnessBanner({ groups }: { groups: DestinationGroup[] }) {
+  const iso = freshestCheckedAt(groups);
+  if (!iso) return null;
+  const stale = hoursSince(iso) >= STALE_HOURS;
+  if (stale) {
+    return (
+      <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-apple-orange/10 text-apple-orange text-xs">
+        <span>⚠</span>
+        <span>수집 지연 · 마지막 갱신 {timeAgo(iso)}. 표시된 가격이 최신이 아닐 수 있습니다.</span>
+      </div>
+    );
+  }
+  return (
+    <p className="text-[11px] text-apple-secondary px-1">데이터 기준 {timeAgo(iso)} 수집</p>
   );
 }
 
