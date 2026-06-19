@@ -48,24 +48,46 @@ jobs:
             # 무중단 재시작 (caddy 포함 풀스택)
             docker compose --profile full up -d
 
-            # 헬스체크: Caddyfile 의 site block 이 `{$DOMAIN}` 에만 매칭되므로
-            # `https://localhost` 로 찌르면 vhost 매칭 실패로 app 까지 도달조차 못 함.
-            # `.env` 의 DOMAIN 을 읽어 curl --resolve 로 DNS+SNI+Host 를 실제
-            # 도메인에 핀하되 연결만 127.0.0.1 로 보내 Caddy 가 정상 라우팅하도록 한다.
-            # `docker compose up` 직후 Caddy upstream 재바인딩 race 가 있어 retry.
+            # 1) app 이 컨테이너 내부에서 실제로 :8000 을 열었는지 직접 확인.
+            #    기존엔 Caddy 경유 curl 로만 판정했는데, app 재생성으로 IP 가 바뀌면
+            #    Caddy 가 새 IP 로 재해석하는 데 시간이 걸려 app 이 멀쩡해도 헬스체크
+            #    창이 끝나 '거짓 실패' 가 났다. app 포트를 직접 찔러 Caddy 레이스와 분리.
+            echo "Waiting for app to listen on :8000 (direct, bypassing Caddy)..."
+            for i in $(seq 1 40); do
+              if docker compose --profile full exec -T app \
+                  python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/config', timeout=5)" >/dev/null 2>&1; then
+                echo "app ready (attempt $i)"
+                break
+              fi
+              if [ "$i" -eq 40 ]; then
+                echo "app failed to become ready"
+                docker compose --profile full logs --tail=80 app
+                exit 1
+              fi
+              sleep 3
+            done
+
+            # 2) app/mcp 가 새 IP 를 받았을 수 있으므로 Caddy 를 재시작해 upstream 재해석.
+            #    이게 빠지면 Caddy 가 죽은 옛 IP 를 물고 있어 502 가 지속된다(지금까지
+            #    수동 restart 로 풀던 현상). restart 시 caddy 가 upstream 을 다시 DNS 해석한다.
+            echo "Restarting caddy to re-resolve upstreams..."
+            docker compose --profile full restart caddy
+
+            # 3) 최종 end-to-end 스모크 (도메인 경유). Caddyfile site block 이 `{$DOMAIN}`
+            #    에만 매칭되므로 .env 의 DOMAIN 을 읽어 --resolve 로 DNS+SNI+Host 를 실제
+            #    도메인에 핀하되 연결만 127.0.0.1 로 보낸다.
             DOMAIN=$(grep -E '^DOMAIN=' .env 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"' | tr -d "'")
             : "${DOMAIN:=flight-friend.com}"
-            echo "Health check target: https://${DOMAIN} (via --resolve to 127.0.0.1)"
-
-            for i in $(seq 1 30); do
+            echo "End-to-end health check: https://${DOMAIN} (via --resolve to 127.0.0.1)"
+            for i in $(seq 1 20); do
               if curl -fsSk --max-time 5 \
                   --resolve "${DOMAIN}:443:127.0.0.1" \
                   "https://${DOMAIN}/api/config" > /dev/null 2>&1; then
-                echo "App deploy OK (attempt $i)"
+                echo "App end-to-end OK (attempt $i)"
                 break
               fi
-              if [ "$i" -eq 30 ]; then
-                echo "App health check failed after 30 attempts"
+              if [ "$i" -eq 20 ]; then
+                echo "App end-to-end check failed after 20 attempts"
                 docker compose --profile full logs --tail=80 app caddy
                 exit 1
               fi
@@ -74,7 +96,7 @@ jobs:
 
             # MCP: Caddy auth guard 가 Bearer 토큰 없는 요청에 401 반환하면 정상.
             # SSE 엔드포인트 hang 방지 위해 --max-time 필수.
-            for i in $(seq 1 30); do
+            for i in $(seq 1 20); do
               code=$(curl -sk --max-time 5 \
                   --resolve "${DOMAIN}:443:127.0.0.1" \
                   -o /dev/null -w "%{http_code}" \
@@ -83,8 +105,8 @@ jobs:
                 echo "MCP deploy OK (attempt $i, code=$code)"
                 break
               fi
-              if [ "$i" -eq 30 ]; then
-                echo "MCP health check failed after 30 attempts (last code=$code)"
+              if [ "$i" -eq 20 ]; then
+                echo "MCP health check failed after 20 attempts (last code=$code)"
                 docker compose --profile full logs --tail=80 mcp caddy
                 exit 1
               fi
