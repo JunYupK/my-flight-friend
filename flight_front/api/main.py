@@ -253,6 +253,55 @@ def get_monitor_coverage(days: int = Query(14, ge=1, le=90)):
     return result
 
 
+@app.get("/api/monitor/system")
+def get_system_stats():
+    """OCI 호스트의 CPU/메모리/디스크 사용률.
+
+    app 컨테이너에서 psutil로 읽는다. CPU·메모리는 컨테이너에서도 호스트 /proc을
+    그대로 반영한다(메모리 cgroup 제한 없음). 디스크는 docker-compose에서 호스트
+    루트를 /hostfs로 마운트했을 때 그 경로의 사용률을, 마운트가 없으면 컨테이너 '/'를
+    조회한다(이 경우 호스트 실사용량과 다를 수 있음).
+    """
+    try:
+        import psutil
+    except Exception as e:  # 이미지에 psutil 미설치 등
+        raise HTTPException(status_code=503, detail=f"psutil unavailable: {e}")
+
+    cpu_percent = psutil.cpu_percent(interval=0.3)
+    vm = psutil.virtual_memory()
+
+    disk_path = "/hostfs" if os.path.exists("/hostfs") else "/"
+    du = psutil.disk_usage(disk_path)
+
+    try:
+        load1, load5, load15 = os.getloadavg()
+    except OSError:
+        load1 = load5 = load15 = 0.0
+
+    return {
+        "cpu": {
+            "percent": round(cpu_percent, 1),
+            "cores": psutil.cpu_count(),
+            "load1": round(load1, 2),
+            "load5": round(load5, 2),
+            "load15": round(load15, 2),
+        },
+        "memory": {
+            "total": vm.total,
+            "used": vm.used,
+            "available": vm.available,
+            "percent": vm.percent,
+        },
+        "disk": {
+            "total": du.total,
+            "used": du.used,
+            "free": du.free,
+            "percent": du.percent,
+            "host": disk_path == "/hostfs",
+        },
+    }
+
+
 # ── Results ───────────────────────────────────────────────
 
 @app.get("/api/results")

@@ -135,3 +135,26 @@ export interface CoverageResponse {
   by_destination_month: CoverageByDestMonth[];
   by_run: CoverageByRun[];
 }
+
+export interface SystemStats {
+  cpu: {
+    percent: number;
+    cores: number;
+    load1: number;
+    load5: number;
+    load15: number;
+  };
+  memory: {
+    total: number;
+    used: number;
+    available: number;
+    percent: number;
+  };
+  disk: {
+    total: number;
+    used: number;
+    free: number;
+    percent: number;
+    host: boolean;
+  };
+}
