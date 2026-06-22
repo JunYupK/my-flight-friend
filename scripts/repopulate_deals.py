@@ -30,9 +30,7 @@ import psycopg2.extras
 
 import flight_monitor.config  # noqa: F401
 from flight_monitor.config_db import apply_db_config
-from flight_monitor.storage import get_conn, save_deals, init_db
-from flight_monitor.offer_utils import combine_roundtrips
-from flight_monitor.config import SEARCH_CONFIG, ORIGIN
+from flight_monitor.storage import get_conn, init_db, load_legs_for_combine, materialize_deals_for_route
 
 
 def main():
@@ -78,38 +76,18 @@ def main():
         dest = combo["destination"]
         dest_name = combo["destination_name"] or dest
 
-        with get_conn() as conn:
-            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            cur.execute("""
-                SELECT date, direction, airline, dep_time, arr_time,
-                       duration_min, stops, dep_airport, arr_airport,
-                       price, booking_url, search_url
-                FROM flight_legs
-                WHERE source = %s AND destination = %s AND date >= %s
-                ORDER BY date, direction, price
-            """, (src, dest, today))
-            legs = [dict(r) for r in cur.fetchall()]
-
-        out_flights = [leg for leg in legs if leg["direction"] == "out"]
-        in_flights  = [leg for leg in legs if leg["direction"] == "in"]
+        out_flights, in_flights = load_legs_for_combine(src, dest, since=today)
 
         if not out_flights or not in_flights:
             print(f"  [{src}] {dest}: out={len(out_flights)}, in={len(in_flights)} — 스킵 (한쪽 레그 없음)")
             skipped += 1
             continue
 
-        offers = combine_roundtrips(
-            out_flights, in_flights,
-            source=src, origin=ORIGIN,
-            destination=dest, destination_name=dest_name,
-            stay_durations=SEARCH_CONFIG["stay_durations"],
-            topk=SEARCH_CONFIG["topk_per_date"],
-        )
+        n = materialize_deals_for_route(src, dest, dest_name)
 
-        if offers:
-            save_deals(offers)
-            total_deals += len(offers)
-            print(f"  [{src}] {dest}: {len(offers)}건 저장")
+        if n:
+            total_deals += n
+            print(f"  [{src}] {dest}: {n}건 저장")
         else:
             print(f"  [{src}] {dest}: 왕복 조합 0건 — out/in 날짜 겹침 없음 "
                   f"(out {len(out_flights)}건, in {len(in_flights)}건)")

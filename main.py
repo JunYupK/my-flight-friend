@@ -15,7 +15,7 @@ apply_db_config()
 
 from flight_monitor.collector_google_flights import fetch_google_flights_offers
 from flight_monitor.collector_naver          import fetch_naver_offers
-from flight_monitor.storage                  import init_db, should_notify, record_alert, start_collection_run, finish_collection_run, save_deals, cleanup_old_data
+from flight_monitor.storage                  import init_db, should_notify, record_alert, start_collection_run, finish_collection_run, materialize_deals_for_route, cleanup_old_data
 from flight_monitor.notifier                 import notify, send_alert
 from flight_monitor.config                   import SEARCH_CONFIG
 
@@ -47,11 +47,12 @@ def _collect_and_alert(run_id: int):
     alerts_sent = 0
 
     # --- Google Flights + Naver 병렬 수집 ---
-    # on_route_done=save_deals: 공항별 수집 완료 즉시 deals를 증분 갱신한다.
-    # run이 중간에 죽어도 완료된 공항만큼은 사이트에 신선하게 반영 → 유사 장애 방지.
+    # on_route_done=materialize_deals_for_route: 공항별 수집 완료 즉시 그 노선의 deals를
+    # flight_legs 전체에서 재조합해 갱신한다. run이 중간에 죽어도 완료된 공항만큼은 사이트에
+    # 신선하게 반영되고, 슬라이싱으로 레그가 여러 run에 흩어져도 deals 누락이 없다.
     with ThreadPoolExecutor(max_workers=2) as pool:
-        gf_future: Future = pool.submit(fetch_google_flights_offers, save_deals)
-        nv_future: Future = pool.submit(fetch_naver_offers, save_deals)
+        gf_future: Future = pool.submit(fetch_google_flights_offers, materialize_deals_for_route)
+        nv_future: Future = pool.submit(fetch_naver_offers, materialize_deals_for_route)
 
     gf_offers: list[dict] = []
     nv_offers: list[dict] = []
@@ -85,12 +86,10 @@ def _collect_and_alert(run_id: int):
         print(msg)
         send_alert(f"[항공권 모니터] 수집 결과 0건 경고\n{msg}")
 
-    # --- deals 사전계산 저장 (읽기 최적화) ---
-    try:
-        save_deals(all_offers)
-    except Exception as e:
-        errors.append(f"save_deals 에러: {e}\n{traceback.format_exc()}")
-        print(f"[{_ts()}] [ERROR] save_deals 실패: {e}")
+    # deals 사전계산 저장은 노선별 on_route_done(materialize_deals_for_route)에서
+    # flight_legs 전체 기준으로 이미 수행됐다. 여기서 all_offers(이번 tick의 in-memory
+    # 부분집합)를 다시 save_deals 하면 완성된 deals를 부분집합으로 덮어써 누락이 재발하므로
+    # 하지 않는다. all_offers는 아래 알림 판정에만 사용한다.
 
     # --- 알림 처리 (목적지 × 출발월 단위 집약) ---
     # all_offers를 (destination, month)별 최저가 1건으로 줄여서 알림 폭주 방지.
