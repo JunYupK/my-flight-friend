@@ -3,14 +3,15 @@
 import json
 import os
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from flight_monitor.config import KST
 
 import psycopg2
 import psycopg2.extras
 from dotenv import load_dotenv
 
-from .config import SEARCH_CONFIG
+from .config import ORIGIN, SEARCH_CONFIG
+from .offer_utils import combine_roundtrips
 
 load_dotenv()
 
@@ -507,6 +508,58 @@ def save_legs(legs: list[dict]):
                 checked_at  = EXCLUDED.checked_at
         """, flight_rows)
 
+
+
+def load_legs_for_combine(
+    source: str, destination: str, since: str | None = None
+) -> tuple[list[dict], list[dict]]:
+    """flight_legs(단일 진실원)에서 (source, destination)의 since(기본 오늘) 이후 편도
+    레그를 읽어 (out_flights, in_flights)로 반환.
+
+    라이브 수집이 deals를 'in-memory tick 조각'이 아니라 DB 전체에서 조합하도록 한다.
+    sweep 슬라이싱 + skip_set은 왕복쌍의 out-leg(출발일)와 in-leg(복귀일=D+3/4/5)를
+    서로 다른 run에 흩어놓는데, 한 run의 메모리만으로 조합하면 그 쌍이 만나지 못해
+    deal이 누락됐다. DB에서 전체를 읽어 조합하면 누락이 사라진다.
+    """
+    since = since or date.today().isoformat()
+    with get_conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("""
+            SELECT date, direction, airline, dep_time, arr_time,
+                   duration_min, stops, dep_airport, arr_airport,
+                   price, booking_url, search_url
+            FROM flight_legs
+            WHERE source = %s AND destination = %s AND date >= %s
+            ORDER BY date, direction, price
+        """, (source, destination, since))
+        legs = [dict(r) for r in cur.fetchall()]
+    out_flights = [leg for leg in legs if leg["direction"] == "out"]
+    in_flights  = [leg for leg in legs if leg["direction"] == "in"]
+    return out_flights, in_flights
+
+
+def materialize_deals_for_route(
+    source: str, destination: str, destination_name: str | None = None
+) -> int:
+    """(source, destination)의 미래 deals를 flight_legs 전체에서 재조합해 저장.
+
+    노선별 수집 완료 콜백(on_route_done)으로 호출된다. repopulate 스크립트와 동일하게
+    DB를 기준으로 조합하므로, 슬라이싱·skip_set·부분 실패로 레그가 여러 run에 흩어져도
+    deals가 flight_legs와 항상 일치한다. 저장된 offer 수를 반환한다.
+    """
+    out_flights, in_flights = load_legs_for_combine(source, destination)
+    if not out_flights or not in_flights:
+        return 0
+    offers = combine_roundtrips(
+        out_flights, in_flights,
+        source=source, origin=ORIGIN,
+        destination=destination, destination_name=destination_name or destination,
+        stay_durations=SEARCH_CONFIG["stay_durations"],
+        topk=SEARCH_CONFIG["topk_per_date"],
+    )
+    if offers:
+        save_deals(offers)
+    return len(offers)
 
 
 def save_deals(offers: list[dict]):

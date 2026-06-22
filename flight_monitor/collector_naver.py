@@ -252,9 +252,12 @@ async def _fetch_airport(
             offers = await _fetch_route(
                 crawler, airport_code, airport_name, start_date, end_date, skip_set
             )
-        if on_route_done and offers:
+        # deals는 flight_legs 전체에서 재조합한다 (on_route_done=materialize_deals_for_route).
+        # save_legs로 이번 tick분이 DB에 반영된 뒤 호출되므로, 슬라이싱으로 out/in 레그가
+        # 여러 run에 흩어져도 왕복쌍 누락 없이 deals가 완성된다.
+        if on_route_done:
             loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, on_route_done, offers)
+            await loop.run_in_executor(None, on_route_done, SOURCE, airport_code, airport_name)
         print(f"[Naver] {airport_code}: {len(offers)}건")
         return offers
 
