@@ -723,3 +723,56 @@ def get_run_detail(run_id: int) -> dict | None:
         cur.execute("SELECT * FROM collection_runs WHERE id = %s", (run_id,))
         row = cur.fetchone()
         return dict(row) if row else None
+
+
+def get_deals_coverage() -> dict:
+    """deals 테이블 진단: 목적지×월별 deal 수 + flight_legs 방향별 레그 수 +
+    flight_legs엔 있으나 deals엔 없는 목적지 목록을 반환한다.
+
+    수집 데이터가 deals에 제대로 반영됐는지(크롤 부분실패 vs 조합 실패) 구분하는
+    진단용. 모두 출발일이 오늘 이후인 행만 대상으로 한다.
+    """
+    with get_conn() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        cur.execute("""
+            SELECT destination, destination_name,
+                   LEFT(departure_date, 7) AS month,
+                   COUNT(*) AS deal_count,
+                   MIN(min_price) AS best_price,
+                   MAX(last_checked_at) AS last_updated
+            FROM deals
+            WHERE departure_date >= to_char(NOW(), 'YYYY-MM-DD')
+            GROUP BY destination, destination_name, month
+            ORDER BY destination, month
+        """)
+        deals_rows = [dict(r) for r in cur.fetchall()]
+
+        cur.execute("""
+            SELECT destination, destination_name, direction,
+                   COUNT(DISTINCT date) AS distinct_dates,
+                   COUNT(*) AS total_legs
+            FROM flight_legs
+            WHERE date >= to_char(NOW(), 'YYYY-MM-DD')
+            GROUP BY destination, destination_name, direction
+            ORDER BY destination, direction
+        """)
+        legs_rows = [dict(r) for r in cur.fetchall()]
+
+        cur.execute("""
+            SELECT DISTINCT fl.destination, fl.destination_name
+            FROM flight_legs fl
+            WHERE fl.date >= to_char(NOW(), 'YYYY-MM-DD')
+              AND fl.destination NOT IN (
+                  SELECT DISTINCT destination FROM deals
+                  WHERE departure_date >= to_char(NOW(), 'YYYY-MM-DD')
+              )
+            ORDER BY fl.destination
+        """)
+        missing_rows = [dict(r) for r in cur.fetchall()]
+
+    return {
+        "deals_by_dest_month": deals_rows,
+        "legs_by_dest_direction": legs_rows,
+        "missing_from_deals": missing_rows,
+    }

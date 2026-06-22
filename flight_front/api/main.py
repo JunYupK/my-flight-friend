@@ -19,7 +19,7 @@ from pydantic import BaseModel
 import psycopg2.extras
 
 from flight_monitor.config_db import apply_db_config, read_config, write_config
-from flight_monitor.storage import init_db, get_conn, get_airports, get_recent_runs, get_run_detail
+from flight_monitor.storage import init_db, get_conn, get_airports, get_recent_runs, get_run_detail, get_deals_coverage
 
 from . import run_state
 from .deals_cache import query_deals, query_timing_seasonal_cached, query_timing_advance_cached, _cache_get, _cache_set
@@ -260,59 +260,10 @@ def get_monitor_coverage(days: int = Query(14, ge=1, le=90)):
 
 
 @app.get("/api/monitor/deals")
-def get_deals_coverage():
-    """deals 테이블 현황: 목적지 × 월별 deal 수.
-
-    수집 데이터가 deals에 제대로 반영됐는지 확인하는 진단용 엔드포인트.
-    flight_legs에 있지만 deals에 없는 목적지도 함께 표시해 누락 원인을 파악한다.
-    """
-    with get_conn() as conn:
-        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-
-        # deals 현황
-        cur.execute("""
-            SELECT destination, destination_name,
-                   LEFT(departure_date, 7) AS month,
-                   COUNT(*) AS deal_count,
-                   MIN(min_price) AS best_price,
-                   MAX(last_checked_at) AS last_updated
-            FROM deals
-            WHERE departure_date >= to_char(NOW(), 'YYYY-MM-DD')
-            GROUP BY destination, destination_name, month
-            ORDER BY destination, month
-        """)
-        deals_rows = [dict(r) for r in cur.fetchall()]
-
-        # flight_legs 현황 (목적지 × 방향별 레그 수)
-        cur.execute("""
-            SELECT destination, destination_name, direction,
-                   COUNT(DISTINCT date) AS distinct_dates,
-                   COUNT(*) AS total_legs
-            FROM flight_legs
-            WHERE date >= to_char(NOW(), 'YYYY-MM-DD')
-            GROUP BY destination, destination_name, direction
-            ORDER BY destination, direction
-        """)
-        legs_rows = [dict(r) for r in cur.fetchall()]
-
-        # deals에 없는 목적지 (flight_legs에는 있는데 deals엔 없음)
-        cur.execute("""
-            SELECT DISTINCT fl.destination, fl.destination_name
-            FROM flight_legs fl
-            WHERE fl.date >= to_char(NOW(), 'YYYY-MM-DD')
-              AND fl.destination NOT IN (
-                  SELECT DISTINCT destination FROM deals
-                  WHERE departure_date >= to_char(NOW(), 'YYYY-MM-DD')
-              )
-            ORDER BY fl.destination
-        """)
-        missing_rows = [dict(r) for r in cur.fetchall()]
-
-    return {
-        "deals_by_dest_month": deals_rows,
-        "legs_by_dest_direction": legs_rows,
-        "missing_from_deals": missing_rows,
-    }
+def get_deals_coverage_endpoint():
+    """deals 테이블 진단: 목적지×월별 deal 수 + flight_legs 방향별 레그 수 +
+    flight_legs엔 있으나 deals엔 없는 목적지. 수집 데이터가 deals에 반영됐는지 확인용."""
+    return get_deals_coverage()
 
 
 @app.get("/api/monitor/system")
