@@ -508,34 +508,22 @@ def save_legs(legs: list[dict]):
         """, flight_rows)
 
 
-# (source, destination)별로 보관할 최저가 조합 수. 조합 폭발(수십만 row)을 막고
-# /api/results가 보여주는 목적지당 top-200을 충분히 커버한다.
-_DEALS_TOPN_PER_SOURCE_DEST = 300
-
 
 def save_deals(offers: list[dict]):
     """왕복 조합 offer를 deals 테이블에 사전계산 저장 (읽기 최적화).
 
-    offers에 등장한 (source, destination)만 DELETE 후 INSERT → 원자 교체.
-    공항별 증분 호출(on_route_done)에서도 다른 목적지의 deal을 지우지 않으므로,
-    run이 중간에 죽어도 완료된 공항만큼은 deals가 신선하게 갱신된다.
-    특정 (source, destination)이 0건이면 그 조합은 호출에 등장하지 않아
-    이전 deals가 유지된다 (graceful degradation).
-    (source, destination)별 가격 오름차순 top-N만 보관.
+    offers에 등장한 (source, destination, departure_date)만 DELETE 후 INSERT → 원자 교체.
+    sweep 슬라이싱으로 한 run이 일부 달만 수집해도, 이번에 재수집한 출발일만 교체하고
+    다른 달의 deal은 보존한다 → deals가 하루 cron 주기에 걸쳐 전체 기간을 누적한다.
+    (이전엔 (source, destination) 단위로 지워, 슬라이싱과 결합 시 마지막 슬라이스의
+    달만 남아 가까운 달 화면이 비던 버그가 있었다.) 출발일별 topk 절단은 호출 전
+    combine_roundtrips가 이미 적용하므로 여기서 별도 상한은 두지 않는다.
     """
     if not offers:
         return
 
-    grouped: dict[tuple[str, str], list[dict]] = {}
-    for o in offers:
-        grouped.setdefault((o["source"], o["destination"]), []).append(o)
-
-    bounded: list[dict] = []
-    for items in grouped.values():
-        items.sort(key=lambda x: x["price"])
-        bounded.extend(items[:_DEALS_TOPN_PER_SOURCE_DEST])
-
-    pairs = sorted({(o["source"], o["destination"]) for o in offers})
+    # 이번에 재수집한 (source, destination, departure_date) — 이 날짜들만 교체한다.
+    keys = sorted({(o["source"], o["destination"], o["departure_date"]) for o in offers})
 
     rows = [
         (
@@ -551,17 +539,19 @@ def save_deals(offers: list[dict]):
             o.get("out_price"), o.get("in_price"), o["price"],
             o["checked_at"],
         )
-        for o in bounded
+        for o in offers
     ]
 
     with get_conn() as conn:
         cur = conn.cursor()
-        # offers에 등장한 (source, destination)만 교체. 증분 호출 안전.
+        # offers에 등장한 (source, destination, departure_date)만 교체. 슬라이스가
+        # 건드리지 않은 다른 달은 보존한다.
         psycopg2.extras.execute_values(
             cur,
-            "DELETE FROM deals USING (VALUES %s) AS t(source, destination) "
-            "WHERE deals.source = t.source AND deals.destination = t.destination",
-            pairs,
+            "DELETE FROM deals USING (VALUES %s) AS t(source, destination, departure_date) "
+            "WHERE deals.source = t.source AND deals.destination = t.destination "
+            "AND deals.departure_date = t.departure_date",
+            keys,
         )
         psycopg2.extras.execute_batch(cur, """
             INSERT INTO deals
@@ -580,11 +570,22 @@ def save_deals(offers: list[dict]):
 
 
 def cleanup_old_data():
-    """raw_legs 90일 보존 정리. append-only 테이블의 무한 증가를 막는다."""
+    """raw_legs 90일 보존 + deals 과거/만료 행 정리.
+
+    save_deals가 (source,destination,departure_date) 단위로만 교체하므로, 출발일이
+    지나 더는 재수집되지 않는 deal 행이 잔류한다. 출발일이 지났거나 14일 넘게 갱신
+    안 된 deal(노선 제거 등)을 정리해 테이블 증가를 막는다.
+    """
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute("DELETE FROM raw_legs WHERE collected_at < NOW() - INTERVAL '90 days'")
-        return cur.rowcount
+        deleted = cur.rowcount
+        cur.execute("""
+            DELETE FROM deals
+            WHERE departure_date < to_char(NOW(), 'YYYY-MM-DD')
+               OR last_checked_at < NOW() - INTERVAL '14 days'
+        """)
+        return deleted
 
 
 def get_collected_today(source: str) -> set[tuple[str, str, str]]:
