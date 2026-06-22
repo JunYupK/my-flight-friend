@@ -90,8 +90,8 @@ def main():
             """, (src, dest, today))
             legs = [dict(r) for r in cur.fetchall()]
 
-        out_flights = [l for l in legs if l["direction"] == "out"]
-        in_flights  = [l for l in legs if l["direction"] == "in"]
+        out_flights = [leg for leg in legs if leg["direction"] == "out"]
+        in_flights  = [leg for leg in legs if leg["direction"] == "in"]
 
         if not out_flights or not in_flights:
             print(f"  [{src}] {dest}: out={len(out_flights)}, in={len(in_flights)} — 스킵 (한쪽 레그 없음)")
