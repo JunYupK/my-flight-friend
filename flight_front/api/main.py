@@ -19,7 +19,7 @@ from pydantic import BaseModel
 import psycopg2.extras
 
 from flight_monitor.config_db import apply_db_config, read_config, write_config
-from flight_monitor.storage import init_db, get_conn, get_airports, get_recent_runs, get_run_detail
+from flight_monitor.storage import init_db, get_conn, get_airports, get_recent_runs, get_run_detail, get_deals_coverage
 
 from . import run_state
 from .deals_cache import query_deals, query_timing_seasonal_cached, query_timing_advance_cached, _cache_get, _cache_set
@@ -257,6 +257,13 @@ def get_monitor_coverage(days: int = Query(14, ge=1, le=90)):
     }
     _cache_set(cache_key, result, ttl=300)  # 5분 — 과거 run 집계는 거의 불변
     return result
+
+
+@app.get("/api/monitor/deals")
+def get_deals_coverage_endpoint():
+    """deals 테이블 진단: 목적지×월별 deal 수 + flight_legs 방향별 레그 수 +
+    flight_legs엔 있으나 deals엔 없는 목적지. 수집 데이터가 deals에 반영됐는지 확인용."""
+    return get_deals_coverage()
 
 
 @app.get("/api/monitor/system")
