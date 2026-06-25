@@ -44,4 +44,11 @@ SEARCH_CONFIG = {
     # GF는 차단/타임아웃 시 wait_for가 page_timeout을 URL마다 꽉 채워 run 시간을 폭증시킨다.
     # GF 정상 로드는 scroll(~7.5s)+goto/wait이 각각 timeout 미만이라 15s로도 충분 → fast-fail.
     "gf_page_timeout_ms": 15000,
+
+    # 렌더 비용 절감 (CPU 병목 완화). 가격/시간/항공사는 모두 DOM 텍스트라 이미지·웹폰트
+    # 불필요 → Chromium에서 차단해 렌더·디코딩 CPU를 줄인다. CSS/JS는 SPA 렌더·셀렉터에
+    # 필요하므로 끄지 않는다. 추출이 깨지면 False로 되돌려 즉시 롤백.
+    "crawler_block_images": True,
+    # 렌더 픽셀 수를 줄여 레이아웃 CPU 절감 (1920×1080 → 1280×800, ~50%). 데스크톱 폭 유지.
+    "crawler_viewport": {"width": 1280, "height": 800},
 }

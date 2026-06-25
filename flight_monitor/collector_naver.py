@@ -21,13 +21,13 @@ if TYPE_CHECKING:
     from crawl4ai import AsyncWebCrawler
 
 try:
-    from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig  # noqa: F811
+    from crawl4ai import AsyncWebCrawler, CrawlerRunConfig  # noqa: F811
     _CRAWL4AI_AVAILABLE = True
 except ImportError:
     _CRAWL4AI_AVAILABLE = False
 
 from .config import JAPAN_AIRPORTS, SEARCH_CONFIG, KST
-from .crawler_utils import compute_sweep_window, crawl_one_way_batches, make_scroll_js
+from .crawler_utils import compute_sweep_window, crawl_one_way_batches, make_browser_config, make_scroll_js
 from .offer_utils import combine_roundtrips
 
 ORIGIN = "ICN"
@@ -267,16 +267,7 @@ async def _fetch_all(on_route_done=None) -> list[dict]:
         print("[Naver] crawl4ai 미설치, 수집 스킵")
         return []
 
-    browser_config = BrowserConfig(
-        headless=True,
-        viewport={"width": 1920, "height": 1080},
-        extra_args=[
-            "--disable-blink-features=AutomationControlled",
-            "--no-sandbox",
-            "--disable-dev-shm-usage",
-            "--disable-gpu",
-        ],
-    )
+    browser_config = make_browser_config()
 
     if not JAPAN_AIRPORTS:
         print("[Naver] JAPAN_AIRPORTS 비어 있음 — airports 테이블 확인 필요")

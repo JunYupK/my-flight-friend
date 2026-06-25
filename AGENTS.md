@@ -222,6 +222,9 @@ pytest tests/test_notifier.py::TestSendAlertFallback          # fallback 검증
 - 병렬 공항 수: `SEARCH_CONFIG["parallel_airports"]` (기본 3)
 - 오늘 이미 수집한 레그는 `get_collected_today()`로 스킵 (중복 요청 방지)
 - crawl4ai `wait_for` 셀렉터 변경 시 반드시 해당 collector mock 테스트도 업데이트
+- **BrowserConfig는 `crawler_utils.make_browser_config()` 공유 헬퍼로 생성** (google·naver 공통). headless 크롤은 CPU-bound이므로 렌더 비용을 여기서 튜닝한다:
+  - `SEARCH_CONFIG["crawler_block_images"]` (기본 True): 이미지·웹폰트 로딩 차단(`--blink-settings=imagesEnabled=false`, `--disable-remote-fonts`). 가격 데이터는 DOM 텍스트라 무손실. **추출이 깨지면 False로 롤백.**
+  - `SEARCH_CONFIG["crawler_viewport"]` (기본 1280×800): 렌더 픽셀 수 = 레이아웃 CPU. 반응형 breakpoint 위험 있어 변경 시 leg 수 실측 검증.
 
 ### 캐시
 
