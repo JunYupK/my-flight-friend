@@ -12,8 +12,10 @@ import math
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Callable
 
+from .config import SEARCH_CONFIG
+
 if TYPE_CHECKING:
-    from crawl4ai import AsyncWebCrawler, CrawlerRunConfig
+    from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig
 
 
 def _add_months(base: date, months: int) -> date:
@@ -57,6 +59,36 @@ def compute_sweep_window(
     _, last_day = calendar.monthrange(last_month_first.year, last_month_first.month)
     end_date = date(last_month_first.year, last_month_first.month, last_day) + timedelta(days=max_stay)
     return start_date, end_date
+
+
+def make_browser_config() -> "BrowserConfig":
+    """Google Flights·Naver 공통 BrowserConfig. 렌더 비용 절감 옵션을 config 기반으로 적용.
+
+    crawl4ai는 CI(미설치)에서도 모듈 import가 가능해야 하므로 BrowserConfig는 함수 내부에서
+    lazy import한다 (collector들의 _CRAWL4AI_AVAILABLE try/except와 동일 원칙).
+    """
+    from crawl4ai import BrowserConfig
+
+    extra_args = [
+        "--disable-blink-features=AutomationControlled",
+        "--no-sandbox",             # Docker/CI에서 root 실행 시 필수
+        "--disable-dev-shm-usage",  # Docker /dev/shm 64MB 제한 우회
+        "--disable-gpu",            # 서버 환경 GPU 없음 → 렌더가 전부 CPU로 떨어짐
+    ]
+    if SEARCH_CONFIG.get("crawler_block_images", False):
+        # 이미지·웹폰트 차단으로 렌더/디코딩/네트워크 CPU 절감. 가격·시간·항공사는 DOM 텍스트라 무손실.
+        extra_args += [
+            "--blink-settings=imagesEnabled=false",
+            "--disable-remote-fonts",
+        ]
+
+    viewport = SEARCH_CONFIG.get("crawler_viewport") or {"width": 1920, "height": 1080}
+
+    return BrowserConfig(
+        headless=True,
+        viewport=viewport,
+        extra_args=extra_args,
+    )
 
 
 def make_scroll_js() -> str:

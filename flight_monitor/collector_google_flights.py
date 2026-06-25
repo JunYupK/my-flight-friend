@@ -23,13 +23,13 @@ if TYPE_CHECKING:
     from crawl4ai import AsyncWebCrawler
 
 try:
-    from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig  # noqa: F811
+    from crawl4ai import AsyncWebCrawler, CrawlerRunConfig  # noqa: F811
     _CRAWL4AI_AVAILABLE = True
 except ImportError:
     _CRAWL4AI_AVAILABLE = False
 
 from .config import ORIGIN, JAPAN_AIRPORTS, SEARCH_CONFIG, TFS_TEMPLATES
-from .crawler_utils import compute_sweep_window, crawl_one_way_batches, make_scroll_js
+from .crawler_utils import compute_sweep_window, crawl_one_way_batches, make_browser_config, make_scroll_js
 from .offer_utils import combine_roundtrips
 
 _TFS_DATE_RE = re.compile(rb"\d{4}-\d{2}-\d{2}")
@@ -510,16 +510,7 @@ async def _fetch_all(on_route_done=None) -> list[dict]:
         print("[GoogleFlights] crawl4ai 미설치, 수집 스킵")
         return []
 
-    browser_config = BrowserConfig(
-        headless=True,
-        viewport={"width": 1920, "height": 1080},
-        extra_args=[
-            "--disable-blink-features=AutomationControlled",
-            "--no-sandbox",           # Docker/CI에서 root 실행 시 필수
-            "--disable-dev-shm-usage",  # Docker /dev/shm 64MB 제한 우회
-            "--disable-gpu",           # 서버 환경 GPU 없음
-        ],
-    )
+    browser_config = make_browser_config()
 
     if not JAPAN_AIRPORTS:
         print("[GoogleFlights] JAPAN_AIRPORTS 비어 있음 — airports 테이블 확인 필요")
