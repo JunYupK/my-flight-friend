@@ -73,4 +73,4 @@
 - 결정 / 발견:
   - 기존 V1 테스트들처럼 `tests/v2/` 아래 파일에서도 `sys.path.insert(0, ...)`로 프로젝트 루트를 직접 추가해야 임포트가 됨 (레포에 패키지 설치/`pyproject.toml` 없음, top-level `conftest.py`도 없음). `tests/v2/conftest.py`와 `tests/v2/test_db.py` 양쪽에 추가.
   - 인덱스 4개(`search_runs(status, requested_at)`, `snapshots(trip_id, observed_at)`, `leg_quotes(snapshot_id)`, `rt_quotes(snapshot_id)`)와 `alerts(trip_id, kind, sent_at)` 모두 브리프 지시대로 생성. 모든 FK `ON DELETE CASCADE`.
-- 다음 작업자에게: Task 2로 진행. `flight_friend/db.py`의 `init_schema()`는 append-only 스키마 전제이므로 이후 task에서 UPDATE 로직을 넣지 말 것(스펙 §9.3).
+- 다음 작업자에게: Task 2로 진행. `snapshots`/`leg_quotes`/`rt_quotes`는 append-only이므로 UPDATE 로직을 넣지 말 것(스펙 §9.3). 단 `trips`(prefs/tracking/target_price 수정)와 `search_runs`(status 전이)는 이후 task에서 정상적으로 UPDATE 대상이다.
