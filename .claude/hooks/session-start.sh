@@ -1,5 +1,5 @@
 #!/bin/bash
-# SessionStart hook: .env에서 MCP_API_KEY를 읽어 settings.json에 MCP 서버 설정 주입
+# SessionStart hook: .env에서 MCP_API_KEY를 읽어 settings.local.json(gitignore)에 MCP 서버 설정 주입
 
 # 1) 환경변수에서 먼저 확인 (Claude Code 웹 Environment 설정)
 # 2) 없으면 .env 파일에서 읽기 (로컬/OCI 서버)
@@ -15,7 +15,7 @@ python3 -c "
 import json, pathlib, os
 
 key = os.environ['MCP_KEY']
-p = pathlib.Path('.claude/settings.json')
+p = pathlib.Path('.claude/settings.local.json')
 cfg = json.loads(p.read_text()) if p.exists() else {}
 cfg['mcpServers'] = {
     'flight-friend': {
