@@ -17,7 +17,7 @@
 
 - 설계: `docs/superpowers/specs/2026-09-28-flight-friend-v2-design.md` (합의 완료)
 - 구현 계획: `docs/superpowers/plans/2026-09-28-flight-friend-v2-m1.md` (M1, 17 tasks — 사용자 검토 대기, 실행 전)
-- 다음 task: Task 3
+- 다음 task: Task 4
 - 진행 중인 외부 작업: OCI 반복 측정(차단 여부) — 결과로 설계 §5.1 갱신 주기·W 확정 예정
 - 작업 브랜치: `claude/dazzling-shannon-4x04v7`
 
@@ -93,3 +93,24 @@
   - `update_trip`의 SET절은 전달된 인자만 동적으로 조립(빈 경우 UPDATE 미실행) — `prefs`만 넘겨도 `tracking` 등 다른 컬럼은 그대로 유지됨을 테스트로 확인.
   - `expire_stuck_runs`는 만료 시 `finished_at=now()`도 함께 기록(`finish_run`과 동일한 종료 시맨틱 유지) — 브리프에 명시되진 않았으나 "종료된 run은 finished_at을 가진다"는 기존 일관성에 맞춤.
 - 다음 작업자에게: Task 3으로 진행. `search_runs.status`는 `'queued'→'running'→'done'|'error'` 전이만 이 레포 함수들로 이루어지므로, 이후 task에서 직접 SQL로 status를 건드리지 말 것.
+
+## 2026-09-28 — Claude Code — Task 3: Repository — snapshots · quotes · alerts · admin
+
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` (이 항목이 포함된 커밋)
+- 한 일:
+  - `flight_friend/repo.py`에 추가: `save_snapshot`(snapshot 1행 INSERT 후 `execute_values`로 `leg_quotes`/`rt_quotes` 일괄 INSERT, `card_count = len(result.legs) + len(result.rts)`, 한 커넥션/트랜잭션), `load_snapshots`(trip_id 기준, `since` 옵션 필터, `observed_at` 오름차순, 각 snapshot에 legs/rts 채워 반환), `record_alert`/`last_alert`(컨트롤러 재정에 따라 `trip_id: int | None` — `None`은 전역 ops 알림, `trip_id IS NULL`로 매칭), `recent_runs`(run + trip destination + 스냅샷 요약 목록, `requested_at DESC`), `provider_stats`(`observed_at`을 KST로 변환한 날짜 단위 GROUP BY, `days` 윈도로 필터, provider별 ok/empty/blocked/error 카운트).
+  - row→dataclass 헬퍼 2개(`_row_to_leg`, `_row_to_rt`) 기존 패턴에 맞춰 추가.
+  - `tests/v2/test_repo_snapshots.py` 신설 (6 케이스): `test_save_and_load_snapshot_with_quotes`(LegQuote 2건·RtQuote 1건 저장 후 `flight_numbers` 리스트 포함 동일 값 복원), `test_load_snapshots_since_filter`, `test_error_snapshot_has_no_quotes`(status `error`, legs/rts 0, card_count 0), `test_last_alert_returns_latest`(trip 알림과 전역 ops 알림이 서로 섞이지 않음도 확인), `test_provider_stats_counts_by_status`(days 윈도 밖 스냅샷 미포함 확인), `test_recent_runs_includes_snapshot_summaries`(브리프 필수 케이스 외 컨트롤러 재정 2번 커버용으로 추가).
+- 검증:
+  - RED: `DATABASE_URL=... pytest tests/v2/test_repo_snapshots.py -v` → `6 failed` (`AttributeError: module 'flight_friend.repo' has no attribute 'save_snapshot'` 등, 구현 전 전원 AttributeError).
+  - GREEN: `DATABASE_URL=... pytest tests/v2/test_repo_snapshots.py -v` → `6 passed`.
+  - `DATABASE_URL=... pytest tests/v2 -v` → `24 passed`.
+  - 전체 스위트: `DATABASE_URL=... pytest tests/ -v` → `113 passed`(기존 107 + 신규 6, V1/기존 V2 무변경 확인).
+  - `ruff check flight_friend tests/v2` → clean (`ruff check --fix`로 import 정렬 1건·`datetime.UTC` 별칭 7건 자동 수정 후 통과, 재실행으로 테스트 무변경 확인).
+- 결정 / 발견:
+  - 컨트롤러 재정 1: `record_alert`/`last_alert`는 브리프의 `trip_id: int`가 아니라 `trip_id: int | None`로 구현(스키마상 `alerts.trip_id`는 이미 nullable). `trip_id IS NULL`은 `= NULL`이 되지 않으므로 분기 처리.
+  - 컨트롤러 재정 2: `recent_runs`는 제안된 row shape(`{id, trip_id, destination, trigger, status, requested_at, started_at, finished_at, snapshots: [...]}`)를 그대로 사용. run당 별도 쿼리로 snapshots를 채움(브리프에 배치 최적화 요구 없음, run 개수는 `limit` 기본 50으로 소규모).
+  - 컨트롤러 재정 4: `card_count`는 `len(result.legs) + len(result.rts)`로 저장(브리프에 다른 지시 없음), `error`는 `result.error` 그대로 저장.
+  - `provider_stats`는 `observed_at AT TIME ZONE 'Asia/Seoul'`로 KST 변환 후 `::date`로 날짜 추출해 GROUP BY(컨트롤러 재정 3). `days` 윈도는 `now() - (%s || ' days')::interval`로 파라미터화.
+  - `load_snapshots`/`recent_runs` 모두 legs/rts(또는 snapshots) 조회에 N+1 쿼리를 사용 — snapshot/run 개수가 적은 전제(트립당 관측 주기 수 시간 단위)에서 단순성 우선, 성능 이슈 발생 시 이후 task에서 JOIN 집계로 전환 가능.
+- 다음 작업자에게: Task 4로 진행. `snapshots`/`leg_quotes`/`rt_quotes`/`alerts`는 계속 append-only이므로 UPDATE 로직 추가 금지. `recent_runs(limit=3)`의 snapshots 배열(provider/kind/direction/status)은 워커에서 GF 편도 연속 실패 감지에 쓰일 예정이니 필드명 변경 시 주의.

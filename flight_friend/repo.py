@@ -1,13 +1,21 @@
 # flight_friend/repo.py
 
 import json
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Literal
 
-from psycopg2.extras import RealDictCursor, RealDictRow
+from psycopg2.extras import RealDictCursor, RealDictRow, execute_values
 
 from flight_friend.db import get_conn
-from flight_friend.types import Preferences, Run, Trip
+from flight_friend.types import (
+    LegQuote,
+    Preferences,
+    ProviderResult,
+    RtQuote,
+    Run,
+    Snapshot,
+    Trip,
+)
 
 
 def _row_to_trip(row: RealDictRow) -> Trip:
@@ -209,3 +217,262 @@ def has_open_run(trip_id: int) -> bool:
             (trip_id,),
         )
         return cur.fetchone() is not None
+
+
+def _row_to_leg(row: RealDictRow) -> LegQuote:
+    return LegQuote(
+        flight_key=row["flight_key"],
+        airline_iata=row["airline_iata"],
+        airline_name=row["airline_name"],
+        flight_numbers=list(row["flight_numbers"]) if row["flight_numbers"] else [],
+        dep_airport=row["dep_airport"],
+        arr_airport=row["arr_airport"],
+        dep_time=row["dep_time"],
+        arr_time=row["arr_time"],
+        duration_min=row["duration_min"],
+        stops=row["stops"],
+        price=row["price"],
+        booking_url=row["booking_url"],
+        search_url=row["search_url"],
+    )
+
+
+def _row_to_rt(row: RealDictRow) -> RtQuote:
+    return RtQuote(
+        airline_iata=row["airline_iata"],
+        out_flight_key=row["out_flight_key"],
+        total_price=row["total_price"],
+    )
+
+
+def save_snapshot(
+    run_id: int,
+    trip_id: int,
+    provider: str,
+    kind: str,
+    direction: str | None,
+    date_: date,
+    result: ProviderResult,
+    observed_at: datetime,
+) -> int:
+    card_count = len(result.legs) + len(result.rts)
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO snapshots
+                (run_id, trip_id, provider, kind, direction, date, status, card_count, observed_at, error)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+            """,
+            (
+                run_id,
+                trip_id,
+                provider,
+                kind,
+                direction,
+                date_,
+                result.status,
+                card_count,
+                observed_at,
+                result.error,
+            ),
+        )
+        snapshot_id: int = cur.fetchone()[0]
+
+        if result.legs:
+            execute_values(
+                cur,
+                """
+                INSERT INTO leg_quotes
+                    (snapshot_id, flight_key, airline_iata, airline_name, flight_numbers,
+                     dep_airport, arr_airport, dep_time, arr_time, duration_min, stops,
+                     price, booking_url, search_url)
+                VALUES %s
+                """,
+                [
+                    (
+                        snapshot_id,
+                        leg.flight_key,
+                        leg.airline_iata,
+                        leg.airline_name,
+                        leg.flight_numbers,
+                        leg.dep_airport,
+                        leg.arr_airport,
+                        leg.dep_time,
+                        leg.arr_time,
+                        leg.duration_min,
+                        leg.stops,
+                        leg.price,
+                        leg.booking_url,
+                        leg.search_url,
+                    )
+                    for leg in result.legs
+                ],
+            )
+
+        if result.rts:
+            execute_values(
+                cur,
+                """
+                INSERT INTO rt_quotes (snapshot_id, airline_iata, out_flight_key, total_price)
+                VALUES %s
+                """,
+                [
+                    (snapshot_id, rt.airline_iata, rt.out_flight_key, rt.total_price)
+                    for rt in result.rts
+                ],
+            )
+
+        return snapshot_id
+
+
+def load_snapshots(trip_id: int, since: datetime | None = None) -> list[Snapshot]:
+    with get_conn() as conn:
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        if since is not None:
+            cur.execute(
+                """
+                SELECT * FROM snapshots
+                WHERE trip_id = %s AND observed_at >= %s
+                ORDER BY observed_at ASC
+                """,
+                (trip_id, since),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT * FROM snapshots
+                WHERE trip_id = %s
+                ORDER BY observed_at ASC
+                """,
+                (trip_id,),
+            )
+        snapshot_rows = cur.fetchall()
+
+        snapshots: list[Snapshot] = []
+        for row in snapshot_rows:
+            cur.execute("SELECT * FROM leg_quotes WHERE snapshot_id = %s", (row["id"],))
+            legs = [_row_to_leg(leg_row) for leg_row in cur.fetchall()]
+            cur.execute("SELECT * FROM rt_quotes WHERE snapshot_id = %s", (row["id"],))
+            rts = [_row_to_rt(rt_row) for rt_row in cur.fetchall()]
+            snapshots.append(
+                Snapshot(
+                    id=row["id"],
+                    run_id=row["run_id"],
+                    trip_id=row["trip_id"],
+                    provider=row["provider"],
+                    kind=row["kind"],
+                    direction=row["direction"],
+                    date=row["date"],
+                    status=row["status"],
+                    card_count=row["card_count"],
+                    observed_at=row["observed_at"],
+                    error=row["error"],
+                    legs=legs,
+                    rts=rts,
+                )
+            )
+        return snapshots
+
+
+def record_alert(trip_id: int | None, kind: Literal["new_low", "target", "ops"], price: int | None) -> None:
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO alerts (trip_id, kind, price) VALUES (%s, %s, %s)",
+            (trip_id, kind, price),
+        )
+
+
+def last_alert(trip_id: int | None, kind: str) -> tuple[int | None, datetime] | None:
+    with get_conn() as conn:
+        cur = conn.cursor()
+        if trip_id is None:
+            cur.execute(
+                """
+                SELECT price, sent_at FROM alerts
+                WHERE trip_id IS NULL AND kind = %s
+                ORDER BY sent_at DESC
+                LIMIT 1
+                """,
+                (kind,),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT price, sent_at FROM alerts
+                WHERE trip_id = %s AND kind = %s
+                ORDER BY sent_at DESC
+                LIMIT 1
+                """,
+                (trip_id, kind),
+            )
+        row = cur.fetchone()
+        return (row[0], row[1]) if row else None
+
+
+def recent_runs(limit: int = 50) -> list[dict]:
+    with get_conn() as conn:
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute(
+            """
+            SELECT sr.id, sr.trip_id, t.destination, sr.trigger, sr.status,
+                   sr.requested_at, sr.started_at, sr.finished_at
+            FROM search_runs sr
+            JOIN trips t ON t.id = sr.trip_id
+            ORDER BY sr.requested_at DESC
+            LIMIT %s
+            """,
+            (limit,),
+        )
+        run_rows = cur.fetchall()
+
+        runs: list[dict] = []
+        for row in run_rows:
+            cur.execute(
+                """
+                SELECT provider, kind, direction, status
+                FROM snapshots
+                WHERE run_id = %s
+                """,
+                (row["id"],),
+            )
+            snapshots = [dict(snap_row) for snap_row in cur.fetchall()]
+            runs.append(
+                {
+                    "id": row["id"],
+                    "trip_id": row["trip_id"],
+                    "destination": row["destination"],
+                    "trigger": row["trigger"],
+                    "status": row["status"],
+                    "requested_at": row["requested_at"],
+                    "started_at": row["started_at"],
+                    "finished_at": row["finished_at"],
+                    "snapshots": snapshots,
+                }
+            )
+        return runs
+
+
+def provider_stats(days: int = 7) -> list[dict]:
+    with get_conn() as conn:
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute(
+            """
+            SELECT
+                provider,
+                (observed_at AT TIME ZONE 'Asia/Seoul')::date AS day,
+                COUNT(*) AS total,
+                COUNT(*) FILTER (WHERE status = 'ok') AS ok,
+                COUNT(*) FILTER (WHERE status = 'empty') AS empty,
+                COUNT(*) FILTER (WHERE status = 'blocked') AS blocked,
+                COUNT(*) FILTER (WHERE status = 'error') AS error
+            FROM snapshots
+            WHERE observed_at >= now() - (%s || ' days')::interval
+            GROUP BY provider, day
+            ORDER BY day ASC, provider ASC
+            """,
+            (days,),
+        )
+        return [dict(row) for row in cur.fetchall()]
