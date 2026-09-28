@@ -17,7 +17,7 @@
 
 - 설계: `docs/superpowers/specs/2026-09-28-flight-friend-v2-design.md` (합의 완료)
 - 구현 계획: `docs/superpowers/plans/2026-09-28-flight-friend-v2-m1.md` (M1, 17 tasks — 사용자 검토 대기, 실행 전)
-- 다음 task: Task 2
+- 다음 task: Task 3
 - 진행 중인 외부 작업: OCI 반복 측정(차단 여부) — 결과로 설계 §5.1 갱신 주기·W 확정 예정
 - 작업 브랜치: `claude/dazzling-shannon-4x04v7`
 
@@ -74,3 +74,22 @@
   - 기존 V1 테스트들처럼 `tests/v2/` 아래 파일에서도 `sys.path.insert(0, ...)`로 프로젝트 루트를 직접 추가해야 임포트가 됨 (레포에 패키지 설치/`pyproject.toml` 없음, top-level `conftest.py`도 없음). `tests/v2/conftest.py`와 `tests/v2/test_db.py` 양쪽에 추가.
   - 인덱스 4개(`search_runs(status, requested_at)`, `snapshots(trip_id, observed_at)`, `leg_quotes(snapshot_id)`, `rt_quotes(snapshot_id)`)와 `alerts(trip_id, kind, sent_at)` 모두 브리프 지시대로 생성. 모든 FK `ON DELETE CASCADE`.
 - 다음 작업자에게: Task 2로 진행. `snapshots`/`leg_quotes`/`rt_quotes`는 append-only이므로 UPDATE 로직을 넣지 말 것(스펙 §9.3). 단 `trips`(prefs/tracking/target_price 수정)와 `search_runs`(status 전이)는 이후 task에서 정상적으로 UPDATE 대상이다.
+
+## 2026-09-28 — Claude Code — Task 2: Repository — trips · runs
+
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` (이 항목이 포함된 커밋)
+- 한 일:
+  - `flight_friend/repo.py` 신설: `create_trip`/`get_trip`/`list_trips`/`update_trip`(prefs·tracking·target_price 부분 수정, `clear_target`으로 NULL 지정), `enqueue_run`/`get_run`/`latest_run`, `claim_next_run`(`FOR UPDATE SKIP LOCKED`로 가장 오래된 `queued` 1건을 `running`+`started_at=now()`로 전이 후 반환), `finish_run`, `expire_stuck_runs`(`running` && `started_at < now()-older_than` → `error`), `has_open_run`(`queued`/`running` 존재 여부).
+  - `RealDictCursor` → dataclass 변환 헬퍼 2개(`_row_to_trip`, `_row_to_run`)로 공통화.
+  - `tests/v2/test_repo_trips_runs.py` 신설 (14 케이스): prefs 왕복(`out_dep_window` 튜플 복원 포함), `list_trips` 출국일 정렬, `update_trip` 부분 수정(prefs만 바꿔도 tracking 유지) + target_price 수정/해제, run 생성·조회·`latest_run`, `claim_next_run` FIFO·단일 처리·큐 소진 시 `None`, `finish_run`, `expire_stuck_runs`(11분 전으로 강제 UPDATE 후 만료 확인 + 최근 건은 미만료), `has_open_run` 상태 전이별 확인.
+- 검증:
+  - RED: `DATABASE_URL=... pytest tests/v2/test_repo_trips_runs.py -v` → `ImportError: cannot import name 'repo' from 'flight_friend'` (collection error).
+  - GREEN: `DATABASE_URL=... pytest tests/v2/test_repo_trips_runs.py -v` → `14 passed`.
+  - `DATABASE_URL=... pytest tests/v2 -v` → `18 passed`.
+  - 전체 스위트: `DATABASE_URL=... pytest tests/ -v` → `107 passed`(기존 93 + 신규 14, V1 무변경 확인).
+  - `ruff check flight_friend tests/v2` → clean.
+- 결정 / 발견:
+  - `create_trip`은 브리프 시그니처대로 `destination`/`out_date`/`ret_date`/`prefs`/`target_price`만 받고, `origin`/`adults`/`cabin`은 스키마 기본값(`'ICN'`/`1`/`'economy'`)에 위임.
+  - `update_trip`의 SET절은 전달된 인자만 동적으로 조립(빈 경우 UPDATE 미실행) — `prefs`만 넘겨도 `tracking` 등 다른 컬럼은 그대로 유지됨을 테스트로 확인.
+  - `expire_stuck_runs`는 만료 시 `finished_at=now()`도 함께 기록(`finish_run`과 동일한 종료 시맨틱 유지) — 브리프에 명시되진 않았으나 "종료된 run은 finished_at을 가진다"는 기존 일관성에 맞춤.
+- 다음 작업자에게: Task 3으로 진행. `search_runs.status`는 `'queued'→'running'→'done'|'error'` 전이만 이 레포 함수들로 이루어지므로, 이후 task에서 직접 SQL로 status를 건드리지 말 것.
