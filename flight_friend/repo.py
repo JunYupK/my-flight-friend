@@ -349,13 +349,28 @@ def load_snapshots(trip_id: int, since: datetime | None = None) -> list[Snapshot
                 (trip_id,),
             )
         snapshot_rows = cur.fetchall()
+        snapshot_ids = [row["id"] for row in snapshot_rows]
+
+        legs_by_snapshot: dict[int, list[LegQuote]] = {sid: [] for sid in snapshot_ids}
+        rts_by_snapshot: dict[int, list[RtQuote]] = {sid: [] for sid in snapshot_ids}
+
+        if snapshot_ids:
+            cur.execute(
+                "SELECT * FROM leg_quotes WHERE snapshot_id = ANY(%s) ORDER BY id ASC",
+                (snapshot_ids,),
+            )
+            for leg_row in cur.fetchall():
+                legs_by_snapshot[leg_row["snapshot_id"]].append(_row_to_leg(leg_row))
+
+            cur.execute(
+                "SELECT * FROM rt_quotes WHERE snapshot_id = ANY(%s) ORDER BY id ASC",
+                (snapshot_ids,),
+            )
+            for rt_row in cur.fetchall():
+                rts_by_snapshot[rt_row["snapshot_id"]].append(_row_to_rt(rt_row))
 
         snapshots: list[Snapshot] = []
         for row in snapshot_rows:
-            cur.execute("SELECT * FROM leg_quotes WHERE snapshot_id = %s", (row["id"],))
-            legs = [_row_to_leg(leg_row) for leg_row in cur.fetchall()]
-            cur.execute("SELECT * FROM rt_quotes WHERE snapshot_id = %s", (row["id"],))
-            rts = [_row_to_rt(rt_row) for rt_row in cur.fetchall()]
             snapshots.append(
                 Snapshot(
                     id=row["id"],
@@ -369,8 +384,8 @@ def load_snapshots(trip_id: int, since: datetime | None = None) -> list[Snapshot
                     card_count=row["card_count"],
                     observed_at=row["observed_at"],
                     error=row["error"],
-                    legs=legs,
-                    rts=rts,
+                    legs=legs_by_snapshot[row["id"]],
+                    rts=rts_by_snapshot[row["id"]],
                 )
             )
         return snapshots
@@ -427,18 +442,31 @@ def recent_runs(limit: int = 50) -> list[dict]:
             (limit,),
         )
         run_rows = cur.fetchall()
+        run_ids = [row["id"] for row in run_rows]
+
+        snapshots_by_run: dict[int, list[dict]] = {rid: [] for rid in run_ids}
+        if run_ids:
+            cur.execute(
+                """
+                SELECT run_id, provider, kind, direction, status
+                FROM snapshots
+                WHERE run_id = ANY(%s)
+                ORDER BY id ASC
+                """,
+                (run_ids,),
+            )
+            for snap_row in cur.fetchall():
+                snapshots_by_run[snap_row["run_id"]].append(
+                    {
+                        "provider": snap_row["provider"],
+                        "kind": snap_row["kind"],
+                        "direction": snap_row["direction"],
+                        "status": snap_row["status"],
+                    }
+                )
 
         runs: list[dict] = []
         for row in run_rows:
-            cur.execute(
-                """
-                SELECT provider, kind, direction, status
-                FROM snapshots
-                WHERE run_id = %s
-                """,
-                (row["id"],),
-            )
-            snapshots = [dict(snap_row) for snap_row in cur.fetchall()]
             runs.append(
                 {
                     "id": row["id"],
@@ -449,7 +477,7 @@ def recent_runs(limit: int = 50) -> list[dict]:
                     "requested_at": row["requested_at"],
                     "started_at": row["started_at"],
                     "finished_at": row["finished_at"],
-                    "snapshots": snapshots,
+                    "snapshots": snapshots_by_run[row["id"]],
                 }
             )
         return runs

@@ -145,6 +145,69 @@ def test_load_snapshots_since_filter():
     assert filtered[0].observed_at == new_at
 
 
+def test_load_snapshots_attaches_quotes_to_correct_snapshot():
+    trip_id = _make_trip()
+    run_id = repo.enqueue_run(trip_id, "manual")
+
+    leg_a = _leg(flight_key="TW-A", price=111_000)
+    result_a = ProviderResult(
+        status="ok",
+        legs=[leg_a],
+        rts=[RtQuote(airline_iata="TW", out_flight_key="TW-A", total_price=222_000)],
+        error=None,
+        seconds=1.0,
+    )
+    leg_b1 = _leg(flight_key="OZ-B1", airline_iata="OZ", price=133_000)
+    leg_b2 = _leg(flight_key="OZ-B2", airline_iata="OZ", price=144_000)
+    result_b = ProviderResult(status="ok", legs=[leg_b1, leg_b2], rts=[], error=None, seconds=1.0)
+    result_c = ProviderResult(status="empty", legs=[], rts=[], error=None, seconds=1.0)
+
+    id_a = repo.save_snapshot(
+        run_id=run_id,
+        trip_id=trip_id,
+        provider="amadeus",
+        kind="oneway",
+        direction="out",
+        date_=date(2026, 10, 1),
+        result=result_a,
+        observed_at=datetime(2026, 9, 26, 0, 0, tzinfo=UTC),
+    )
+    id_b = repo.save_snapshot(
+        run_id=run_id,
+        trip_id=trip_id,
+        provider="naver",
+        kind="oneway",
+        direction="out",
+        date_=date(2026, 10, 1),
+        result=result_b,
+        observed_at=datetime(2026, 9, 27, 0, 0, tzinfo=UTC),
+    )
+    id_c = repo.save_snapshot(
+        run_id=run_id,
+        trip_id=trip_id,
+        provider="skyscanner",
+        kind="oneway",
+        direction="out",
+        date_=date(2026, 10, 1),
+        result=result_c,
+        observed_at=datetime(2026, 9, 28, 0, 0, tzinfo=UTC),
+    )
+
+    snapshots = repo.load_snapshots(trip_id)
+    assert [s.id for s in snapshots] == [id_a, id_b, id_c]
+
+    by_id = {s.id: s for s in snapshots}
+
+    assert [leg.flight_key for leg in by_id[id_a].legs] == ["TW-A"]
+    assert [rt.out_flight_key for rt in by_id[id_a].rts] == ["TW-A"]
+
+    assert [leg.flight_key for leg in by_id[id_b].legs] == ["OZ-B1", "OZ-B2"]
+    assert by_id[id_b].rts == []
+
+    assert by_id[id_c].legs == []
+    assert by_id[id_c].rts == []
+
+
 def test_error_snapshot_has_no_quotes():
     trip_id = _make_trip()
     run_id = repo.enqueue_run(trip_id, "manual")

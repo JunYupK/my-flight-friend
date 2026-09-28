@@ -112,5 +112,5 @@
   - 컨트롤러 재정 2: `recent_runs`는 제안된 row shape(`{id, trip_id, destination, trigger, status, requested_at, started_at, finished_at, snapshots: [...]}`)를 그대로 사용. run당 별도 쿼리로 snapshots를 채움(브리프에 배치 최적화 요구 없음, run 개수는 `limit` 기본 50으로 소규모).
   - 컨트롤러 재정 4: `card_count`는 `len(result.legs) + len(result.rts)`로 저장(브리프에 다른 지시 없음), `error`는 `result.error` 그대로 저장.
   - `provider_stats`는 `observed_at AT TIME ZONE 'Asia/Seoul'`로 KST 변환 후 `::date`로 날짜 추출해 GROUP BY(컨트롤러 재정 3). `days` 윈도는 `now() - (%s || ' days')::interval`로 파라미터화.
-  - `load_snapshots`/`recent_runs` 모두 legs/rts(또는 snapshots) 조회에 N+1 쿼리를 사용 — snapshot/run 개수가 적은 전제(트립당 관측 주기 수 시간 단위)에서 단순성 우선, 성능 이슈 발생 시 이후 task에서 JOIN 집계로 전환 가능.
+  - **[Fix round 1]** `load_snapshots`/`recent_runs`의 legs/rts(또는 snapshots) 조회는 최초 구현에서 snapshot/run당 개별 쿼리(N+1)였으나, 리뷰 지적(트립이 몇 주간 최대 시간당 수집 시 1000+ snapshots → 매 페이지 로드마다 수천 개 순차 라운드트립)에 따라 `WHERE snapshot_id = ANY(%s)`/`WHERE run_id = ANY(%s)`로 로드된 id 전체에 대해 각 1회 쿼리 후 Python에서 dict로 그룹핑하는 방식으로 수정(snapshot/run별 순서는 `ORDER BY id ASC` + 원본 순서 유지로 보존). `test_load_snapshots_attaches_quotes_to_correct_snapshot`(여러 snapshot의 quote가 서로 섞이지 않고 올바른 snapshot에 붙는지 검증) 추가.
 - 다음 작업자에게: Task 4로 진행. `snapshots`/`leg_quotes`/`rt_quotes`/`alerts`는 계속 append-only이므로 UPDATE 로직 추가 금지. `recent_runs(limit=3)`의 snapshots 배열(provider/kind/direction/status)은 워커에서 GF 편도 연속 실패 감지에 쓰일 예정이니 필드명 변경 시 주의.
