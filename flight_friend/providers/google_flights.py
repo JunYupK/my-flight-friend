@@ -12,7 +12,7 @@ import re
 import time
 from datetime import date
 from html import unescape
-from typing import Protocol
+from typing import Literal, Protocol
 
 from flight_friend.providers.airlines import airline_iata, flight_key
 from flight_friend.types import LegQuote, ProviderResult, RtQuote
@@ -421,14 +421,14 @@ def cards_to_rts(
 
 # --- 검색 실행 ---------------------------------------------------------------
 #
-# crawl4ai는 함수 안에서 import한다 (미설치 환경 지원). 테스트는 crawl4ai 없이
-# fake crawler + 임의의 config 객체로 상태 분기(ok/blocked/empty/error)만 검증하므로,
-# `config` 인자를 노출해 호출측(테스트)이 직접 만든 config를 넘기면 CrawlerRunConfig
-# import를 건너뛴다. config를 넘기지 않으면(운영 경로) crawl4ai에서 CrawlerRunConfig를
-# import해 스펙 §5.2/§9.2 그대로 구성한다.
+# crawl4ai는 `_default_config()` 안에서 import한다 (미설치 환경 지원). 공개 시그니처는
+# 브리프 §9.2 그대로(crawler, dep, arr, date(s)) — 별도 `config` 인자는 없다. crawl4ai
+# 없이 상태 분기(ok/blocked/empty/error)만 검증하고 싶은 테스트는 컨트롤러 재정에 따라
+# `monkeypatch.setattr(google_flights, "_default_config", lambda: <fake config>)`로 이
+# 함수를 대체한다.
 
 
-def _classify(cards: list[dict], html: str) -> str:
+def _classify(cards: list[dict], html: str) -> Literal["ok", "blocked", "empty"]:
     if cards:
         return "ok"
     html_lower = html.lower()
@@ -453,13 +453,12 @@ def _default_config() -> object | None:
 
 
 async def search_oneway(
-    crawler: Crawler, dep: str, arr: str, date_: date, config: object | None = None,
+    crawler: Crawler, dep: str, arr: str, date_: date,
 ) -> ProviderResult:
     start = time.perf_counter()
+    config = _default_config()
     if config is None:
-        config = _default_config()
-        if config is None:
-            return ProviderResult(status="error", legs=[], rts=[], error="crawl4ai not installed", seconds=0.0)
+        return ProviderResult(status="error", legs=[], rts=[], error="crawl4ai not installed", seconds=0.0)
 
     url = build_oneway_url(dep, arr, date_)
     try:
@@ -475,17 +474,16 @@ async def search_oneway(
     cards = parse_cards(html)
     status = _classify(cards, html)
     legs = cards_to_legs(cards, date_, dep, arr, url) if status == "ok" else []
-    return ProviderResult(status=status, legs=legs, rts=[], error=None, seconds=seconds)  # type: ignore[arg-type]
+    return ProviderResult(status=status, legs=legs, rts=[], error=None, seconds=seconds)
 
 
 async def search_roundtrip(
-    crawler: Crawler, dep: str, arr: str, out_date: date, ret_date: date, config: object | None = None,
+    crawler: Crawler, dep: str, arr: str, out_date: date, ret_date: date,
 ) -> ProviderResult:
     start = time.perf_counter()
+    config = _default_config()
     if config is None:
-        config = _default_config()
-        if config is None:
-            return ProviderResult(status="error", legs=[], rts=[], error="crawl4ai not installed", seconds=0.0)
+        return ProviderResult(status="error", legs=[], rts=[], error="crawl4ai not installed", seconds=0.0)
 
     url = build_roundtrip_url(dep, arr, out_date, ret_date)
     try:
@@ -501,4 +499,4 @@ async def search_roundtrip(
     cards = parse_cards(html)
     status = _classify(cards, html)
     rts = cards_to_rts(cards, out_date, dep, arr) if status == "ok" else []
-    return ProviderResult(status=status, legs=[], rts=rts, error=None, seconds=seconds)  # type: ignore[arg-type]
+    return ProviderResult(status=status, legs=[], rts=rts, error=None, seconds=seconds)

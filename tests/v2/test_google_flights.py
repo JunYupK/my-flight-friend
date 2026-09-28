@@ -9,6 +9,7 @@ from datetime import date
 # 프로젝트 루트를 sys.path에 추가
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
+from flight_friend.providers import google_flights
 from flight_friend.providers.google_flights import (
     build_oneway_url,
     build_roundtrip_url,
@@ -109,15 +110,18 @@ class _FakeCrawler:
         return self._result
 
 
-def test_status_mapping():
+def test_status_mapping(monkeypatch):
+    # crawl4ai 없이 상태 분기(ok/blocked/empty/error)만 검증: 컨트롤러 재정에 따라
+    # _default_config()를 fake config를 반환하는 함수로 monkeypatch해 crawl4ai import를
+    # 우회한다. search_oneway 자체의 공개 시그니처(crawler, dep, arr, date_)는 그대로.
+    monkeypatch.setattr(google_flights, "_default_config", lambda: object())
+
     with open(_FIXTURE, encoding="utf-8") as f:
         fixture_html = f.read()
 
     # 카드 있음 → ok
     crawler_ok = _FakeCrawler(_FakeResult(success=True, html=fixture_html))
-    result_ok = asyncio.run(
-        search_oneway(crawler_ok, "ICN", "FUK", date(2026, 10, 21), config=object())
-    )
+    result_ok = asyncio.run(search_oneway(crawler_ok, "ICN", "FUK", date(2026, 10, 21)))
     assert result_ok.status == "ok"
     assert len(result_ok.legs) == 3
 
@@ -125,24 +129,28 @@ def test_status_mapping():
     crawler_blocked = _FakeCrawler(
         _FakeResult(success=True, html="<html>unusual traffic detected</html>")
     )
-    result_blocked = asyncio.run(
-        search_oneway(crawler_blocked, "ICN", "FUK", date(2026, 10, 21), config=object())
-    )
+    result_blocked = asyncio.run(search_oneway(crawler_blocked, "ICN", "FUK", date(2026, 10, 21)))
     assert result_blocked.status == "blocked"
 
     # 카드 0 + "captcha"만 (정상 페이지에도 존재) → empty (차단으로 오판 금지)
     crawler_empty = _FakeCrawler(
         _FakeResult(success=True, html="<html>...captcha...</html>")
     )
-    result_empty = asyncio.run(
-        search_oneway(crawler_empty, "ICN", "FUK", date(2026, 10, 21), config=object())
-    )
+    result_empty = asyncio.run(search_oneway(crawler_empty, "ICN", "FUK", date(2026, 10, 21)))
     assert result_empty.status == "empty"
 
     # 예외 → error, 메시지 보존
     crawler_error = _FakeCrawler(exc=RuntimeError("boom"))
-    result_error = asyncio.run(
-        search_oneway(crawler_error, "ICN", "FUK", date(2026, 10, 21), config=object())
-    )
+    result_error = asyncio.run(search_oneway(crawler_error, "ICN", "FUK", date(2026, 10, 21)))
     assert result_error.status == "error"
     assert result_error.error == "boom"
+
+
+def test_search_oneway_errors_when_crawl4ai_missing():
+    # 테스트 venv엔 crawl4ai가 없으므로 monkeypatch 없이 실행하면 _default_config()의
+    # 실제 import 경로(ImportError → None)를 그대로 타 "crawl4ai not installed"가 나온다.
+    crawler = _FakeCrawler(_FakeResult(success=True, html=""))
+    result = asyncio.run(search_oneway(crawler, "ICN", "FUK", date(2026, 10, 21)))
+    assert result.status == "error"
+    assert result.error == "crawl4ai not installed"
+    assert result.seconds == 0.0
