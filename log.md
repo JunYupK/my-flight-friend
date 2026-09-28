@@ -17,7 +17,7 @@
 
 - 설계: `docs/superpowers/specs/2026-09-28-flight-friend-v2-design.md` (합의 완료)
 - 구현 계획: `docs/superpowers/plans/2026-09-28-flight-friend-v2-m1.md` (M1, 17 tasks — 사용자 검토 대기, 실행 전)
-- 다음 task: Task 4
+- 다음 task: Task 5
 - 진행 중인 외부 작업: OCI 반복 측정(차단 여부) — 결과로 설계 §5.1 갱신 주기·W 확정 예정
 - 작업 브랜치: `claude/dazzling-shannon-4x04v7`
 
@@ -114,3 +114,22 @@
   - `provider_stats`는 `observed_at AT TIME ZONE 'Asia/Seoul'`로 KST 변환 후 `::date`로 날짜 추출해 GROUP BY(컨트롤러 재정 3). `days` 윈도는 `now() - (%s || ' days')::interval`로 파라미터화.
   - **[Fix round 1]** `load_snapshots`/`recent_runs`의 legs/rts(또는 snapshots) 조회는 최초 구현에서 snapshot/run당 개별 쿼리(N+1)였으나, 리뷰 지적(트립이 몇 주간 최대 시간당 수집 시 1000+ snapshots → 매 페이지 로드마다 수천 개 순차 라운드트립)에 따라 `WHERE snapshot_id = ANY(%s)`/`WHERE run_id = ANY(%s)`로 로드된 id 전체에 대해 각 1회 쿼리 후 Python에서 dict로 그룹핑하는 방식으로 수정(snapshot/run별 순서는 `ORDER BY id ASC` + 원본 순서 유지로 보존). `test_load_snapshots_attaches_quotes_to_correct_snapshot`(여러 snapshot의 quote가 서로 섞이지 않고 올바른 snapshot에 붙는지 검증) 추가.
 - 다음 작업자에게: Task 4로 진행. `snapshots`/`leg_quotes`/`rt_quotes`/`alerts`는 계속 append-only이므로 UPDATE 로직 추가 금지. `recent_runs(limit=3)`의 snapshots 배열(provider/kind/direction/status)은 워커에서 GF 편도 연속 실패 감지에 쓰일 예정이니 필드명 변경 시 주의.
+
+## 2026-09-28 — Claude Code — Task 4: 항공사 정규화 · 항공편 식별키
+
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` (이 항목이 포함된 커밋)
+- 한 일:
+  - `flight_friend/providers/__init__.py` 신설(빈 패키지 마커).
+  - `flight_friend/providers/airlines.py` 신설: `normalize_airline(name)`(대소문자 무시·공백 전부 제거 후 사전 조회, 모르면 `None`), `airline_iata(name, flight_numbers)`(편명 있으면 첫 편명에서 캐리어 코드 추출 — `"RS 727"` → `"RS"`, 정확히 영숫자 2자일 때만 채택, 아니면 이름으로 폴백 → 이름 정규화 실패 시 `"?" + 공백 제거한 name"`), `flight_key(date_, dep_airport, arr_airport, dep_time, arr_time, stops, airline)`(`"YYYY-MM-DD|DEP|ARR|dep_time|arr_time|stops|airline"`, `stops is None`이면 `"?"`).
+  - 매핑 사전(`_AIRLINE_IATA`)에 V1 `collector_google_flights._AIRLINE_IATA` 전체(V1 파일은 무변경, 값만 복사) + 브리프 §13 실측 표기 차이 12쌍 전부 반영. `한 에어 시스템`은 의도적으로 매핑하지 않음(발권사이지 운항사가 아니므로).
+  - `tests/v2/test_airlines.py` 신설(8 케이스): `test_normalize_variants`(12쌍 전부 양쪽 표기가 동일 코드로 정규화되는지), `test_normalize_unknown_returns_none`(`한 에어 시스템` 포함), `test_airline_from_flight_number_wins`, `test_airline_iata_falls_back_to_name_when_no_flight_number`, `test_airline_iata_falls_back_to_unknown_marker`, `test_flight_key_without_flight_number`(서로 다른 미지 항공사가 다른 키로 끝나는지), `test_flight_key_format`, `test_flight_key_stops_none_becomes_question_mark`.
+- 검증:
+  - RED: `DATABASE_URL=... pytest tests/v2/test_airlines.py -v` → `ModuleNotFoundError: No module named 'flight_friend.providers.airlines'` (collection error, 8건 전부 수집 실패).
+  - GREEN: `DATABASE_URL=... pytest tests/v2/test_airlines.py -v` → `8 passed`.
+  - 전체 스위트: `DATABASE_URL=... pytest tests/ -q` → `122 passed`(기존 114 + 신규 8, V1/기존 V2 무변경 확인).
+  - `ruff check flight_friend tests/v2` → 최초 실행 시 `F601`(딕셔너리 키 `"티웨이항공"` 중복 리터럴, V1 매핑과 §13 매핑 양쪽에 존재) 지적 → §13 쪽의 중복 항목 제거 후 재실행 clean.
+- 결정 / 발견:
+  - `airline_iata`의 편명 캐리어 코드 검증은 "공백 이전 부분이 영숫자 정확히 2자"만 채택(정규식 `^[0-9A-Za-z]{2}$`) — 그 외(3자 이상, 특수문자 등)는 무시하고 이름 기반 폴백으로 떨어짐. 브리프 §Controller notes 그대로.
+  - `normalize_airline`은 키/입력 양쪽에 `"".join(s.lower().split())`를 적용해 사전을 조회 시점에 매번 정규화하지 않도록 모듈 로드 시 `_NORMALIZED_AIRLINE_IATA`를 미리 빌드.
+  - 본 모듈은 실패를 항상 `?`-접두 미지 키(고유값)로 떨어뜨려 서로 다른 미지 항공사가 절대 같은 `flight_key`로 병합되지 않게 함 — 오매칭보다 중복을 택하는 태스크 원칙 준수.
+- 다음 작업자에게: Task 5로 진행. V1 `_AIRLINE_IATA`는 이 커밋에서 손대지 않았음(그대로 유지, V1은 Task 17에서 은퇴 예정). `flight_friend/providers/airlines.py`의 매핑 사전에 새 항공사 표기를 추가할 때도 동일 IATA 코드에 중복 키 리터럴이 생기지 않도록 주의(ruff `F601`).
