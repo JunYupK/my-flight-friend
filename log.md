@@ -17,7 +17,7 @@
 
 - 설계: `docs/superpowers/specs/2026-09-28-flight-friend-v2-design.md` (합의 완료)
 - 구현 계획: `docs/superpowers/plans/2026-09-28-flight-friend-v2-m1.md` (M1, 17 tasks — 사용자 검토 대기, 실행 전)
-- 다음 task: Task 5
+- 다음 task: Task 6
 - 진행 중인 외부 작업: OCI 반복 측정(차단 여부) — 결과로 설계 §5.1 갱신 주기·W 확정 예정
 - 작업 브랜치: `claude/dazzling-shannon-4x04v7`
 
@@ -133,3 +133,30 @@
   - `normalize_airline`은 키/입력 양쪽에 `"".join(s.lower().split())`를 적용해 사전을 조회 시점에 매번 정규화하지 않도록 모듈 로드 시 `_NORMALIZED_AIRLINE_IATA`를 미리 빌드.
   - 본 모듈은 실패를 항상 `?`-접두 미지 키(고유값)로 떨어뜨려 서로 다른 미지 항공사가 절대 같은 `flight_key`로 병합되지 않게 함 — 오매칭보다 중복을 택하는 태스크 원칙 준수.
 - 다음 작업자에게: Task 5로 진행. V1 `_AIRLINE_IATA`는 이 커밋에서 손대지 않았음(그대로 유지, V1은 Task 17에서 은퇴 예정). `flight_friend/providers/airlines.py`의 매핑 사전에 새 항공사 표기를 추가할 때도 동일 IATA 코드에 중복 키 리터럴이 생기지 않도록 주의(ruff `F601`).
+
+## 2026-09-28 — Claude Code — Task 5: Google Flights 어댑터
+
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` (이 항목이 포함된 커밋)
+- 한 일:
+  - `flight_friend/providers/google_flights.py` 신설:
+    - `build_oneway_url(dep, arr, date_)`/`build_roundtrip_url(dep, arr, out_date, ret_date)` — 템플릿 없이 protobuf `tfs`를 직접 생성(스펙 §5.2/§13). outer 필드(`1:28,2:2,3:<FlightData>…,8:1,9:1,14:1,16:{08 ff×9 01},19:<2 편도|1 왕복>`)·FlightData(`2:date,13:{1:1,2:dep},14:{1:1,2:arr}`)는 스펙 부록의 실측 tfs(`CBwQAhoe…`)를 바이트 단위로 역산해 검증 후 그대로 구현. 왕복은 FlightData 2건(출국 dep→arr, 귀국 arr→dep)을 필드3에 반복.
+    - `build_booking_url(card, dep, arr, date_str)` — V1 `_build_booking_tfs`/`_build_booking_url`을 그대로 이전(로직 무변경, 이름만 `_build_booking_url`→`build_booking_url`로 공개).
+    - `extract_js()`/`parse_cards(html)` — V1 `_extract_js`/`_parse_flight_cards` 그대로 이전.
+    - `make_scroll_js()` — V1 `crawler_utils.make_scroll_js` 그대로 이전.
+    - `cards_to_legs(cards, date_, dep, arr, search_url)` — 카드별 `airline_iata(card["airline"], card["flight_numbers"])`로 항공사 결정, dep/arr 공항은 카드 값 우선·없으면 인자로 폴백, `dep_time`/`arr_time` 없는 카드는 skip, `flight_key`로 dedupe(동일 키면 최저가 유지), 가격 오름차순 반환.
+    - `cards_to_rts(cards, out_date, dep, arr)` — 왕복 페이지 카드(가격=왕복 총액)를 출국편 `flight_key`로 동일하게 dedupe·정렬.
+    - `search_oneway(crawler, dep, arr, date_, config=None)`/`search_roundtrip(crawler, dep, arr, out_date, ret_date, config=None)` — `time.perf_counter()`로 `seconds` 측정, `CrawlerRunConfig`는 함수 안에서 import. 카드>0→`ok`, 카드 0 + HTML에 `unusual traffic`/`sorry/index`/`recaptcha`(대소문자 무시)→`blocked`, 카드 0→`empty`, `arun` 예외 또는 `result.success=False`→`error`(메시지 보존). `captcha` 단독 문자열은 차단 판정에 쓰지 않음(스펙 §9.2 — 정상 페이지에도 존재).
+  - `tests/v2/fixtures/gf_cards.html` 신설 — `<div id="__fl__">` JSON, ICN→FUK 2026-10-21 카드 4건(에어서울/제주항공/진에어×2, 진에어 카드는 완전 중복).
+  - `tests/v2/test_google_flights.py` 신설(6 케이스, 브리프 Step1 그대로): URL 구조(base64 디코드해 날짜/공항/trip-type 바이트 직접 확인), 왕복 2-leg+trip=1, fixture 파싱(4건), dedupe(진에어 중복 2장→1건), 가격순 정렬+편명 기반 IATA, status 매핑(ok/blocked/empty/error, `captcha` 단독은 empty로).
+- 검증:
+  - RED: `flight_friend/providers/google_flights.py`를 임시로 빼고 `DATABASE_URL=... pytest tests/v2/test_google_flights.py -v` → `ModuleNotFoundError: No module named 'flight_friend.providers.google_flights'`(collection error, 6건 전부 수집 실패).
+  - GREEN: 복원 후 동일 명령 → `6 passed`.
+  - 전체 스위트: `DATABASE_URL=... pytest tests/ -q` → `128 passed`(기존 122 + 신규 6, V1/기존 V2 무변경 확인).
+  - `ruff check flight_friend tests/v2` → clean.
+  - 별도 수동 확인: fixture로 `search_roundtrip`도 fake crawler로 실행해 `status="ok"`, `rts` 3건(중복 dedupe 반영) 생성 확인(브리프 Step1엔 없지만 왕복 경로 자체가 안 죽는지 점검용).
+- 결정 / 발견:
+  - **crawl4ai 미설치 환경에서 status-mapping 테스트를 어떻게 통과시킬지**: 브리프가 제안한 대로 `search_oneway`/`search_roundtrip`에 선택적 `config` 인자를 추가. `config`를 넘기면 `CrawlerRunConfig` import를 완전히 건너뛰고 그 객체를 그대로 `crawler.arun(config=...)`에 전달 — 테스트는 `config=object()`(내용은 fake crawler가 무시하므로 아무 값이나 가능)로 crawl4ai 의존 없이 ok/blocked/empty/error 네 상태를 모두 실행. `config=None`(운영 기본값)이면 함수 안에서 `from crawl4ai import CrawlerRunConfig`를 시도해 스펙 그대로의 `CrawlerRunConfig(magic=True, js_code=[...], wait_for=..., delay_before_return_html=4.0, cache_mode="bypass", page_timeout=15000)`를 만들고, `ImportError`면 `seconds=0.0`으로 즉시 `status="error", error="crawl4ai not installed"` 반환. 이 프로젝트 테스트 venv엔 crawl4ai가 없어 `_default_config()`가 항상 `None`을 반환하는 경로만 자동으로 검증되지만, 공개 인터페이스(브리프 §9.2 시그니처)는 `config`를 마지막 위치에 기본값 `None`으로 추가했을 뿐이라 운영 호출부(`search_oneway(crawler, dep, arr, date_)`)는 변경 없이 그대로 동작.
+  - outer/FlightData protobuf 필드 값은 브리프 문구뿐 아니라 프롬프트에 인용된 실측 tfs(`CBwQAhoeEgoyMDI2LTEwLTIxagcIARIDSUNOcgcIARIDU0hJQAFIAXABggELCP___________wGYAQI`)를 직접 base64 디코드해 바이트 단위로 역산·대조(필드19 tag가 2바이트 varint(`\x98\x01`)이고 값 `\x02`=편도인 것까지 확인) — 브리프 §5.2 문구와 실측이 정확히 일치함을 재확인 후 구현.
+  - `cards_to_rts`는 브리프에 dedupe 명시가 없었지만(§9.2엔 "출국편 키로"만 명시) `cards_to_legs`와 동일하게 `flight_key` 기준 최저가 dedupe + 가격 오름차순 정렬을 적용 — 왕복 페이지도 동일 카드 중복 추출 현상(스펙 §13 "SHI 각 1, 페이지 내 중복 추출 존재")이 있을 수 있어 방어적으로 일관 처리. 필요하면 다음 task에서 재정 가능.
+  - `Crawler`/`CrawlResult`는 `typing.Protocol`로 정의(브리프 지시대로 `Any` 미사용). `config: object`로 타입해 crawl4ai의 `CrawlerRunConfig`를 모듈 레벨에서 import하지 않고도 시그니처를 유지.
+- 다음 작업자에게: Task 6으로 진행. `search_oneway`/`search_roundtrip`의 `config` 파라미터는 테스트 편의용 확장이며 브리프 시그니처(`crawler, dep, arr, date`)와 호환 유지됨 — 운영 코드에서 명시적으로 넘길 필요 없음. `build_booking_url`은 V1과 동일하게 편명 정규식이 매치 안 되거나 `segment_airports` 길이가 안 맞으면 `None`을 반환(그대로 유지).
