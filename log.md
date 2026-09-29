@@ -17,7 +17,7 @@
 
 - 설계: `docs/superpowers/specs/2026-09-28-flight-friend-v2-design.md` (합의 완료)
 - 구현 계획: `docs/superpowers/plans/2026-09-28-flight-friend-v2-m1.md` (M1, 17 tasks — 사용자 검토 대기, 실행 전)
-- 다음 task: Task 14
+- 다음 task: Task 15
 - 진행 중인 외부 작업: OCI 반복 측정(차단 여부) — 결과로 설계 §5.1 갱신 주기·W 확정 예정
 - 작업 브랜치: `claude/dazzling-shannon-4x04v7`
 
@@ -230,3 +230,10 @@
 - 검증: `npm run build` 통과. 실제 API + headless Chromium(390px)로 헤더/요약/차트 토글/버튼(429 쿨다운 → queued 진행 표시 → DB에서 run 완료 → 결과 교체) 확인, 가로 스크롤 없음. `pytest tests/` 211 passed.
 - 결정 / 발견: `dday`를 utils.ts에 추가(TripList의 로컬 복사본은 그대로 둠). 개발 DB의 trips를 TRUNCATE 후 스모크용 2건 시드.
 - 다음 작업자에게: Task 14는 TripPage에 결과 컴포넌트를 추가 (`trip` 상태 + setTrip 전달). 빈 상태 진행 표시(`RunProgress`)는 TripPage 안에 있음.
+
+## 2026-09-29 — Claude Code — Task 14: 프론트 — Trip 화면: 결과 영역
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` / `feat(v2-web): trip results, candidates and selection bar`
+- 한 일: `FilterBar`(prefs 편집 -> `patchTrip` 전체 prefs, 400ms 디바운스/토글 즉시), `Candidates`, `NearMissHint`, `LegList`, `LegCard`, `SelectionBar`, `Results`, `TripPage`(선택 상태 소유·TripView 교체 시 유지), `utils.stayMinutes/formatStay`, `HistoryChart` refreshKey 재조회(Task 13 리뷰 이월).
+- 검증: `npm run build` 통과, `pytest tests/` 211 passed. 브라우저(headless Chromium, 실제 API, FUK급 시드 출국 40/귀국 35): 필터 변경 즉시 반영(재검색 없이 PATCH만), 후보 클릭 선택 동기화, near-miss 문구 + [보기], 모바일 390px 탭·가로 스크롤 없음, 선택 바 합계/체류/예약 링크/rt 줄(저렴), 차트 refetch. 코드 읽기로만 확인: stale `오래됨`·`확인가 없음` 카드, rt `비쌈`, 예약 URL null 숨김, 다크 모드.
+- 결정 / 발견: `NearMissView.violated`는 문자열 하나(백엔드 그대로) — types.ts의 `string[]` 오류 수정. 편 dep/arr 시각은 ISO가 아니라 현지 "HH:MM".
+- 다음 작업자에게: Task 15는 Admin 화면. 개발 DB는 비어 있음(스모크 시드 삭제).

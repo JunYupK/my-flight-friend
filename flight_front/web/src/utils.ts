@@ -43,3 +43,32 @@ export function dday(n: number): string {
   if (n === 0) return "D-day";
   return n > 0 ? `D-${n}` : `D+${-n}`;
 }
+
+function utcDay(d: string): number {
+  return Date.UTC(parseInt(d.slice(0, 4), 10), parseInt(d.slice(5, 7), 10) - 1, parseInt(d.slice(8, 10), 10));
+}
+
+function hhmmToMin(t: string): number {
+  return parseInt(t.slice(0, 2), 10) * 60 + parseInt(t.slice(3, 5), 10);
+}
+
+/** 출국편 도착(arr < dep면 +1일)부터 귀국편 출발까지의 분 (현지 시각 기준, 백엔드 stay_minutes와 같은 규칙). */
+export function stayMinutes(outDate: string, outDep: string, outArr: string, retDate: string, retDep: string): number {
+  const dayDiff = Math.round((utcDay(retDate) - utcDay(outDate)) / 86_400_000);
+  const overnight = outArr < outDep ? 1 : 0;
+  return (dayDiff - overnight) * 1440 + hhmmToMin(retDep) - hhmmToMin(outArr);
+}
+
+/** 분 → "2일 3시간" / "5시간 30분" */
+export function formatStay(min: number): string {
+  const sign = min < 0 ? "-" : "";
+  const a = Math.abs(min);
+  const d = Math.floor(a / 1440);
+  const h = Math.floor((a % 1440) / 60);
+  const m = a % 60;
+  const parts: string[] = [];
+  if (d > 0) parts.push(`${d}일`);
+  if (h > 0 || (d === 0 && m === 0)) parts.push(`${h}시간`);
+  if (d === 0 && m > 0) parts.push(`${m}분`);
+  return sign + parts.join(" ");
+}

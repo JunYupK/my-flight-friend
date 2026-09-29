@@ -1,4 +1,4 @@
-// Task 11 API 응답 형태 그대로. 시각은 오프셋 포함 ISO 문자열 — new Date()로 파싱할 것.
+// Task 11 API 응답 형태 그대로. 관측 시각(observed_at 등)은 오프셋 포함 ISO 문자열, 편 dep_time/arr_time은 현지 "HH:MM".
 
 export interface Preferences {
   out_dep_window: [string, string] | null;
@@ -75,7 +75,7 @@ export interface CandidateView {
 export interface NearMissView {
   direction: string;
   flight_key: string;
-  violated: string[];
+  violated: string;
   combo_price: number | null;
   saving: number | null;
 }

@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { getRun, getTrip, startRun } from "../api";
-import type { RunStatus, TripView } from "../types";
+import type { CandidateView, RunStatus, TripView } from "../types";
 import StatusHeader from "../components/trip/StatusHeader";
 import TrackingSummary from "../components/trip/TrackingSummary";
 import HistoryChart from "../components/trip/HistoryChart";
+import Results from "../components/trip/Results";
+import SelectionBar from "../components/trip/SelectionBar";
 import { marksFromRun, marksFromStatuses, providerLabel } from "../components/trip/providers";
 import type { ProviderMark } from "../components/trip/providers";
 
@@ -41,6 +43,19 @@ export default function TripPage() {
   const [starting, setStarting] = useState(false);
   const [cooldown, setCooldown] = useState(0);
   const [actionError, setActionError] = useState("");
+  const [selOut, setSelOut] = useState<string | null>(null);
+  const [selIn, setSelIn] = useState<string | null>(null);
+
+  // 선택 유지: TripView가 교체돼도 키가 남아 있으면 유지, 아니면 첫 후보(없으면 선택 없음)
+  useEffect(() => {
+    if (!trip) return;
+    const outOk = (k: string | null) => k !== null && trip.legs.out.some((l) => l.flight_key === k && l.best_price != null);
+    const inOk = (k: string | null) => k !== null && trip.legs.in.some((l) => l.flight_key === k && l.best_price != null);
+    if (outOk(selOut) && inOk(selIn)) return;
+    const first = trip.candidates[0];
+    setSelOut(first ? first.out_flight_key : null);
+    setSelIn(first ? first.in_flight_key : null);
+  }, [trip, selOut, selIn]);
 
   // 로드 (id 변경 시 상태 초기화). 열린 run이 있으면 자동 폴링.
   useEffect(() => {
@@ -52,6 +67,8 @@ export default function TripPage() {
     setRun(null);
     setCooldown(0);
     setActionError("");
+    setSelOut(null);
+    setSelIn(null);
     getTrip(id)
       .then((v) => {
         if (cancelled) return;
@@ -127,10 +144,17 @@ export default function TripPage() {
 
   const running = runId !== null;
   const marks = running ? marksFromRun(run, trip.providers) : marksFromStatuses(trip.providers);
+  const selOutLeg = trip.legs.out.find((l) => l.flight_key === selOut) ?? null;
+  const selInLeg = trip.legs.in.find((l) => l.flight_key === selIn) ?? null;
+  const pickCandidate = (c: CandidateView) => {
+    setSelOut(c.out_flight_key);
+    setSelIn(c.in_flight_key);
+  };
+  const refreshKey = JSON.stringify(trip.trip.prefs) + String(trip.stats.current ?? "") + (trip.run ? `${trip.run.id}:${trip.run.status}` : "");
   const noLegs = trip.legs.out.length === 0 && trip.legs.in.length === 0;
 
   return (
-    <div className="space-y-4">
+    <div className={`space-y-4 ${selOutLeg && selInLeg ? "pb-28" : ""}`}>
       <StatusHeader
         view={trip}
         marks={marks}
@@ -141,8 +165,28 @@ export default function TripPage() {
         onCheck={onCheck}
       />
       <TrackingSummary stats={trip.stats} />
-      <HistoryChart tripId={trip.trip.id} />
+      <HistoryChart tripId={trip.trip.id} refreshKey={refreshKey} />
       {noLegs && running && <RunProgress marks={marks} />}
+      {!noLegs && (
+        <Results
+          view={trip}
+          selOut={selOut}
+          selIn={selIn}
+          onSelectOut={setSelOut}
+          onSelectIn={setSelIn}
+          onPick={pickCandidate}
+          onApplied={setTrip}
+        />
+      )}
+      {selOutLeg && selInLeg && (
+        <SelectionBar
+          out={selOutLeg}
+          inn={selInLeg}
+          outDate={trip.trip.out_date}
+          retDate={trip.trip.ret_date}
+          rtReference={trip.rt_reference}
+        />
+      )}
     </div>
   );
 }
