@@ -17,7 +17,7 @@
 
 - 설계: `docs/superpowers/specs/2026-09-28-flight-friend-v2-design.md` (합의 완료)
 - 구현 계획: `docs/superpowers/plans/2026-09-28-flight-friend-v2-m1.md` (M1, 17 tasks — 사용자 검토 대기, 실행 전)
-- 다음 task: Task 6
+- 다음 task: Task 7
 - 진행 중인 외부 작업: OCI 반복 측정(차단 여부) — 결과로 설계 §5.1 갱신 주기·W 확정 예정
 - 작업 브랜치: `claude/dazzling-shannon-4x04v7`
 
@@ -160,3 +160,10 @@
   - `cards_to_rts`는 브리프에 dedupe 명시가 없었지만(§9.2엔 "출국편 키로"만 명시) `cards_to_legs`와 동일하게 `flight_key` 기준 최저가 dedupe + 가격 오름차순 정렬을 적용 — 왕복 페이지도 동일 카드 중복 추출 현상(스펙 §13 "SHI 각 1, 페이지 내 중복 추출 존재")이 있을 수 있어 방어적으로 일관 처리. 필요하면 다음 task에서 재정 가능.
   - `Crawler`/`CrawlResult`는 `typing.Protocol`로 정의(브리프 지시대로 `Any` 미사용). `_classify`는 `Literal["ok","blocked","empty"]`를 반환하도록 타입해 `ProviderResult(status=...)` 호출부의 `# type: ignore[arg-type]` 2건을 제거(Fix round 1).
 - 다음 작업자에게: Task 6으로 진행. `search_oneway`/`search_roundtrip`는 브리프 §9.2 시그니처 그대로(`crawler, dep, arr, date(s)`, 추가 인자 없음) — Fix round 1에서 최초의 선택적 `config` 인자를 제거했으니 이 함수들을 호출/재정의할 때 그 인자가 없다고 가정할 것. `build_booking_url`은 V1과 동일하게 편명 정규식이 매치 안 되거나 `segment_airports` 길이가 안 맞으면 `None`을 반환(그대로 유지).
+
+## 2026-09-29 — Claude Code — Task 6: 도메인 — 갱신 스케줄
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` / `feat(v2): refresh schedule rules`
+- 한 일: `flight_friend/domain/schedule.py` (refresh_interval, freshness_window, days_to_departure, is_due, cooldown_remaining) + `tests/v2/test_schedule.py`. 이전 구현자가 남긴 미커밋 파일을 검토해 유지하고 `__init__.py`와 테스트 3건(주기 경과, archived, KST 날짜 경계) 추가, ruff 지적 2건 수정.
+- 검증: schedule.py 없이 pytest → ModuleNotFoundError(RED), 복구 후 12 passed. 전체 `pytest tests` 141 passed, ruff clean.
+- 결정 / 발견: 티어 값(6h/2h/1h, 60/14일)은 모듈 상수로 분리(잠정치, 실측 후 재조정). is_due의 "오늘"은 now를 Asia/Seoul로 변환한 날짜. MANUAL_COOLDOWN은 config에서 import.
+- 다음 작업자에게: Task 7 진행.
