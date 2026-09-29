@@ -17,7 +17,7 @@
 
 - 설계: `docs/superpowers/specs/2026-09-28-flight-friend-v2-design.md` (합의 완료)
 - 구현 계획: `docs/superpowers/plans/2026-09-28-flight-friend-v2-m1.md` (M1, 17 tasks — 사용자 검토 대기, 실행 전)
-- 다음 task: Task 8
+- 다음 task: Task 9
 - 진행 중인 외부 작업: OCI 반복 측정(차단 여부) — 결과로 설계 §5.1 갱신 주기·W 확정 예정
 - 작업 브랜치: `claude/dazzling-shannon-4x04v7`
 
@@ -175,3 +175,10 @@
 - 결정 / 발견: stale은 `observed_at < now - window`(경계는 fresh). 병합 대표 leg는 최저가 제공자(동가면 제공자명 사전순). near_miss는 조건 내 반대 방향 최저가가 있는 방향만 후보. `max_price`는 Task 8.
 - 다음 작업자에게: Task 8이 같은 `results.py`에 조합 함수를 추가한다.
 
+
+## 2026-09-29 — Claude Code — Task 8: 도메인 — 조합 · 파레토 대표 후보 · 왕복 참고가
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7`, feat(v2): combos, pareto candidates and round-trip reference
+- 한 일: `flight_friend/domain/results.py`에 `stay_minutes`, `Candidate`, `in_condition`, `pareto_candidates`, `cheapest_combo`, `RtReference`, `rt_reference` 추가. 테스트 12개(`tests/v2/test_results_combos.py`).
+- 검증: 구현 전 pytest → ImportError(RED), 구현 후 12 passed. 전체 `pytest tests` 169 passed, ruff clean.
+- 결정 / 발견: 파레토 limit 초과 시 첫·끝 고정 + 가격 균등 목표에 가장 가까운 미선택 항목(동률이면 저가 쪽). rt_reference는 W 밖 스냅샷 무시(`observed_at < now - window`), 편도 합은 주어진 모든 편(조건 무관)의 항공사별 최저가. 시각 계산은 naive datetime(현지 시각).
+- 다음 작업자에게: Task 9 진행.

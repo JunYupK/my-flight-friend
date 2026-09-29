@@ -2,7 +2,7 @@
 """현재 편도 병합 · 선호 조건 위반 · 조건 밖 힌트 (순수 로직, DB 없음)."""
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, time, timedelta
 
 from flight_friend.config import NEAR_MISS_MIN_KRW, NEAR_MISS_MIN_PCT
 from flight_friend.types import LegQuote, Preferences, Snapshot
@@ -148,3 +148,141 @@ def near_miss(legs: dict[str, list[MergedLeg]], prefs: Preferences) -> NearMiss 
             if best is None or saving > best.saving:
                 best = c
     return best
+
+
+@dataclass
+class Candidate:
+    out: MergedLeg
+    inn: MergedLeg
+    price: int
+    stay_min: int
+
+
+@dataclass
+class RtReference:
+    airline_iata: str
+    rt_min: int
+    ow_sum: int | None
+    diff: int | None  # ow_sum - rt_min (양수 = 왕복이 쌈)
+
+
+def stay_minutes(out: LegQuote, out_date: date, inn: LegQuote, ret_date: date) -> int:
+    """출국편 도착(arr < dep면 +1일)부터 귀국편 출발까지의 분 (현지 시각 기준)."""
+    arrive = datetime.combine(out_date, time.fromisoformat(out.arr_time))
+    if out.arr_time < out.dep_time:
+        arrive += timedelta(days=1)
+    depart = datetime.combine(ret_date, time.fromisoformat(inn.dep_time))
+    return int((depart - arrive).total_seconds() // 60)
+
+
+def in_condition(legs: dict[str, list[MergedLeg]], prefs: Preferences) -> dict[str, list[MergedLeg]]:
+    return {
+        d: [m for m in legs.get(d, []) if m.best_price is not None and not violations(m, d, prefs)]
+        for d in DIRECTIONS
+    }
+
+
+def _combos(
+    legs: dict[str, list[MergedLeg]], out_date: date, ret_date: date, max_price: int | None
+) -> list[Candidate]:
+    combos: list[Candidate] = []
+    for o in legs.get("out", []):
+        for i in legs.get("in", []):
+            if o.best_price is None or i.best_price is None:
+                continue
+            price = o.best_price + i.best_price
+            if max_price is not None and price > max_price:
+                continue
+            combos.append(Candidate(o, i, price, stay_minutes(o.leg, out_date, i.leg, ret_date)))
+    return combos
+
+
+def pareto_candidates(
+    legs_in_condition: dict[str, list[MergedLeg]],
+    out_date: date,
+    ret_date: date,
+    max_price: int | None,
+    limit: int = 4,
+) -> list[Candidate]:
+    """가격 오름차순으로 훑으며 체류시간이 지금까지 최대보다 긴 조합만 남긴다."""
+    combos = _combos(legs_in_condition, out_date, ret_date, max_price)
+    combos.sort(key=lambda c: (c.price, -c.stay_min))
+    frontier: list[Candidate] = []
+    best_stay: int | None = None
+    for c in combos:
+        if best_stay is None or c.stay_min > best_stay:
+            frontier.append(c)
+            best_stay = c.stay_min
+    if len(frontier) <= limit:
+        return frontier
+
+    first, last = frontier[0], frontier[-1]
+    chosen = {0, len(frontier) - 1}
+    slots = limit - 2
+    for k in range(1, slots + 1):
+        target = first.price + (last.price - first.price) * k / (slots + 1)
+        idx = min(
+            (i for i in range(len(frontier)) if i not in chosen),
+            key=lambda i: (abs(frontier[i].price - target), i),
+        )
+        chosen.add(idx)
+    return [frontier[i] for i in sorted(chosen)]
+
+
+def cheapest_combo(
+    legs_in_condition: dict[str, list[MergedLeg]], max_price: int | None
+) -> tuple[MergedLeg, MergedLeg, int] | None:
+    best: tuple[MergedLeg, MergedLeg, int] | None = None
+    for o in legs_in_condition.get("out", []):
+        for i in legs_in_condition.get("in", []):
+            if o.best_price is None or i.best_price is None:
+                continue
+            price = o.best_price + i.best_price
+            if max_price is not None and price > max_price:
+                continue
+            if best is None or price < best[2]:
+                best = (o, i, price)
+    return best
+
+
+def _cheapest_by_airline(legs: list[MergedLeg]) -> dict[str, int]:
+    result: dict[str, int] = {}
+    for m in legs:
+        if m.best_price is not None and m.best_price < result.get(m.leg.airline_iata, m.best_price + 1):
+            result[m.leg.airline_iata] = m.best_price
+    return result
+
+
+def rt_reference(
+    snapshots: list[Snapshot],
+    legs: dict[str, list[MergedLeg]],
+    now: datetime,
+    window: timedelta,
+) -> list[RtReference]:
+    """왕복으로 따로 살 때의 항공사별 최저가 vs 같은 항공사 편도 합."""
+    cutoff = now - window
+    latest: dict[str, Snapshot] = {}
+    for s in snapshots:
+        if s.kind != "roundtrip" or s.status != "ok":
+            continue
+        if s.provider not in latest or s.observed_at > latest[s.provider].observed_at:
+            latest[s.provider] = s
+    rt_min: dict[str, int] = {}
+    for s in latest.values():
+        if s.observed_at < cutoff:
+            continue
+        for q in s.rts:
+            if q.total_price < rt_min.get(q.airline_iata, q.total_price + 1):
+                rt_min[q.airline_iata] = q.total_price
+    out_min = _cheapest_by_airline(legs.get("out", []))
+    in_min = _cheapest_by_airline(legs.get("in", []))
+    refs: list[RtReference] = []
+    for airline, total in rt_min.items():
+        if airline in out_min and airline in in_min:
+            ow_sum: int | None = out_min[airline] + in_min[airline]
+            diff = ow_sum - total
+        else:
+            ow_sum, diff = None, None
+        refs.append(RtReference(airline, total, ow_sum, diff))
+    refs.sort(key=lambda r: (r.rt_min, r.airline_iata))
+    return refs
