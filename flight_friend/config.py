@@ -5,6 +5,7 @@ from datetime import timedelta
 ORIGIN: str = "ICN"
 MANUAL_COOLDOWN: timedelta = timedelta(minutes=5)
 STUCK_RUN_AFTER: timedelta = timedelta(minutes=10)
+RUN_TIMEOUT: timedelta = timedelta(minutes=3)
 NEAR_MISS_MIN_PCT: float = 0.10
 NEAR_MISS_MIN_KRW: int = 30_000
 ALERT_DROP_PCT: float = 0.03

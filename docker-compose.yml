@@ -93,6 +93,8 @@ services:
     environment:
       DATABASE_URL: postgresql://flight_user:${DB_PASSWORD:-flight_pass}@db:5432/flights
       REDIS_URL: redis://redis:6379
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
+      DOMAIN: ${DOMAIN:-localhost}
     env_file:
       - .env
     networks:
