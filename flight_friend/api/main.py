@@ -6,10 +6,11 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime
 from pathlib import Path
+from typing import Self
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from flight_friend import db, repo
 from flight_friend.api import views
@@ -34,6 +35,13 @@ class PrefsBody(BaseModel):
     exclude_airlines: list[str] = Field(default_factory=list)
     max_price: int | None = None
     max_duration_min: int | None = None
+
+    @model_validator(mode="after")
+    def _windows_not_inverted(self) -> Self:
+        for window in (self.out_dep_window, self.in_dep_window):
+            if window is not None and window[0] > window[1]:
+                raise ValueError("time window start must not be after end")
+        return self
 
     def to_prefs(self) -> Preferences:
         return Preferences(**self.model_dump())

@@ -33,7 +33,7 @@ types/config → db/repo → providers → domain → worker / api views → api
 | 레이어 | 위치 | 책임 | 금지 |
 |--------|------|------|------|
 | **Types/Config** | `flight_friend/types.py`, `config.py` | 데이터클래스, 잠정 상수 | 로직, I/O |
-| **DB/Repo** | `flight_friend/db.py`, `repo.py` | 스키마(`init_db()`), CRUD, 트랜잭션 | 비즈니스 로직, HTTP 의존 |
+| **DB/Repo** | `flight_friend/db.py`, `repo.py` | 스키마(`init_schema()`), CRUD, 트랜잭션 | 비즈니스 로직, HTTP 의존 |
 | **Providers** | `flight_friend/providers/` | 외부 수집(크롤링), 결과를 `ProviderResult`로 정규화 | DB 접근, 웹 프레임워크 |
 | **Domain** | `flight_friend/domain/` (`results`, `schedule`, `tracking`) | 순수 로직: 결과 조합·후보·near-miss, 갱신 주기, 알림 판정 | `fastapi`/`starlette`, `db`/`repo` import |
 | **Worker** | `flight_friend/worker.py` | run 소비, provider 호출, snapshot 저장, 알림 | 웹 프레임워크 |

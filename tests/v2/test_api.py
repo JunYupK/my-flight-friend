@@ -311,3 +311,13 @@ def test_healthz_ok_and_503(monkeypatch):
     r = client.get("/healthz")
     assert r.status_code == 503
     assert r.json() == {"ok": False}
+
+
+def test_inverted_time_window_is_422() -> None:
+    inverted = {"out_dep_window": ["18:00", "06:00"]}
+    assert client.post("/api/trips", json=body(prefs=inverted)).status_code == 422
+    assert repo.list_trips() == []
+    trip_id = make_trip()
+    assert client.patch(f"/api/trips/{trip_id}", json={"prefs": {"in_dep_window": ["23:00", "01:00"]}}).status_code == 422
+    equal = {"out_dep_window": ["08:00", "08:00"]}
+    assert client.patch(f"/api/trips/{trip_id}", json={"prefs": equal}).status_code == 200
