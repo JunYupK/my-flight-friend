@@ -17,7 +17,7 @@
 
 - 설계: `docs/superpowers/specs/2026-09-28-flight-friend-v2-design.md` (합의 완료)
 - 구현 계획: `docs/superpowers/plans/2026-09-28-flight-friend-v2-m1.md` (M1, 17 tasks — 사용자 검토 대기, 실행 전)
-- 다음 task: Task 7
+- 다음 task: Task 8
 - 진행 중인 외부 작업: OCI 반복 측정(차단 여부) — 결과로 설계 §5.1 갱신 주기·W 확정 예정
 - 작업 브랜치: `claude/dazzling-shannon-4x04v7`
 
@@ -167,3 +167,11 @@
 - 검증: schedule.py 없이 pytest → ModuleNotFoundError(RED), 복구 후 12 passed. 전체 `pytest tests` 141 passed, ruff clean.
 - 결정 / 발견: 티어 값(6h/2h/1h, 60/14일)은 모듈 상수로 분리(잠정치, 실측 후 재조정). is_due의 "오늘"은 now를 Asia/Seoul로 변환한 날짜. MANUAL_COOLDOWN은 config에서 import.
 - 다음 작업자에게: Task 7 진행.
+
+## 2026-09-29 — Claude Code — Task 7: 도메인 — 현재 편도 병합 · 선호 조건 · 조건 밖 힌트
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7`, feat(v2): current leg merge, preferences and near-miss hint
+- 한 일: `flight_friend/domain/results.py` 추가 — `current_legs`(제공자·방향별 최신 ok 편도 스냅샷만, flight_key 병합, stale 제외 best), `violations`, `near_miss`. 테스트 16개(`tests/v2/test_results_legs.py`).
+- 검증: `pytest tests -q` 전체 통과, `ruff check flight_friend tests/v2` clean.
+- 결정 / 발견: stale은 `observed_at < now - window`(경계는 fresh). 병합 대표 leg는 최저가 제공자(동가면 제공자명 사전순). near_miss는 조건 내 반대 방향 최저가가 있는 방향만 후보. `max_price`는 Task 8.
+- 다음 작업자에게: Task 8이 같은 `results.py`에 조합 함수를 추가한다.
+
