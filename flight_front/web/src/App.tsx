@@ -3,10 +3,7 @@ import ThemeToggle from "./components/ThemeToggle";
 import TripList from "./pages/TripList";
 import NewTrip from "./pages/NewTrip";
 import TripPage from "./pages/TripPage";
-
-function AdminPlaceholder() {
-  return <p className="text-apple-secondary text-sm">관리 화면은 준비 중입니다.</p>;
-}
+import Admin from "./pages/Admin";
 
 function Layout() {
   return (
@@ -40,7 +37,7 @@ function Layout() {
           <Route path="/" element={<TripList />} />
           <Route path="/trips/new" element={<NewTrip />} />
           <Route path="/trips/:id" element={<TripPage />} />
-          <Route path="/admin" element={<AdminPlaceholder />} />
+          <Route path="/admin" element={<Admin />} />
         </Routes>
       </main>
     </div>

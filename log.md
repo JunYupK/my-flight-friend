@@ -17,7 +17,7 @@
 
 - 설계: `docs/superpowers/specs/2026-09-28-flight-friend-v2-design.md` (합의 완료)
 - 구현 계획: `docs/superpowers/plans/2026-09-28-flight-friend-v2-m1.md` (M1, 17 tasks — 사용자 검토 대기, 실행 전)
-- 다음 task: Task 15
+- 다음 task: Task 16
 - 진행 중인 외부 작업: OCI 반복 측정(차단 여부) — 결과로 설계 §5.1 갱신 주기·W 확정 예정
 - 작업 브랜치: `claude/dazzling-shannon-4x04v7`
 
@@ -238,3 +238,10 @@
 - 결정 / 발견: `NearMissView.violated`는 문자열 하나(백엔드 그대로) — types.ts의 `string[]` 오류 수정. 편 dep/arr 시각은 ISO가 아니라 현지 "HH:MM".
 - 다음 작업자에게: Task 15는 Admin 화면. 개발 DB는 비어 있음(스모크 시드 삭제).
 - Task 14 Fix round 1: FilterBar 언마운트/trip 전환 시 in-flight PATCH 무효화(seq++) + TripPage onApplied trip id 가드, `RtReference.ow_sum/diff` nullable, LegCard 선택 영역을 `<button aria-pressed>`로(▾ 별도 버튼), 선택 유지 양쪽 독립. build 통과, 브라우저에서 후보 선택·Enter/Space 선택 확인(키 소실 독립 폴백은 코드로만).
+
+## 2026-09-29 — Claude Code — Task 15: 프론트 — /admin
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` / feat(v2-web): admin runs and provider health
+- 한 일: `pages/Admin.tsx` 추가(최근 실행 표 + 제공자별 일자 성공률, 7/14/30일 선택, 새로고침), App.tsx의 `/admin` 자리표시자 교체(내비 미노출). `types.ts`의 `AdminRow`를 서버 shape에 맞는 `AdminRun`/`ProviderDay`로 교체, api.ts 반환 타입 갱신.
+- 검증: `npm run build` 통과; pytest 211 passed. 브라우저 확인(headless Chromium, 실제 API + 시드 데이터, 1200px/390px): 실행 표·스냅샷 배지·Trip 링크·제공자별 일자 표·기간 선택·새로고침·오류 상태·390px 가로 스크롤 없음. 코드만 읽고 확인: 로딩/빈 상태 문구, 알 수 없는 status 대체 표시, 다크 모드.
+- 결정 / 발견: `recent_runs`는 snapshots.error 메시지를 내려주지 않아 실패 사유는 status(차단 의심/결과 없음/오류)까지만 표시.
+- 다음 작업자에게: Task 16. 서버는 종료했고 개발 DB는 비어 있음.

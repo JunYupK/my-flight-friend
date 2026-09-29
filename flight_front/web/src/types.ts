@@ -162,5 +162,26 @@ export type StartRunResult =
   | { kind: "started"; runId: number }
   | { kind: "cooldown"; cooldownSeconds: number };
 
-// Admin 응답은 서버가 repo dict를 그대로 내려준다 (Task 15에서 구체화).
-export type AdminRow = Record<string, string | number | boolean | null>;
+// GET /api/admin/runs — repo.recent_runs 그대로 (시각은 ISO 문자열, 미시작/미종료면 null).
+export interface AdminRun {
+  id: number;
+  trip_id: number;
+  destination: string;
+  trigger: string;
+  status: string;
+  requested_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  snapshots: RunSnapshotStatus[];
+}
+
+// GET /api/admin/providers — repo.provider_stats 그대로 (day는 KST 날짜 "YYYY-MM-DD").
+export interface ProviderDay {
+  provider: string;
+  day: string;
+  total: number;
+  ok: number;
+  empty: number;
+  blocked: number;
+  error: number;
+}

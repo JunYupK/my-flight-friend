@@ -1,6 +1,7 @@
 import type {
-  AdminRow,
+  AdminRun,
   DayPoint,
+  ProviderDay,
   RunStatus,
   StartRunResult,
   TripCreateInput,
@@ -82,10 +83,10 @@ export function getHistory(id: number): Promise<DayPoint[]> {
   return request<DayPoint[]>(`/api/trips/${id}/history`);
 }
 
-export function getAdminRuns(): Promise<AdminRow[]> {
-  return request<AdminRow[]>("/api/admin/runs");
+export function getAdminRuns(): Promise<AdminRun[]> {
+  return request<AdminRun[]>("/api/admin/runs");
 }
 
-export function getAdminProviders(days: number): Promise<AdminRow[]> {
-  return request<AdminRow[]>(`/api/admin/providers?days=${days}`);
+export function getAdminProviders(days: number): Promise<ProviderDay[]> {
+  return request<ProviderDay[]>(`/api/admin/providers?days=${days}`);
 }
