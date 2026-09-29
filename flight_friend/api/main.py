@@ -135,11 +135,13 @@ def admin_providers(days: int = Query(7, ge=1, le=90)) -> list[views.JsonDict]:
 
 # ── Static (React SPA) ── API 라우트 뒤에 등록해야 우선순위 보장
 _DIST = Path(__file__).resolve().parent.parent.parent / "flight_front" / "web" / "dist"
-if _DIST.exists():
 
-    @app.get("/{path:path}")
-    def spa_fallback(path: str) -> FileResponse:
-        file_path = (_DIST / path).resolve()
-        if file_path.is_relative_to(_DIST) and file_path.is_file():
-            return FileResponse(file_path)
-        return FileResponse(_DIST / "index.html")
+
+@app.get("/{path:path}", response_model=None)
+def spa_fallback(path: str) -> FileResponse | JSONResponse:
+    if path.startswith("api/") or not _DIST.exists():
+        return JSONResponse(status_code=404, content={"detail": "Not Found"})
+    file_path = (_DIST / path).resolve()
+    if file_path.is_relative_to(_DIST) and file_path.is_file():
+        return FileResponse(file_path)
+    return FileResponse(_DIST / "index.html")

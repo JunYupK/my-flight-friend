@@ -192,15 +192,8 @@ def trip_list_item(trip: Trip, now: datetime) -> JsonDict:
     window = _window(trip, now)
     current = current_value(snaps, trip.prefs, now, window)
     stats = tracking_stats(daily_series(run_values(snaps, trip.prefs)), current)
-    cutoff = now - window
-    latest: dict[tuple[str, str], Snapshot] = {}
-    for s in snaps:
-        if s.kind != "oneway" or s.status != "ok" or s.direction is None:
-            continue
-        k = (s.provider, s.direction)
-        if k not in latest or s.observed_at > latest[k].observed_at:
-            latest[k] = s
-    used = [s.observed_at for s in latest.values() if s.observed_at >= cutoff]
+    legs = current_legs(snaps, now, window)
+    used = [p.observed_at for d in legs.values() for m in d for p in m.prices if not p.stale]
     change: float | None = None
     if stats.comparable and stats.start and current is not None:
         change = round((current / stats.start - 1) * 100, 1)

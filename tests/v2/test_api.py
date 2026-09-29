@@ -3,13 +3,16 @@
 import os
 import sys
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Literal
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
+import pytest
 from fastapi.testclient import TestClient
 
 from flight_friend import db, repo
+from flight_friend.api import main as api_main
 from flight_friend.api.main import app
 from flight_friend.types import LegQuote, Preferences, ProviderResult
 
@@ -278,3 +281,12 @@ def test_admin_and_health() -> None:
     assert runs[0]["trip_id"] == trip_id and len(runs[0]["snapshots"]) == 2
     stats = client.get("/api/admin/providers?days=7").json()
     assert stats[0]["provider"] == "google_flights" and stats[0]["total"] == 2
+
+
+def test_spa_fallback_and_api_404(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    (tmp_path / "index.html").write_text("<html>spa</html>")
+    monkeypatch.setattr(api_main, "_DIST", tmp_path.resolve())
+    r = client.get("/api/does-not-exist")
+    assert r.status_code == 404 and r.json() == {"detail": "Not Found"}
+    r = client.get("/trips/1")
+    assert r.status_code == 200 and "spa" in r.text
