@@ -19,3 +19,6 @@ backups/
 .DS_Store
 Thumbs.db
 .gstack/
+
+# SDD workspace (subagent-driven-development scratch)
+.superpowers/

@@ -18,4 +18,4 @@ COPY . .
 COPY --from=frontend /web/dist flight_front/web/dist
 
 EXPOSE 8000
-CMD ["uvicorn", "flight_front.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "flight_friend.api.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -7,25 +7,10 @@ export function formatDate(d: string) {
   return `${parts[1]}.${parts[2]}(${DAY_NAMES[dt.getDay()]})`;
 }
 
-/** "AM 10:30" / "PM 3:10" → "10:30" / "15:10" */
-export function normalizeTime(t: string | null) {
-  if (!t) return "??:??";
-  const m = t.match(/^(AM|PM)\s*(\d+):(\d+)/i);
-  if (!m) return t.trim();
-  let h = parseInt(m[2]);
-  const min = m[3];
-  if (m[1].toUpperCase() === "PM" && h !== 12) h += 12;
-  if (m[1].toUpperCase() === "AM" && h === 12) h = 0;
-  return `${String(h).padStart(2, "0")}:${min}`;
-}
-
 export function formatDuration(min: number | null) {
   if (min == null) return "-";
   return `${Math.floor(min / 60)}h ${min % 60}m`;
 }
-
-/** 수집이 지연됐다고 볼 임계 시간 (정상 주기 3h를 충분히 넘는 값) */
-export const STALE_HOURS = 12;
 
 /** ISO 시각 → 현재까지 경과 시간(시간 단위, 소수). 파싱 실패 시 Infinity. */
 export function hoursSince(iso: string): number {
@@ -42,4 +27,55 @@ export function timeAgo(iso: string): string {
   if (h < 1) return `${Math.max(1, Math.round(h * 60))}분 전`;
   if (h < 24) return `${Math.floor(h)}시간 전`;
   return `${Math.floor(h / 24)}일 전`;
+}
+
+/** 12345 → "12,345원" */
+export function formatWon(n: number): string {
+  return `${n.toLocaleString("ko-KR")}원`;
+}
+
+/** "2026-10-21" → "10/21" */
+export function shortMd(d: string): string {
+  return `${parseInt(d.slice(5, 7), 10)}/${parseInt(d.slice(8, 10), 10)}`;
+}
+
+export function dday(n: number): string {
+  if (n === 0) return "D-day";
+  return n > 0 ? `D-${n}` : `D+${-n}`;
+}
+
+function utcDay(d: string): number {
+  return Date.UTC(parseInt(d.slice(0, 4), 10), parseInt(d.slice(5, 7), 10) - 1, parseInt(d.slice(8, 10), 10));
+}
+
+function hhmmToMin(t: string): number {
+  return parseInt(t.slice(0, 2), 10) * 60 + parseInt(t.slice(3, 5), 10);
+}
+
+/** 출국편 도착(arr < dep면 +1일)부터 귀국편 출발까지의 분 (현지 시각 기준, 백엔드 stay_minutes와 같은 규칙). */
+export function stayMinutes(outDate: string, outDep: string, outArr: string, retDate: string, retDep: string): number {
+  const dayDiff = Math.round((utcDay(retDate) - utcDay(outDate)) / 86_400_000);
+  const overnight = outArr < outDep ? 1 : 0;
+  return (dayDiff - overnight) * 1440 + hhmmToMin(retDep) - hhmmToMin(outArr);
+}
+
+/** 분 → "2일 3시간" / "5시간 30분" */
+export function formatStay(min: number): string {
+  const sign = min < 0 ? "-" : "";
+  const a = Math.abs(min);
+  const d = Math.floor(a / 1440);
+  const h = Math.floor((a % 1440) / 60);
+  const m = a % 60;
+  const parts: string[] = [];
+  if (d > 0) parts.push(`${d}일`);
+  if (h > 0 || (d === 0 && m === 0)) parts.push(`${h}시간`);
+  if (d === 0 && m > 0) parts.push(`${m}분`);
+  return sign + parts.join(" ");
+}
+
+export const WINDOW_ORDER_MESSAGE = "시간대의 시작이 끝보다 늦을 수 없습니다.";
+
+/** 둘 다 채워졌고 시작이 끝보다 늦으면 true ("HH:MM" 문자열 비교). */
+export function isInvertedWindow(from: string, to: string): boolean {
+  return from !== "" && to !== "" && from > to;
 }
