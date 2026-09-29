@@ -1,159 +1,104 @@
-import type { ConfigData, RunStatus, DestinationGroup, Airport, PriceHistoryResponse, CollectionRun, Deal, SeasonalPoint, AdvancePoint, CoverageResponse, SystemStats } from "./types";
+import type {
+  AdminRow,
+  DayPoint,
+  PriceHistoryResponse,
+  RunStatus,
+  StartRunResult,
+  TripCreateInput,
+  TripPatchInput,
+  TripSummary,
+  TripView,
+} from "./types";
 
-export async function fetchConfig(): Promise<ConfigData> {
-  const res = await fetch("/api/config");
-  if (!res.ok) throw new Error("Failed to fetch config");
-  return res.json();
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null;
 }
 
-export async function saveConfig(data: ConfigData): Promise<void> {
-  const res = await fetch("/api/config", {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
-  });
-  if (!res.ok) throw new Error("Failed to save config");
-}
-
-export async function fetchAirports(): Promise<Airport[]> {
-  const res = await fetch("/api/airports");
-  if (!res.ok) throw new Error("Failed to fetch airports");
-  return res.json();
-}
-
-export async function upsertAirport(airport: Airport): Promise<void> {
-  const res = await fetch("/api/airports", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(airport),
-  });
-  if (!res.ok) throw new Error("Failed to save airport");
-}
-
-export async function deleteAirport(code: string): Promise<void> {
-  const res = await fetch(`/api/airports/${code}`, { method: "DELETE" });
-  if (!res.ok) throw new Error("Failed to delete airport");
-}
-
-export async function startRun(): Promise<void> {
-  const res = await fetch("/api/run", { method: "POST" });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail ?? "Failed to start run");
+/** FastAPI 에러 detail(string | list)을 사람이 읽을 문자열로. */
+function errorMessage(body: unknown, fallback: string): string {
+  if (!isRecord(body)) return fallback;
+  const detail = body.detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    const msgs = detail.map((d) => {
+      if (!isRecord(d)) return String(d);
+      const loc = Array.isArray(d.loc) ? d.loc.filter((p) => p !== "body").join(".") : "";
+      const msg = typeof d.msg === "string" ? d.msg : "invalid";
+      return loc ? `${loc}: ${msg}` : msg;
+    });
+    if (msgs.length > 0) return msgs.join("\n");
   }
+  return fallback;
 }
 
-export async function fetchRunStatus(): Promise<RunStatus> {
-  const res = await fetch("/api/run/status");
-  if (!res.ok) throw new Error("Failed to fetch run status");
-  return res.json();
-}
-
-export async function fetchResults(params?: { hours?: number; month?: string; trip_type?: string; source?: string }): Promise<DestinationGroup[]> {
-  const qs = new URLSearchParams();
-  if (params?.hours != null) qs.set("hours", String(params.hours));
-  if (params?.month) qs.set("month", params.month);
-  if (params?.trip_type) qs.set("trip_type", params.trip_type);
-  if (params?.source) qs.set("source", params.source);
-  const query = qs.toString();
-  const url = query ? `/api/results?${query}` : "/api/results";
-  const res = await fetch(url);
+async function request<T>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(url, init);
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail ?? "Failed to fetch results");
+    const body: unknown = await res.json().catch(() => null);
+    throw new Error(errorMessage(body, `요청 실패 (${res.status})`));
   }
-  return res.json();
+  const data: T = await res.json();
+  return data;
 }
 
-export async function searchFlights(params: {
-  departure_date: string;
-  return_date: string;
-  destination?: string;
-  trip_type?: string;
-  source?: string;
-}): Promise<DestinationGroup[]> {
-  const qs = new URLSearchParams();
-  qs.set("departure_date", params.departure_date);
-  qs.set("return_date", params.return_date);
-  if (params.destination) qs.set("destination", params.destination);
-  if (params.trip_type) qs.set("trip_type", params.trip_type);
-  if (params.source) qs.set("source", params.source);
-  const res = await fetch(`/api/search?${qs}`);
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail ?? "Search failed");
-  }
-  return res.json();
+function jsonInit(method: string, body: unknown): RequestInit {
+  return { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
 }
 
+export function listTrips(): Promise<TripSummary[]> {
+  return request<TripSummary[]>("/api/trips");
+}
+
+export function createTrip(input: TripCreateInput): Promise<{ id: number; run_id: number }> {
+  return request<{ id: number; run_id: number }>("/api/trips", jsonInit("POST", input));
+}
+
+export function getTrip(id: number): Promise<TripView> {
+  return request<TripView>(`/api/trips/${id}`);
+}
+
+export function patchTrip(id: number, patch: TripPatchInput): Promise<TripView> {
+  return request<TripView>(`/api/trips/${id}`, jsonInit("PATCH", patch));
+}
+
+/** 202 → started, 429 → cooldown. 그 외 오류는 throw. */
+export async function startRun(id: number): Promise<StartRunResult> {
+  const res = await fetch(`/api/trips/${id}/runs`, { method: "POST" });
+  const body: unknown = await res.json().catch(() => null);
+  if (res.status === 429) {
+    const secs = isRecord(body) && typeof body.retry_after_seconds === "number" ? body.retry_after_seconds : 0;
+    return { kind: "cooldown", cooldownSeconds: secs };
+  }
+  if (!res.ok || !isRecord(body) || typeof body.run_id !== "number") {
+    throw new Error(errorMessage(body, `요청 실패 (${res.status})`));
+  }
+  return { kind: "started", runId: body.run_id };
+}
+
+export function getRun(id: number): Promise<RunStatus> {
+  return request<RunStatus>(`/api/runs/${id}`);
+}
+
+export function getHistory(id: number): Promise<DayPoint[]> {
+  return request<DayPoint[]>(`/api/trips/${id}/history`);
+}
+
+export function getAdminRuns(): Promise<AdminRow[]> {
+  return request<AdminRow[]>("/api/admin/runs");
+}
+
+export function getAdminProviders(days: number): Promise<AdminRow[]> {
+  return request<AdminRow[]>(`/api/admin/providers?days=${days}`);
+}
+
+// V1 잔재: PriceChart.tsx(Task 13에서 교체)가 컴파일되도록만 유지.
 export async function fetchPriceHistory(params: {
   destination: string;
   mode?: "calendar" | "timeline";
   month?: string;
-  stay_nights?: number;
-  departure_date?: string;
-  return_date?: string;
 }): Promise<PriceHistoryResponse> {
-  const qs = new URLSearchParams();
-  qs.set("destination", params.destination);
+  const qs = new URLSearchParams({ destination: params.destination });
   if (params.mode) qs.set("mode", params.mode);
   if (params.month) qs.set("month", params.month);
-  if (params.stay_nights != null) qs.set("stay_nights", String(params.stay_nights));
-  if (params.departure_date) qs.set("departure_date", params.departure_date);
-  if (params.return_date) qs.set("return_date", params.return_date);
-  const res = await fetch(`/api/price-history?${qs}`);
-  if (!res.ok) throw new Error("Failed to fetch price history");
-  return res.json();
-}
-
-export type CalendarPrices = { out: Record<string, number>; in: Record<string, number> };
-
-export async function fetchCalendarPrices(params: {
-  destination: string;
-  from: string;
-  to: string;
-}): Promise<CalendarPrices> {
-  const qs = new URLSearchParams({ destination: params.destination, from: params.from, to: params.to });
-  const res = await fetch(`/api/calendar-prices?${qs}`);
-  if (!res.ok) throw new Error("Failed to fetch calendar prices");
-  return res.json();
-}
-
-export async function fetchCollectionRuns(limit = 20): Promise<CollectionRun[]> {
-  const res = await fetch(`/api/collection-runs?limit=${limit}`);
-  if (!res.ok) throw new Error("Failed to fetch collection runs");
-  return res.json();
-}
-
-export async function fetchRunDetail(id: number): Promise<CollectionRun> {
-  const res = await fetch(`/api/collection-runs/${id}`);
-  if (!res.ok) throw new Error("Failed to fetch run detail");
-  return res.json();
-}
-
-export async function fetchTimingSeasonal(): Promise<SeasonalPoint[]> {
-  const res = await fetch("/api/timing/seasonal");
-  if (!res.ok) throw new Error("Failed to fetch seasonal data");
-  return res.json();
-}
-
-export async function fetchTimingAdvance(destination?: string): Promise<AdvancePoint[]> {
-  const url = destination
-    ? `/api/timing/advance?destination=${encodeURIComponent(destination)}`
-    : "/api/timing/advance";
-  const res = await fetch(url);
-  if (!res.ok) throw new Error("Failed to fetch advance data");
-  return res.json();
-}
-
-export async function fetchCoverage(days = 14): Promise<CoverageResponse> {
-  const res = await fetch(`/api/monitor/coverage?days=${days}`);
-  if (!res.ok) throw new Error("Failed to fetch coverage data");
-  return res.json();
-}
-
-export async function fetchSystemStats(): Promise<SystemStats> {
-  const res = await fetch("/api/monitor/system");
-  if (!res.ok) throw new Error("Failed to fetch system stats");
-  return res.json();
+  return request<PriceHistoryResponse>(`/api/price-history?${qs}`);
 }

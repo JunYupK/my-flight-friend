@@ -1,79 +1,174 @@
-export interface SearchConfig {
+// Task 11 API 응답 형태 그대로. 시각은 오프셋 포함 ISO 문자열 — new Date()로 파싱할 것.
+
+export interface Preferences {
+  out_dep_window: [string, string] | null;
+  in_dep_window: [string, string] | null;
+  nonstop_only: boolean;
+  include_airlines: string[];
+  exclude_airlines: string[];
+  max_price: number | null;
+  max_duration_min: number | null;
+}
+
+export interface TripSummary {
+  id: number;
+  destination: string;
+  out_date: string;
+  ret_date: string;
+  days_to_departure: number;
+  tracking: boolean;
+  current: number | null;
+  current_observed_at: string | null;
+  change_vs_start_pct: number | null;
+  archived: boolean;
+}
+
+export interface TripInfo {
+  id: number;
+  origin: string;
+  destination: string;
+  out_date: string;
+  ret_date: string;
   adults: number;
-  currency: string;
-  nonStop: boolean;
-  target_price_krw: number;
-  alert_cooldown_hours: number;
-  alert_realert_drop_krw: number;
-  allow_mixed_airline: boolean;
-  stay_durations: number[];
-  search_range_months: number;
-  topk_per_date: number;
-  request_delay: number;
+  cabin: string;
+  prefs: Preferences;
+  target_price: number | null;
+  tracking: boolean;
+  archived: boolean;
+  days_to_departure: number;
+  created_at: string;
 }
 
-export interface ConfigData {
-  search_config: SearchConfig;
+export interface ProviderPriceView {
+  provider: string;
+  price: number | null;
+  observed_at: string;
+  booking_url: string | null;
+  stale: boolean;
 }
 
-export interface Airport {
-  code: string;
-  name: string;
-  tfs_out: string;
-  tfs_in: string;
+export interface MergedLegView {
+  flight_key: string;
+  dep_time: string | null;
+  arr_time: string | null;
+  airline_name: string | null;
+  airline_iata: string | null;
+  flight_numbers: string[];
+  stops: number | null;
+  duration_min: number | null;
+  dep_airport: string | null;
+  arr_airport: string | null;
+  best_price: number | null;
+  best_provider: string | null;
+  in_condition: boolean;
+  violations: string[];
+  prices: ProviderPriceView[];
+}
+
+export interface CandidateView {
+  out_flight_key: string;
+  in_flight_key: string;
+  price: number;
+  stay_min: number;
+}
+
+export interface NearMissView {
+  direction: string;
+  flight_key: string;
+  violated: string[];
+  combo_price: number | null;
+  saving: number | null;
+}
+
+export interface RtReference {
+  airline_iata: string;
+  rt_min: number;
+  ow_sum: number;
+  diff: number;
+}
+
+export interface Stats {
+  current: number | null;
+  start: number | null;
+  start_day: string | null;
+  low: number | null;
+  low_day: string | null;
+  median: number | null;
+  days: number;
+  comparable: boolean;
+}
+
+export interface DayPoint {
+  day: string;
+  combo: number | null;
+  out_min: number | null;
+  in_min: number | null;
+  partial: boolean;
+}
+
+export interface ProviderStatus {
+  provider: string;
+  status: string;
+  observed_at: string;
+  last_ok_at: string | null;
+}
+
+export interface RunSummary {
+  id: number;
+  status: string;
+  requested_at: string;
+}
+
+export interface TripView {
+  trip: TripInfo;
+  run: RunSummary | null;
+  providers: ProviderStatus[];
+  stats: Stats;
+  legs: { out: MergedLegView[]; in: MergedLegView[] };
+  candidates: CandidateView[];
+  near_miss: NearMissView | null;
+  rt_reference: RtReference[];
+  window_minutes: number;
+}
+
+export interface RunSnapshotStatus {
+  provider: string;
+  kind: string;
+  direction: string | null;
+  status: string;
 }
 
 export interface RunStatus {
-  status: "idle" | "running" | "done" | "error";
-  output: string;
-  pid: number | null;
+  id: number;
+  status: string;
+  snapshots: RunSnapshotStatus[];
 }
 
-export interface Deal {
-  origin: string;
+export interface TripCreateInput {
   destination: string;
-  destination_name: string;
-  departure_date: string;
-  return_date: string;
-  stay_nights: number;
-  trip_type: string;
-  source: string;
-  out_source?: string;
-  in_source?: string;
-  out_airline: string;
-  in_airline: string;
-  is_mixed_airline: boolean;
-  out_dep_time: string | null;
-  out_arr_time: string | null;
-  out_duration_min: number | null;
-  out_stops: number | null;
-  in_dep_time: string | null;
-  in_arr_time: string | null;
-  in_duration_min: number | null;
-  in_stops: number | null;
-  out_arr_airport: string | null;
-  in_dep_airport: string | null;
-  out_url: string | null;
-  in_url: string | null;
-  out_price: number | null;
-  in_price: number | null;
-  min_price: number;
-  last_checked_at: string;
-  rank: number;
+  out_date: string;
+  ret_date: string;
+  prefs: Preferences;
+  target_price: number | null;
 }
 
-export interface DestinationGroup {
-  destination: string;
-  destination_name: string;
-  top_deals: Deal[];
-  diverse_deals: Deal[];
-  min_price: number;
-  total_count: number;
+export interface TripPatchInput {
+  prefs?: Preferences;
+  tracking?: boolean;
+  target_price?: number | null;
 }
 
+export type StartRunResult =
+  | { kind: "started"; runId: number }
+  | { kind: "cooldown"; cooldownSeconds: number };
+
+// Admin 응답은 서버가 repo dict를 그대로 내려준다 (Task 15에서 구체화).
+export type AdminRow = Record<string, string | number | boolean | null>;
+
+// V1 잔재: PriceChart.tsx(Task 13에서 교체)가 컴파일되도록만 유지.
 export interface PriceHistoryPoint {
-  departure_date?: string;  // calendar 모드
-  check_date?: string;      // timeline 모드
+  departure_date?: string;
+  check_date?: string;
   source: string;
   min_price: number;
 }
@@ -81,80 +176,4 @@ export interface PriceHistoryPoint {
 export interface PriceHistoryResponse {
   mode: "calendar" | "timeline";
   data: PriceHistoryPoint[];
-}
-
-export interface SeasonalPoint {
-  destination: string;
-  destination_name: string;
-  month: string;
-  min_price: number;
-}
-
-export interface AdvancePoint {
-  destination: string;
-  destination_name: string;
-  days_before: number;
-  avg_price: number;
-  min_price: number;
-  obs_count: number;
-}
-
-export interface CollectionRun {
-  id: number;
-  started_at: string;
-  finished_at: string | null;
-  status: "running" | "success" | "partial" | "error";
-  google_count: number;
-  total_saved: number;
-  alerts_sent: number;
-  has_error: boolean;
-  duration_sec: number | null;
-  error_log?: string | null;
-}
-
-export interface CoverageByDestMonth {
-  destination: string;
-  destination_name: string;
-  month: string;
-  last_run_at: string;
-  legs: number;
-}
-
-export interface CoverageByRun {
-  run_id: number;
-  started_at: string;
-  run_status: string;
-  destination: string;
-  destination_name: string;
-  source: string;
-  month: string;
-  legs: number;
-}
-
-export interface CoverageResponse {
-  by_destination_month: CoverageByDestMonth[];
-  by_run: CoverageByRun[];
-}
-
-export interface SystemStats {
-  cpu: {
-    percent: number;
-    cores: number;
-    load1: number;
-    load5: number;
-    load15: number;
-  };
-  memory: {
-    total: number;
-    used: number;
-    available: number;
-    percent: number;
-  };
-  disk: {
-    total: number;
-    used: number;
-    free: number;
-    percent: number;
-    host: boolean;
-  };
 }
