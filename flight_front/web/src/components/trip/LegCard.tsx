@@ -32,20 +32,14 @@ export default function LegCard({ leg, direction, selected, highlighted, onSelec
       ? "ring-2 ring-apple-orange"
       : "ring-1 ring-apple-text/10";
 
-  return (
-    <li
-      id={legDomId(direction, leg.flight_key)}
-      onClick={selectable ? onSelect : undefined}
-      aria-selected={selected}
-      className={`rounded-xl bg-apple-surface p-3 ${ring} ${selectable ? "cursor-pointer" : "opacity-60"} ${leg.in_condition ? "" : "border-l-4 border-apple-tertiary"}`}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="text-lg font-semibold text-apple-text">
+  const content = (
+    <>
+        <span className="block min-w-0">
+          <span className="block text-lg font-semibold text-apple-text">
             {leg.dep_time ?? "--:--"} → {leg.arr_time ?? "--:--"}
             {overnight && <span className="ml-1 text-xs font-medium text-apple-orange">+1</span>}
-          </div>
-          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-apple-secondary">
+          </span>
+          <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-apple-secondary">
             <span>{leg.airline_name ?? leg.airline_iata ?? "항공사 미상"}</span>
             {leg.stops === 0 ? (
               <span>직항</span>
@@ -54,24 +48,38 @@ export default function LegCard({ leg, direction, selected, highlighted, onSelec
             ) : null}
             {leg.duration_min != null && <span>{legDuration(leg.duration_min)}</span>}
             {!leg.in_condition && selectable && <span className="text-apple-orange">조건 밖</span>}
-          </div>
-        </div>
-        <div className="shrink-0 text-right">
+          </span>
+        </span>
+        <span className="shrink-0 text-right">
           {selectable ? (
             <>
-              <div className="text-lg font-semibold text-apple-text">{formatWon(leg.best_price ?? 0)}</div>
+              <span className="block text-lg font-semibold text-apple-text">{formatWon(leg.best_price ?? 0)}</span>
               {leg.best_provider && (
-                <div className="text-xs text-apple-secondary">
+                <span className="block text-xs text-apple-secondary">
                   {providerLabel(leg.best_provider)}
                   {others > 0 && ` 외 ${others}곳`}
-                </div>
+                </span>
               )}
             </>
           ) : (
-            <div className="text-sm text-apple-secondary">확인가 없음</div>
+            <span className="text-sm text-apple-secondary">확인가 없음</span>
           )}
-        </div>
-      </div>
+        </span>
+    </>
+  );
+
+  return (
+    <li
+      id={legDomId(direction, leg.flight_key)}
+      className={`rounded-xl bg-apple-surface p-3 ${ring} ${selectable ? "" : "opacity-60"} ${leg.in_condition ? "" : "border-l-4 border-apple-tertiary"}`}
+    >
+      {selectable ? (
+        <button type="button" aria-pressed={selected} onClick={onSelect} className="flex w-full items-start justify-between gap-2 text-left">
+          {content}
+        </button>
+      ) : (
+        <div className="flex w-full items-start justify-between gap-2 text-left">{content}</div>
+      )}
       <div className="mt-1 flex justify-end">
         <button
           type="button"
@@ -87,7 +95,7 @@ export default function LegCard({ leg, direction, selected, highlighted, onSelec
         </button>
       </div>
       {open && (
-        <div className="mt-1 space-y-1 border-t border-apple-text/5 pt-2 text-xs" onClick={(e) => e.stopPropagation()}>
+        <div className="mt-1 space-y-1 border-t border-apple-text/5 pt-2 text-xs">
           <p className="text-apple-secondary">편명 {leg.flight_numbers.join(", ") || "-"}</p>
           {leg.prices.map((p) => (
             <div

@@ -46,15 +46,20 @@ export default function TripPage() {
   const [selOut, setSelOut] = useState<string | null>(null);
   const [selIn, setSelIn] = useState<string | null>(null);
 
-  // 선택 유지: TripView가 교체돼도 키가 남아 있으면 유지, 아니면 첫 후보(없으면 선택 없음)
+  // 선택 유지: TripView가 교체돼도 각 쪽의 키가 남아 있고 가격이 있으면 유지, 사라진 쪽만 첫 후보로 대체
   useEffect(() => {
     if (!trip) return;
-    const outOk = (k: string | null) => k !== null && trip.legs.out.some((l) => l.flight_key === k && l.best_price != null);
-    const inOk = (k: string | null) => k !== null && trip.legs.in.some((l) => l.flight_key === k && l.best_price != null);
-    if (outOk(selOut) && inOk(selIn)) return;
+    const ok = (legs: TripView["legs"]["out"], k: string | null) =>
+      k !== null && legs.some((l) => l.flight_key === k && l.best_price != null);
     const first = trip.candidates[0];
-    setSelOut(first ? first.out_flight_key : null);
-    setSelIn(first ? first.in_flight_key : null);
+    if (!ok(trip.legs.out, selOut)) {
+      const next = first ? first.out_flight_key : null;
+      if (next !== selOut) setSelOut(next);
+    }
+    if (!ok(trip.legs.in, selIn)) {
+      const next = first ? first.in_flight_key : null;
+      if (next !== selIn) setSelIn(next);
+    }
   }, [trip, selOut, selIn]);
 
   // 로드 (id 변경 시 상태 초기화). 열린 run이 있으면 자동 폴링.
@@ -175,7 +180,9 @@ export default function TripPage() {
           onSelectOut={setSelOut}
           onSelectIn={setSelIn}
           onPick={pickCandidate}
-          onApplied={setTrip}
+          onApplied={(v) => {
+            if (v.trip.id === id) setTrip(v);
+          }}
         />
       )}
       {selOutLeg && selInLeg && (

@@ -83,8 +83,8 @@ export interface NearMissView {
 export interface RtReference {
   airline_iata: string;
   rt_min: number;
-  ow_sum: number;
-  diff: number;
+  ow_sum: number | null;
+  diff: number | null;
 }
 
 export interface Stats {

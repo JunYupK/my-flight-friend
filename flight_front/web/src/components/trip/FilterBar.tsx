@@ -82,10 +82,14 @@ export default function FilterBar({ tripId, prefs, legs, onApplied }: Props) {
   useEffect(() => {
     setForm(toForm(prefs));
     setError("");
+    setSaving(false);
+    return () => {
+      // trip 전환/언마운트: 대기 중 디바운스와 진행 중 PATCH 응답을 무효화
+      window.clearTimeout(timer.current);
+      seq.current++;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tripId]);
-
-  useEffect(() => () => window.clearTimeout(timer.current), []);
 
   function apply(next: Form) {
     const mine = ++seq.current;

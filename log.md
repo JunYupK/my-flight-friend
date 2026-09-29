@@ -237,3 +237,4 @@
 - 검증: `npm run build` 통과, `pytest tests/` 211 passed. 브라우저(headless Chromium, 실제 API, FUK급 시드 출국 40/귀국 35): 필터 변경 즉시 반영(재검색 없이 PATCH만), 후보 클릭 선택 동기화, near-miss 문구 + [보기], 모바일 390px 탭·가로 스크롤 없음, 선택 바 합계/체류/예약 링크/rt 줄(저렴), 차트 refetch. 코드 읽기로만 확인: stale `오래됨`·`확인가 없음` 카드, rt `비쌈`, 예약 URL null 숨김, 다크 모드.
 - 결정 / 발견: `NearMissView.violated`는 문자열 하나(백엔드 그대로) — types.ts의 `string[]` 오류 수정. 편 dep/arr 시각은 ISO가 아니라 현지 "HH:MM".
 - 다음 작업자에게: Task 15는 Admin 화면. 개발 DB는 비어 있음(스모크 시드 삭제).
+- Task 14 Fix round 1: FilterBar 언마운트/trip 전환 시 in-flight PATCH 무효화(seq++) + TripPage onApplied trip id 가드, `RtReference.ow_sum/diff` nullable, LegCard 선택 영역을 `<button aria-pressed>`로(▾ 별도 버튼), 선택 유지 양쪽 독립. build 통과, 브라우저에서 후보 선택·Enter/Space 선택 확인(키 소실 독립 폴백은 코드로만).
