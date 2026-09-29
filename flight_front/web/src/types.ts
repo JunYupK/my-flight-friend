@@ -164,16 +164,3 @@ export type StartRunResult =
 
 // Admin 응답은 서버가 repo dict를 그대로 내려준다 (Task 15에서 구체화).
 export type AdminRow = Record<string, string | number | boolean | null>;
-
-// V1 잔재: PriceChart.tsx(Task 13에서 교체)가 컴파일되도록만 유지.
-export interface PriceHistoryPoint {
-  departure_date?: string;
-  check_date?: string;
-  source: string;
-  min_price: number;
-}
-
-export interface PriceHistoryResponse {
-  mode: "calendar" | "timeline";
-  data: PriceHistoryPoint[];
-}

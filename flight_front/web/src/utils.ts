@@ -33,3 +33,13 @@ export function timeAgo(iso: string): string {
 export function formatWon(n: number): string {
   return `${n.toLocaleString("ko-KR")}원`;
 }
+
+/** "2026-10-21" → "10/21" */
+export function shortMd(d: string): string {
+  return `${parseInt(d.slice(5, 7), 10)}/${parseInt(d.slice(8, 10), 10)}`;
+}
+
+export function dday(n: number): string {
+  if (n === 0) return "D-day";
+  return n > 0 ? `D-${n}` : `D+${-n}`;
+}

@@ -17,7 +17,7 @@
 
 - 설계: `docs/superpowers/specs/2026-09-28-flight-friend-v2-design.md` (합의 완료)
 - 구현 계획: `docs/superpowers/plans/2026-09-28-flight-friend-v2-m1.md` (M1, 17 tasks — 사용자 검토 대기, 실행 전)
-- 다음 task: Task 13
+- 다음 task: Task 14
 - 진행 중인 외부 작업: OCI 반복 측정(차단 여부) — 결과로 설계 §5.1 갱신 주기·W 확정 예정
 - 작업 브랜치: `claude/dazzling-shannon-4x04v7`
 
@@ -223,3 +223,10 @@
 - 검증: `npm run build` 통과; uvicorn :8765 + headless Chromium으로 SPA 렌더(목록 행·새 여행 폼) 확인, 390px iframe에서 가로 스크롤 없음; curl로 trip 생성/목록/422 확인; `pytest tests/` 211 passed.
 - 결정 / 발견: PriceChart가 V1 `fetchPriceHistory`/`PriceHistoryPoint`에 의존해 tsc 통과를 위해 이 둘만 V1 잔재로 유지 (Task 13에서 PriceChart 교체 시 제거). vite dev proxy는 8000 그대로.
 - 다음 작업자에게: Task 13에서 `/trips/:id` 상세 구현, `types.ts`의 V1 잔재 두 타입과 `api.ts`의 `fetchPriceHistory` 제거.
+
+## 2026-09-29 — Claude Code — Task 13: 프론트 — Trip 화면: 상태 헤더 · 확인 버튼 · 추적 요약 · 차트
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` / `feat(v2-web): trip status header, run polling and tracking summary`
+- 한 일: `TripPage`(trip/run 상태 소유, 2.5초 폴링, done/error 시 getTrip 1회 재조회로 일괄 교체, 429 쿨다운 카운트다운), `StatusHeader`, `TrackingSummary`, `HistoryChart`(기본 접힘·선 토글·partial 속 빈 점), `providers.ts`; App 라우트 연결; V1 잔재(`PriceChart.tsx`, `fetchPriceHistory`, `PriceHistory*` 타입) 삭제.
+- 검증: `npm run build` 통과. 실제 API + headless Chromium(390px)로 헤더/요약/차트 토글/버튼(429 쿨다운 → queued 진행 표시 → DB에서 run 완료 → 결과 교체) 확인, 가로 스크롤 없음. `pytest tests/` 211 passed.
+- 결정 / 발견: `dday`를 utils.ts에 추가(TripList의 로컬 복사본은 그대로 둠). 개발 DB의 trips를 TRUNCATE 후 스모크용 2건 시드.
+- 다음 작업자에게: Task 14는 TripPage에 결과 컴포넌트를 추가 (`trip` 상태 + setTrip 전달). 빈 상태 진행 표시(`RunProgress`)는 TripPage 안에 있음.

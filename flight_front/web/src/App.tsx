@@ -1,12 +1,8 @@
-import { BrowserRouter, Routes, Route, Link, useParams } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
 import ThemeToggle from "./components/ThemeToggle";
 import TripList from "./pages/TripList";
 import NewTrip from "./pages/NewTrip";
-
-function TripPlaceholder() {
-  const { id } = useParams();
-  return <p className="text-apple-secondary text-sm">여행 #{id} 상세 화면은 준비 중입니다.</p>;
-}
+import TripPage from "./pages/TripPage";
 
 function AdminPlaceholder() {
   return <p className="text-apple-secondary text-sm">관리 화면은 준비 중입니다.</p>;
@@ -43,7 +39,7 @@ function Layout() {
         <Routes>
           <Route path="/" element={<TripList />} />
           <Route path="/trips/new" element={<NewTrip />} />
-          <Route path="/trips/:id" element={<TripPlaceholder />} />
+          <Route path="/trips/:id" element={<TripPage />} />
           <Route path="/admin" element={<AdminPlaceholder />} />
         </Routes>
       </main>

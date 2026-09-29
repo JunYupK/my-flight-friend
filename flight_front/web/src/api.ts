@@ -1,7 +1,6 @@
 import type {
   AdminRow,
   DayPoint,
-  PriceHistoryResponse,
   RunStatus,
   StartRunResult,
   TripCreateInput,
@@ -89,16 +88,4 @@ export function getAdminRuns(): Promise<AdminRow[]> {
 
 export function getAdminProviders(days: number): Promise<AdminRow[]> {
   return request<AdminRow[]>(`/api/admin/providers?days=${days}`);
-}
-
-// V1 잔재: PriceChart.tsx(Task 13에서 교체)가 컴파일되도록만 유지.
-export async function fetchPriceHistory(params: {
-  destination: string;
-  mode?: "calendar" | "timeline";
-  month?: string;
-}): Promise<PriceHistoryResponse> {
-  const qs = new URLSearchParams({ destination: params.destination });
-  if (params.mode) qs.set("mode", params.mode);
-  if (params.month) qs.set("month", params.month);
-  return request<PriceHistoryResponse>(`/api/price-history?${qs}`);
 }
