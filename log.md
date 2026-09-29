@@ -16,8 +16,10 @@
 ## 현재 상태
 
 - 설계: `docs/superpowers/specs/2026-09-28-flight-friend-v2-design.md` (합의 완료)
-- 구현 계획: `docs/superpowers/plans/2026-09-28-flight-friend-v2-m1.md` (M1, 17 tasks — 사용자 검토 대기, 실행 전)
-- 다음 task: Task 16
+- 구현 계획: `docs/superpowers/plans/2026-09-28-flight-friend-v2-m1.md` (M1, 17 tasks)
+- M1 코드(Task 1~16) 완료: `flight_friend/` 패키지 + 새 React 앱 + compose/Dockerfile/CI/deploy/AGENTS.md 연결. V1 코드는 아직 남아 있음(Task 17에서 삭제).
+- 다음 task: Task 17 (사용자 게이트)
+- **머지 전/후 사용자 서버 작업 (OCI):** 호스트 crontab에서 V1 수집 cron(`scripts/collect_and_diagnose.sh`)과 spike cron 제거. 남겨두면 V1 collector가 raw_legs를 삭제한다.
 - 진행 중인 외부 작업: OCI 반복 측정(차단 여부) — 결과로 설계 §5.1 갱신 주기·W 확정 예정
 - 작업 브랜치: `claude/dazzling-shannon-4x04v7`
 
@@ -245,3 +247,10 @@
 - 검증: `npm run build` 통과; pytest 211 passed. 브라우저 확인(headless Chromium, 실제 API + 시드 데이터, 1200px/390px): 실행 표·스냅샷 배지·Trip 링크·제공자별 일자 표·기간 선택·새로고침·오류 상태·390px 가로 스크롤 없음. 코드만 읽고 확인: 로딩/빈 상태 문구, 알 수 없는 status 대체 표시, 다크 모드.
 - 결정 / 발견: `recent_runs`는 snapshots.error 메시지를 내려주지 않아 실패 사유는 status(차단 의심/결과 없음/오류)까지만 표시.
 - 다음 작업자에게: Task 16. 서버는 종료했고 개발 DB는 비어 있음.
+
+## 2026-09-29 — Claude Code — Task 16: 배포 연결 · 문서
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` / `chore(v2): wire worker service, deploy and AGENTS.md for V2`
+- 한 일: compose에 `worker` 서비스(Dockerfile.collector, profile full, 상주) 추가·app 헬스체크 `/healthz`; Dockerfile CMD → `flight_friend.api.main:app`; deploy.yml readiness를 `/healthz`로, worker를 app 헬스체크 후 빌드·기동(collector 빌드 제거); CI ruff 0.16.9 고정 + httpx 설치 + `ruff.toml`에 V1 경로 제외; 아키텍처 테스트 V2 규칙 4개; AGENTS.md V2 재작성.
+- 검증: ruff 0 errors, pytest 전체, npm run build, compose config, YAML 파싱 (보고서 참고).
+- 결정 / 발견: deploy의 `up -d`를 `up -d app mcp caddy`로 좁힘(전체 `up -d`는 미빌드 worker를 헬스체크 전에 인라인 빌드하게 됨). collector/mcp 서비스는 Task 17까지 유지.
+- 다음 작업자에게: **사용자가 OCI에서 V1 수집 cron과 spike cron을 제거해야 한다.** 머지 시 자동 배포되며 worker가 처음 기동한다. Task 17에서 V1 코드·collector/mcp 서비스·ruff 제외 목록·`flight_monitor.notifier` 이동 처리.

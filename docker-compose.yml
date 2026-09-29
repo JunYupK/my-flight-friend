@@ -56,7 +56,7 @@ services:
         condition: service_healthy
     healthcheck:
       # python:3.11-slim 베이스에 curl/wget 없음 → 표준 라이브러리 사용
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/config', timeout=5)"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz', timeout=5)"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -80,6 +80,25 @@ services:
       db:
         condition: service_healthy
       redis:
+        condition: service_healthy
+
+  # V2 worker: 상주 프로세스(Trip 갱신 스케줄러). crawl4ai + Chromium 필요 → Dockerfile.collector.
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.collector
+    command: python -u -m flight_friend.worker
+    restart: unless-stopped
+    profiles: [full]
+    environment:
+      DATABASE_URL: postgresql://flight_user:${DB_PASSWORD:-flight_pass}@db:5432/flights
+      REDIS_URL: redis://redis:6379
+    env_file:
+      - .env
+    networks:
+      - backend
+    depends_on:
+      db:
         condition: service_healthy
 
   mcp:

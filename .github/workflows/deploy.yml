@@ -42,11 +42,11 @@ jobs:
             MCP_ID=$(docker compose --profile full images -q mcp 2>/dev/null | head -1 || true)
             [ -n "$MCP_ID" ] && docker tag "$MCP_ID" flight-friend-mcp:prev || true
 
-            # app + mcp 이미지 리빌드 (collector 는 헬스체크 이후 별도 빌드)
+            # app + mcp 이미지 리빌드 (worker 는 헬스체크 이후 별도 빌드)
             docker compose --profile full build app mcp
 
             # 무중단 재시작 (caddy 포함 풀스택)
-            docker compose --profile full up -d
+            docker compose --profile full up -d app mcp caddy
 
             # 1) app 이 컨테이너 내부에서 실제로 :8000 을 열었는지 직접 확인.
             #    기존엔 Caddy 경유 curl 로만 판정했는데, app 재생성으로 IP 가 바뀌면
@@ -55,7 +55,7 @@ jobs:
             echo "Waiting for app to listen on :8000 (direct, bypassing Caddy)..."
             for i in $(seq 1 40); do
               if docker compose --profile full exec -T app \
-                  python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/config', timeout=5)" >/dev/null 2>&1; then
+                  python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz', timeout=5)" >/dev/null 2>&1; then
                 echo "app ready (attempt $i)"
                 break
               fi
@@ -82,7 +82,7 @@ jobs:
             for i in $(seq 1 20); do
               if curl -fsSk --max-time 5 \
                   --resolve "${DOMAIN}:443:127.0.0.1" \
-                  "https://${DOMAIN}/api/config" > /dev/null 2>&1; then
+                  "https://${DOMAIN}/healthz" > /dev/null 2>&1; then
                 echo "App end-to-end OK (attempt $i)"
                 break
               fi
@@ -113,12 +113,13 @@ jobs:
               sleep 2
             done
 
-            # collector 이미지 빌드 — playwright install --with-deps chromium 이
+            # worker 이미지 빌드 — playwright install --with-deps chromium 이
             # ARM64 에서 캐시 미스 시 10분+ 소요되므로 헬스체크 이후로 분리.
-            # 단, 빌드 실패 시 set -e 로 워크플로 전체가 실패한다 (cron 이 stale
-            # 이미지를 계속 쓰는 상황을 조용히 넘기지 않기 위함).
-            echo "Building collector image (failure fails this workflow)"
-            docker compose --profile collect build collector
+            # 빌드 실패 시 set -e 로 워크플로 전체가 실패한다 (worker 가 stale
+            # 이미지로 계속 도는 상황을 조용히 넘기지 않기 위함).
+            echo "Building worker image (failure fails this workflow)"
+            docker compose --profile full build worker
+            docker compose --profile full up -d worker
 
             # 미사용 이미지 정리
             docker image prune -f

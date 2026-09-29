@@ -189,3 +189,46 @@ def test_no_stale_allowlist():
         f"_GET_CONN_ALLOWLIST 에 더 이상 get_conn() 을 호출하지 않는 항목이 남음: "
         f"{sorted(stale)}. 마이그레이션이 끝났으니 목록에서 삭제하라."
     )
+
+
+# ---------------------------------------------------------------------------
+# V2 (flight_friend/*) 레이어 규칙 — AGENTS.md §2
+# ---------------------------------------------------------------------------
+
+V2 = ROOT / "flight_friend"
+V2_VIEWS = V2 / "api" / "views.py"
+V2_API_MAIN = V2 / "api" / "main.py"
+V2_DOMAIN = sorted((V2 / "domain").glob("*.py"))
+
+
+def test_v2_files_exist():
+    """규칙 대상이 사라져 아래 테스트가 조용히 공회전하지 않게 한다."""
+    assert V2_VIEWS.exists() and V2_API_MAIN.exists() and V2_DOMAIN
+
+
+def test_v2_views_and_domain_do_not_import_web_framework():
+    """views.py 와 domain/* 은 fastapi/starlette 를 모른다."""
+    offenders = {}
+    for path in [V2_VIEWS, *V2_DOMAIN]:
+        bad = _imports_matching(_imported_modules(path), "fastapi", "starlette")
+        if bad:
+            offenders[path.name] = bad
+    assert not offenders, f"V2 views/domain 이 웹 프레임워크를 import 함: {offenders}"
+
+
+def test_v2_api_main_does_not_import_providers():
+    """api/main.py 는 provider(크롤러)를 직접 호출하지 않는다 — 재확인은 worker 가 수행."""
+    bad = _imports_matching(_imported_modules(V2_API_MAIN), "flight_friend.providers")
+    assert not bad, f"api/main.py 가 providers 를 import 함: {bad}"
+
+
+def test_v2_domain_does_not_import_db_or_repo():
+    """domain/* 은 순수 로직 — DB 접근(db/repo)을 import 하지 않는다."""
+    offenders = {}
+    for path in V2_DOMAIN:
+        bad = _imports_matching(
+            _imported_modules(path), "flight_friend.db", "flight_friend.repo"
+        )
+        if bad:
+            offenders[path.name] = bad
+    assert not offenders, f"domain 이 db/repo 를 import 함: {offenders}"

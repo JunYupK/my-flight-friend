@@ -38,7 +38,7 @@ jobs:
           cache: pip
 
       - name: Install dependencies (without crawl4ai)
-        run: pip install $(grep -v 'crawl4ai' requirements.txt | tr '\n' ' ') pytest
+        run: pip install $(grep -v 'crawl4ai' requirements.txt | tr '\n' ' ') pytest httpx
 
       - name: Run tests
         env:
@@ -47,7 +47,7 @@ jobs:
 
       - name: Ruff lint
         run: |
-          pip install ruff
+          pip install ruff==0.16.9
           ruff check .
 
   build-frontend:

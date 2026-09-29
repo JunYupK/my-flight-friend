@@ -1,366 +1,204 @@
 # AGENTS.md — flight-friend
 
 > Claude Code가 이 레포에서 작업할 때 항상 먼저 읽는 하네스(Harness) 명세서.
-> 모든 규칙은 테스트와 린터로 기계적으로 강제하는 것을 목표로 한다 — 충돌 시 본 문서 우선.
+> 규칙은 테스트와 린터로 기계적으로 강제하는 것을 목표로 한다 — 충돌 시 본 문서 우선.
+> 설계 원문: `docs/superpowers/specs/2026-09-28-flight-friend-v2-design.md`
 
 ---
 
-## 1. 프로젝트 개요
+## 1. 프로젝트 개요 (V2)
 
-**ICN 출발 일본 항공권 최저가 모니터링 서비스.**
-복수 데이터 소스(Google Flights, Naver)에서 편도 레그를 수집해 왕복 조합을 만들고,
-목표가 이하 딜을 알림으로 전송한다. FastAPI 백엔드 + React/Vite SPA로 웹 UI를 제공한다.
+**ICN 출발 일본 항공권 추적 서비스.** 사용자가 **Trip**(목적지·출발일·귀국일·선호)을 만들면 그 Trip을 중심으로
+가격을 추적한다.
 
-**배포 환경:** OCI 한국 리전, 단일 `docker-compose.yml` (profiles로 dev/full 분리), 호스트 crontab으로 3시간 주기 수집.
+- **Trip 중심:** 모든 화면/알림/조회의 단위는 Trip. 전역 "딜 목록"은 없다.
+- **스냅샷 관측:** 한 번의 재확인 = 한 `search_run`, 제공자별 결과 = `snapshot`. 관측값은 append-only로 쌓고 덮어쓰지 않는다.
+- **사용자 트리거 재확인:** 웹에서 사용자가 "다시 확인"을 누르면 run이 큐잉되고, 상주 worker가 처리한다 (수동 쿨다운 있음).
+  추적 중(`tracking`) Trip은 worker가 출발까지 남은 일수 티어에 따라 자동 갱신한다.
+- 데이터 소스는 현재 Google Flights 하나(편도 leg + 왕복 rt). 제공자는 어댑터 인터페이스로 추가한다 (§5).
+
+**배포:** OCI 한국 리전 단일 `docker-compose.yml`. `app`(FastAPI + SPA), `worker`(상주, Chromium), `db`, `redis`, `caddy`.
+
+> **V1 (Task 17에서 제거 예정):** `flight_monitor/`, `flight_front/api/`, `main.py`, `mcp_server.py`, `diagnosis_agent.py`,
+> `scripts/`, V1 테스트. V2 worker가 `flight_monitor.notifier`만 잠시 재사용한다(Task 17에서 이동). V1 코드는 새로 손대지 않는다.
 
 ---
 
 ## 2. 아키텍처 레이어 (의존성 방향 엄수)
 
 ```
-Types/Config  →  Repository  →  Service  →  Router  →  UI
-     ↑               ↑              ↑           ↑
-  config.py      storage.py    (service/)   api/main.py   web/src/
+types/config → db/repo → providers → domain → worker / api views → api main → web
 ```
-
-### 레이어별 책임
 
 | 레이어 | 위치 | 책임 | 금지 |
 |--------|------|------|------|
-| **Config** | `flight_monitor/config.py`, `config_db.py` | 전역 설정, DB → 메모리 패치 | 비즈니스 로직, DB 직접 쿼리 |
-| **Repository** | `flight_monitor/storage.py` | DB CRUD, 트랜잭션 | 비즈니스 로직, HTTP 의존 |
-| **Collector** | `flight_monitor/collector_*.py` | 외부 데이터 수집, `save_legs()` 호출 | Router/Service 직접 import |
-| **Service** | `flight_front/api/deals_cache.py`, `run_state.py`, `mcp_server.py` | 캐시 전략, 조합 로직, 상태/RPC | FastAPI 직접 의존, HTTP 응답 객체 생성 |
-| **Notifier** | `flight_monitor/notifier.py` | 알림 dispatch (Telegram 1순위 → Discord 2순위 fallback) | 비즈니스 로직 |
-| **Router** | `flight_front/api/main.py` | HTTP 엔드포인트, 요청/응답 직렬화 | DB 직접 쿼리, 비즈니스 로직 함수 정의 |
-| **UI** | `flight_front/web/src/` | React 컴포넌트, API 호출 | 백엔드 모듈 직접 import |
+| **Types/Config** | `flight_friend/types.py`, `config.py` | 데이터클래스, 잠정 상수 | 로직, I/O |
+| **DB/Repo** | `flight_friend/db.py`, `repo.py` | 스키마(`init_db()`), CRUD, 트랜잭션 | 비즈니스 로직, HTTP 의존 |
+| **Providers** | `flight_friend/providers/` | 외부 수집(크롤링), 결과를 `ProviderResult`로 정규화 | DB 접근, 웹 프레임워크 |
+| **Domain** | `flight_friend/domain/` (`results`, `schedule`, `tracking`) | 순수 로직: 결과 조합·후보·near-miss, 갱신 주기, 알림 판정 | `fastapi`/`starlette`, `db`/`repo` import |
+| **Worker** | `flight_friend/worker.py` | run 소비, provider 호출, snapshot 저장, 알림 | 웹 프레임워크 |
+| **Views** | `flight_friend/api/views.py` | repo + domain → JSON 직렬화 dict | `fastapi`/`starlette` import |
+| **API** | `flight_friend/api/main.py` | HTTP 엔드포인트(`/api/*`, `/healthz`), SPA 서빙 | `providers` import, SQL 직접 작성 |
+| **Web** | `flight_front/web/src/` | React SPA, `api.ts` 경유 호출 | 백엔드 모듈 import |
 
-### 의존성 규칙
-
-```
-✅ 허용
-router  → service
-router  → storage  (단순 CRUD 1줄 이하, 조건 없음)
-service → storage
-collector → storage
-config_db → storage
-
-❌ 금지
-router  → collector   (크롤러를 라우터에서 직접 호출 금지)
-service → router      (역방향 금지)
-ui      → storage     (프론트엔드가 DB 모듈 import 금지)
-```
-
-> 본 규칙은 `tests/test_architecture.py`에서 기계 검증한다 (정적 분석, DB 불필요).
+`tests/test_architecture.py`가 위 금지 규칙(views/domain → 웹 프레임워크, api/main → providers, domain → db/repo)을
+`ast` 정적 분석으로 검증한다 (DB 불필요, CI 항상 실행).
 
 ---
 
 ## 3. 파일 위치 규칙
 
-새 파일을 만들기 전에 아래 표를 확인할 것. 위치가 불명확하면 **파일 생성 전에 물어본다.**
+위치가 불명확하면 **파일 생성 전에 물어본다.**
 
 | 무엇을 만드는가 | 위치 |
 |----------------|------|
-| DB 쿼리 함수 | `flight_monitor/storage.py` |
-| 캐시 / 조합 로직 | `flight_front/api/deals_cache.py` (또는 새 service 파일) |
-| 검색/딜 선별 Service 로직 | `flight_front/api/search_service.py` |
-| collector 공통 왕복 조합 | `flight_monitor/offer_utils.py` |
-| collector 공통 크롤 유틸 (배치/스크롤 JS) | `flight_monitor/crawler_utils.py` |
-| 새 데이터 소스 collector | `flight_monitor/collector_{source}.py` |
-| API 엔드포인트 | `flight_front/api/main.py` |
-| MCP RPC 함수 | `mcp_server.py` (Service 레이어) |
-| React 컴포넌트 | `flight_front/web/src/components/` |
-| API 클라이언트 함수 | `flight_front/web/src/api.ts` |
-| 공유 타입 | `flight_front/web/src/types.ts` |
-| 테스트 | `tests/` |
-| 알림 채널 추가 | `flight_monitor/notifier.py` |
+| DB 쿼리 함수 / 스키마 변경 | `flight_friend/repo.py` / `db.py` |
+| 순수 로직 (조합·주기·알림 판정) | `flight_friend/domain/` |
+| 새 데이터 소스 | `flight_friend/providers/{source}.py` |
+| JSON 응답 조립 | `flight_friend/api/views.py` |
+| HTTP 엔드포인트 | `flight_friend/api/main.py` |
+| 잠정 상수 | `flight_friend/config.py`, `domain/schedule.py` |
+| React 컴포넌트 / 페이지 | `flight_front/web/src/components/`, `pages/` |
+| API 클라이언트 / 공유 타입 | `flight_front/web/src/api.ts` / `types.ts` |
+| V2 테스트 | `tests/v2/` |
+| 아키텍처 규칙 | `tests/test_architecture.py` |
 
 ---
 
 ## 4. 코딩 규칙
 
-### Python
-
-- **타입 힌트 필수**: 함수 파라미터와 반환값 모두. `Any` 사용 금지.
-- **async/await 일관성**: `asyncio.run()`은 최상위 진입점(`main.py`, 동기 래퍼)에서만. 내부 함수는 `async def`로 일관.
-- **크롤러 병렬화**: 신규 collector는 반드시 `arun_many()` 배치 패턴 사용. 순차 루프 금지.
-- **에러 처리**: collector는 개별 실패를 `print(f"[{SOURCE} ERROR]")`로 로깅 후 계속 진행. 전체 크롤을 중단하는 `raise` 금지.
-- **하드코딩 금지**: URL, 크리덴셜, DB 연결 정보는 환경변수 또는 `config.py` 경유.
-
-### Offer Dict 인터페이스
-
-모든 collector는 반드시 아래 필드를 포함하는 dict를 생산해야 한다.
-이 offer dict는 알림 판단과 `save_deals()`(deals 사전계산 테이블 저장)에서 소비된다.
-
-```python
-{
-    "source": str,           # "google_flights" | "naver"
-    "trip_type": str,        # "round_trip" | "oneway_combo"
-    "origin": str,           # "ICN"
-    "destination": str,      # IATA 3자리
-    "destination_name": str,
-    "departure_date": str,   # "YYYY-MM-DD"
-    "return_date": str,
-    "stay_nights": int,
-    "price": float,          # 왕복 합산 KRW
-    "currency": str,         # "KRW"
-    "out_airline": str,
-    "in_airline": str,
-    "is_mixed_airline": bool,
-    "checked_at": str,       # isoformat with KST timezone
-    "out_url": str | None,
-    "in_url": str | None,
-    "out_price": float,
-    "in_price": float,
-}
-```
-
-### Leg Dict 인터페이스
-
-`save_legs()`에 전달하는 leg dict 필수 필드:
-
-```python
-{
-    "source": str,
-    "origin": str,
-    "destination": str,
-    "destination_name": str,
-    "date": str,        # "YYYY-MM-DD"
-    "direction": str,   # "out" | "in"
-    "price": float,
-    "checked_at": str,  # isoformat
-    # optional: airline, dep_time, arr_time, duration_min, stops,
-    #           dep_airport, arr_airport, booking_url, search_url
-}
-```
-
-### TypeScript / React
-
-- **타입 단언(`as`) 금지**: `types.ts`에 정의된 타입 사용. 타입이 없으면 추가.
-- **`any` 금지**: `unknown` + type guard 패턴.
-- **API 호출 위치**: 컴포넌트에서 직접 `fetch` 금지. 반드시 `api.ts` 함수 경유.
-- **상태 관리**: 전역 상태 라이브러리 추가 금지. `useState` / `useEffect` 패턴 유지.
+- **Python:** 타입 힌트 필수(파라미터·반환), `Any` 지양. 하드코딩 금지 — URL/크리덴셜/DB 연결은 환경변수 경유.
+  provider는 개별 실패를 예외로 던지지 말고 `ProviderResult(status="error", ...)`로 흡수한다.
+- **TypeScript/React:** `as` 단언·`any` 금지(`unknown` + type guard), 컴포넌트에서 직접 `fetch` 금지(`api.ts` 경유),
+  전역 상태 라이브러리 금지(`useState`/`useEffect`).
 
 ---
 
-## 5. DB 규칙
+## 5. Provider 어댑터 인터페이스
 
-### 테이블 역할 (절대 혼용 금지)
+provider 모듈은 크롤러(`Crawler` Protocol)를 주입받는 async 함수로 노출하고 항상 `ProviderResult`를 돌려준다.
+(현재: `providers/google_flights.py` — `search_oneway(crawler, dep, arr, date)`, `search_roundtrip(...)`)
 
-| 테이블 | 역할 | 쓰기 위치 |
-|--------|------|-----------|
-| `raw_legs` | 수집 원본 append-only 로그 (90일 보존, `cleanup_old_data()`) | `save_legs()` 전용 |
-| `flight_legs` | 소스별 현재 최저가 (UPSERT) | `save_legs()` 전용 |
-| `deals` | 왕복 조합 사전계산(materialized) — `/api/results` 읽기 최적화 | `save_deals()` 전용 |
-| `price_events` | 가격 하락 이벤트 (DB 트리거 자동 기록) | **직접 INSERT 금지** |
-| `price_history` | 레거시 왕복 조합 기록 (deprecated, 신규 쓰기 없음 — DROP 예정) | `save_prices()` 전용 |
-| `alert_state` | 알림 dedup/cooldown 상태 (키: `destination\|YYYY-MM`) | `record_alert()` 전용 |
-| `airports` | 목적지 공항 설정 | 웹 UI API 또는 `config_db.py` |
-| `app_config` | JSONB 설정 | `write_config()` 전용 |
-| `collection_runs` | 수집 실행 이력 (좀비 run은 `start_collection_run()`에서 청소) | `start/finish_collection_run()` 전용 |
+```python
+@dataclass
+class ProviderResult:
+    status: Literal["ok", "empty", "blocked", "error"]
+    legs: list[LegQuote]   # 편도 견적
+    rts: list[RtQuote]     # 왕복 견적
+    error: str | None
+    seconds: float
+```
 
-> **deals 테이블:** 수집 시 `combine_roundtrips()`가 이미 만든 왕복 offer를 `save_deals()`로
-> 그대로 저장한다. `(source, destination)`별 최저가 top-N만 보관(조합 폭발 방지). `/api/results`는
-> 카테시안 조인 없이 이 테이블을 인덱스 조회한다. **`(source, destination)`별 DELETE→INSERT 원자
-> 교체**라, 공항별 증분 호출(`on_route_done=save_deals`)에서도 다른 목적지를 지우지 않는다 →
-> run이 중간에 죽어도 완료된 공항만큼은 deals가 신선하게 갱신된다. 특정 조합 0건이면 그
-> 조합의 기존 deals는 유지된다(graceful degradation).
->
-> **표시 신선도 정책:** `/api/results`(`query_deals`)는 **하드 신선도 컷오프가 없다**. 수집이
-> 며칠 실패해도 화면이 비지 않도록 보유한 최신 deal을 그대로 반환하고(14일 안전망으로 좀비 행만
-> 배제), 오래됨 여부는 프론트가 `last_checked_at` 기반 상대시간 + 지연 배지/배너로 표기한다.
-> 호출자가 `hours`를 명시하면 그때만 좁은 윈도우로 필터한다.
-
-### 마이그레이션 규칙
-
-- 스키마 변경은 `init_db()`에 `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` 패턴으로 추가.
-- `init_db()`는 멱등성 보장 필수 (두 번 호출해도 에러 없음 — `TestInitDb.test_init_idempotent` 검증).
-- 컬럼 타입 변경 시 반드시 `SAVEPOINT` 패턴 사용 (기존 코드 참고).
+- `blocked`(차단 의심)와 `empty`(결과 없음)를 구분한다. 예외는 `error`로 흡수.
+- worker는 provider 함수를 주입 가능한 인자로 받는다 → 테스트에서 실제 크롤링 없이 fake로 대체.
+- 신규 provider는 `providers/`에 추가하고 worker의 provider 목록에만 등록한다 (api/main은 모른다).
 
 ---
 
-## 6. 테스트 규칙
+## 6. DB 규칙 (V2 테이블)
 
-### 테스트 파일 위치
+| 테이블 | 역할 | 성격 |
+|--------|------|------|
+| `trips` | 사용자 Trip(목적지·날짜·선호·tracking·archived_at) | 갱신(UPDATE) |
+| `search_runs` | 재확인 요청/진행 상태(queued→running→done/error) | 갱신 |
+| `snapshots` | run × provider × kind(oneway/roundtrip) 관측 1건 + status/error | **append-only** |
+| `leg_quotes` | snapshot에 딸린 편도 견적 | **append-only** |
+| `rt_quotes` | snapshot에 딸린 왕복 견적 | **append-only** |
+| `alerts` | 알림 발송 이력(dedup/쿨다운 기준) | 갱신/기록 |
 
-```
-tests/
-├── test_flight_monitor.py    # storage 레이어 통합 테스트 (PostgreSQL 필요)
-├── test_notifier.py          # 알림 fallback 단위 테스트 (HTTP mock)
-└── test_architecture.py      # 레이어 경계 위반 감지 (ast 정적 분석, DB 불필요)
-```
+- `snapshots`/`leg_quotes`/`rt_quotes`는 UPDATE·DELETE 금지 (이력 = 가격 추이의 원천).
+- 스키마 변경은 `init_db()`에 `IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS`로 추가, 멱등 필수.
+- 모든 DB 접근은 `repo.py` 경유. 테스트는 `clean_db` 류 fixture로 격리.
+- **V1 테이블(`raw_legs`, `flight_legs`, `deals`, `price_events`, `price_history`, `alert_state`, `collection_runs` 등)은 동결.**
+  V2는 읽지도 쓰지도 않는다. Task 17 이후 정리 예정.
 
-### 필수 원칙
+---
 
-- **새 `storage.py` 함수 → 반드시 테스트 동반.** 테스트 없는 DB 함수 PR 금지.
-- **`clean_db` fixture 필수 사용**: 모든 DB 테스트는 `autouse=True` fixture로 격리.
-- **외부 API mock 필수**: collector / notifier 테스트에서 실제 crawl4ai / HTTP 호출 금지. `monkeypatch.setattr` 또는 `unittest.mock.patch` 사용.
-- **테스트 실행 명령**:
+## 7. 잠정 상수
+
+실측 전 잠정치이며 코드 상수 한 곳에서만 바꾼다.
+
+- `flight_friend/config.py`: `ORIGIN`, `MANUAL_COOLDOWN`(5분), `STUCK_RUN_AFTER`(10분), `NEAR_MISS_MIN_PCT/KRW`,
+  `ALERT_DROP_PCT/KRW`, `MIN_TRACKING_DAYS`
+- `flight_friend/domain/schedule.py`: 갱신 주기 티어 `FAR/NEAR_TIER_DAYS`, `FAR/MID/NEAR_INTERVAL` (출발까지 남은 일수 기준)
+
+---
+
+## 8. 테스트 규칙
+
+- V2 테스트는 `tests/v2/`, 아키텍처 테스트는 `tests/test_architecture.py`. DB 테스트는 PostgreSQL 필요(`DATABASE_URL`).
+- 새 `repo.py` 함수 → 테스트 동반. 외부 호출(크롤링/알림)은 fake·mock 필수.
+- 실행:
 
 ```bash
-pytest tests/                                                 # 전체
-pytest tests/test_flight_monitor.py::TestSaveLegs             # 클래스 단위
-pytest tests/test_notifier.py::TestSendAlertFallback          # fallback 검증
+DATABASE_URL=postgresql://flight_user:flight_pass@localhost:5432/flights pytest tests/ -q
+ruff check .            # CI는 ruff==0.16.9 고정. V1 경로는 ruff.toml extend-exclude (Task 17에서 제거)
 ```
-
-### 아키텍처 테스트 (`tests/test_architecture.py`)
-
-§2의 의존성 규칙·§8 금지사항을 `ast` 정적 분석으로 검증한다 (DB·크롤러 불필요, CI 항상 실행). 검증 대상:
-
-1. Repository/Collector 가 `fastapi`/`starlette` 를 import 하지 않음 (§8)
-2. `storage.py` 가 상위 레이어(collector/service/router)를 import 하지 않음 (최하위 레이어)
-3. Router 가 collector 를 직접 import 하지 않음, Service 가 Router(`api/main.py`)를 import 하지 않음 (역방향 금지)
-4. `api/main.py` 의 `get_conn()` 직접 호출은 `_GET_CONN_ALLOWLIST`(§11 잔여 항목) 로 **동결** — 새 위반 차단, 마이그레이션 시 목록 축소 강제(래칫)
 
 ---
 
-## 7. 성능 & 운영 규칙
+## 9. 운영 · 배포
 
-### 크롤러
+- `docker compose up -d` → db + redis (로컬 개발)
+- `docker compose --profile full up -d` → app / worker / mcp(V1) / caddy 포함 풀 스택
+- `worker`는 `Dockerfile.collector`(crawl4ai + Chromium)로 빌드, `restart: unless-stopped` 상주. 크롤러가 무거워 배포 시
+  app 헬스체크 이후 별도 빌드·기동한다 (`.github/workflows/deploy.yml`).
+- `app` 헬스체크와 배포 readiness probe는 `/healthz` (`{"ok": true}`).
+- CI(`ci.yml`): `pytest tests/` + `ruff check .` + React build. 실패 시 배포(`deploy.yml`) 미트리거. master push + CI 성공 → SSH 자동 배포.
+- 알림 채널은 Telegram 1순위 → Discord 2순위 fallback, 첫 성공 채널만 발송 (`flight_monitor.notifier`, Task 17에서 이동).
+- 호스트 crontab의 **V1 수집 cron과 spike cron은 제거**해야 한다 (worker가 대체).
 
-- 배치 크기: `_BATCH_SIZE = 5` (변경 시 OCI 메모리 한도 주의)
-- 병렬 공항 수: `SEARCH_CONFIG["parallel_airports"]` (기본 3)
-- 오늘 이미 수집한 레그는 `get_collected_today()`로 스킵 (중복 요청 방지)
-- crawl4ai `wait_for` 셀렉터 변경 시 반드시 해당 collector mock 테스트도 업데이트
+### 환경 변수
 
-### 캐시
+```bash
+DATABASE_URL=postgresql://flight_user:flight_pass@localhost:5432/flights   # 필수
+REDIS_URL=redis://localhost:6379            # 선택
+TELEGRAM_BOT_TOKEN= / TELEGRAM_CHAT_ID=     # 선택 — 알림 1순위
+DISCORD_WEBHOOK_URL=                        # 선택 — 알림 2순위
+DB_PASSWORD=flight_pass / DOMAIN=localhost  # docker-compose
+```
 
-- Redis 연결 실패 시 in-memory fallback 자동 전환 (현재 구현 유지). `_cache_set(key, value, ttl)`로 키별 TTL 지정.
-- **deals(`/api/results`)는 캐시 대상이 아니다.** `save_deals()`가 채우는 materialized 테이블을 직접 조회하므로 버전 무효화/웜업이 불필요하다.
-- `warm_deals_cache()`는 timing 분석 캐시(`/api/timing/*`)만 미리 계산한다. `bump_deals_version()`은 이 timing 네임스페이스 무효화 용도로만 남아 있다.
-- 무거운 read 엔드포인트는 직접 캐시: `/api/monitor/coverage`(TTL 5분), `/api/price-history` timeline(TTL 1시간).
-
-### 알림
-
-- **채널 우선순위 고정**: Telegram(1순위) → Discord(2순위) fallback. **첫 성공 채널만 발송**, 둘 다 보내지 않는다.
-- 채널 추가는 `notifier.send_alert()` 의 fallback 체인 끝에 append. 우선순위 재배치 시 fallback 테스트(`test_notifier.py`) 동시 갱신.
-- `notify(offer, target_price)` 는 사용자 알림 (왕복 딜), `send_alert(message)` 는 운영 알림 (수집 0건 / 크래시).
-- **알림 집약**: `make_alert_key()`는 `destination|YYYY-MM` 단위. `main.py`는 목표가 이하 offer를 `(목적지, 출발월)`별 최저가 1건으로 줄여 알림한다 (날짜·항공사 조합마다 폭주하던 문제 해결). 쿨다운/가격하락 dedup은 `should_notify()`가 담당.
-
-### 수집 트리거 & run 안정화
-
-- **호스트 crontab**은 반드시 `scripts/collect_and_diagnose.sh`를 호출해야 한다 (`docker compose run`을 직접 부르면 flock 직렬화가 우회되어 run이 중첩 누적된다). 권장 entry: `0 */3 * * * cd /path/to/my-flight-friend && bash scripts/collect_and_diagnose.sh >> /var/log/collector.log 2>&1`.
-- **동시 실행 금지**: 래퍼 스크립트가 `flock`(`/tmp/my-flight-friend-collector.lock`)으로 직렬화한다. 이전 수집이 cron 주기보다 오래 걸려도 새 run이 중첩 누적되지 않는다 (flock은 프로세스 종료 시 자동 해제).
-- **단일 run hard timeout**: 래퍼가 `timeout`(기본 150m, `COLLECT_TIMEOUT` 환경변수로 조정)으로 collector run을 감싼다. 크롤이 hang 해 lock을 영원히 쥐는 사태를 막는다. 진입 시 남은 one-off collector 컨테이너(좀비)를 `docker rm -f`로 청소한다.
-- **좀비 run 청소**: `start_collection_run()`이 1시간 넘게 `running`에 박제된 row를 `error`로 마감한다 (강제 종료로 `finish`가 안 불린 경우).
-- collector 컨테이너 이미지는 `Dockerfile.collector` (crawl4ai + Playwright). 빌드 시간이 길어 배포 헬스체크와 분리되어 있음 (`.github/workflows/deploy.yml` 참고).
-- 환경변수는 `.env` 로딩 후 진입.
-
-### 배포
-
-- 단일 `docker-compose.yml`. profiles로 분기:
-  - `docker compose up -d` → db + redis만 (로컬 개발 기본)
-  - `docker compose --profile full up -d` → app/collector/mcp/caddy 포함 풀 스택 (배포 서버)
-  - `docker compose --profile collect run --rm collector ...` → 크론 1회성 수집
-- 환경변수 추가 시 `docker-compose.yml` + `.env.example` + 본 문서 §10 동시 업데이트
-- GitHub Actions CI: 즉시 배포 검증 흐름이므로 `pytest tests/` + React build 통과를 강하게 강제한다. CI 실패 시 SSH 배포 잡(`deploy.yml`)이 트리거되지 않는다.
+신규 환경변수는 `docker-compose.yml` + `.env.example` + 본 섹션을 같이 갱신한다.
 
 ---
 
-## 8. 금지사항 (절대 위반 금지)
+## 10. 금지사항 (절대 위반 금지)
 
 ```
-❌ api/main.py 에 SQL 쿼리 직접 작성
-❌ collector에서 asyncio.run() 내부에서 또 asyncio.run() 중첩
-❌ storage.py 에서 FastAPI, HTTPException import
+❌ V1 collector(main.py / collector 서비스) 실행 — raw_legs 를 삭제한다. V1 테이블은 동결
+❌ api/main.py 에 SQL 직접 작성, providers import
+❌ views.py / domain/* 에서 fastapi·starlette import, domain/* 에서 db·repo import
+❌ snapshots / leg_quotes / rt_quotes 의 UPDATE·DELETE (append-only)
 ❌ 하드코딩된 DATABASE_URL 문자열
-❌ price_events 테이블 직접 INSERT (트리거가 담당)
-❌ flight_legs 테이블 직접 UPDATE (save_legs() 경유 필수)
-❌ JAPAN_AIRPORTS / TFS_TEMPLATES 를 config.py 에서 직접 수정
-    (반드시 config_db.apply_db_config() 경유)
 ❌ 테스트에서 실제 외부 API 호출 (크롤러/알림 mock 필수)
 ❌ React 컴포넌트에서 직접 fetch() 호출 (api.ts 경유 필수)
-❌ notifier.py 에 비즈니스 로직 (메시지 포맷팅 외) 추가
+❌ 크롤러 코드에서 asyncio.run() 중첩
+❌ notifier 에 비즈니스 로직(메시지 포맷 외) 추가
+❌ 새 V1 코드 추가 / V1 파일 수정 (Task 17에서 삭제)
 ```
 
 ---
 
-## 9. 작업 시작 전 체크리스트
+## 11. 작업 시작 전 체크리스트
 
-에이전트는 새 작업을 시작하기 전에 다음을 확인한다:
-
-1. **어느 레이어에 속하는 변경인가?** → 해당 레이어 파일에만 손댄다.
-2. **DB 스키마 변경이 포함되는가?** → `init_db()` 멱등성 유지, `TestInitDb` 통과 확인.
-3. **새 storage 함수인가?** → 테스트 먼저 작성 후 구현 (TDD).
-4. **새 collector인가?** → offer dict / leg dict 인터페이스 완전히 충족하는가 확인.
-5. **API 응답 형식 변경인가?** → `types.ts`의 해당 타입도 동시 업데이트.
-6. **알림 변경인가?** → `tests/test_notifier.py` 의 fallback 시나리오를 그대로 통과시키는가 확인.
-
----
-
-## 10. 환경 변수
-
-```bash
-# 필수
-DATABASE_URL=postgresql://flight_user:flight_pass@localhost:5432/flights
-
-# 선택 — 캐시
-REDIS_URL=redis://localhost:6379
-
-# 선택 — 알림 채널 (Telegram 1순위 → Discord 2순위 fallback)
-TELEGRAM_BOT_TOKEN=
-TELEGRAM_CHAT_ID=
-DISCORD_WEBHOOK_URL=
-
-# docker-compose 사용 시
-DB_PASSWORD=flight_pass
-DOMAIN=localhost
-
-# Windows 전용 (subprocess 인코딩)
-PYTHONIOENCODING=utf-8
-```
-
-> 신규 환경변수 추가 시 `.env.example` 와 본 섹션을 같은 PR에서 갱신할 것.
-
----
-
-## 11. Known Issues (작업 전 참고)
-
-1. ~~`api/main.py` 의 `_combine_legs`, `_select_diverse_deals`, `_query_outbound_legs`, `_query_inbound_legs`~~
-   → `flight_front/api/search_service.py` 로 이동 완료 (2026-06).
-   남은 항목 — 해당 부분을 만지는 PR은 가능하면 이전도 함께 수행:
-   - `/api/calendar-prices` 본체의 `get_conn()` 직접 호출
-   - `/api/price-history` 본체의 `get_conn()` 직접 호출
-
-2. LCC 항공사(Peach, Zipair 등) 일부가 `_AIRLINE_IATA` 매핑에 누락 →
-   `collector_google_flights.py` 의 `_AIRLINE_IATA` dict 에 추가 가능.
-
-3. `tests/test_architecture.py` 작성 완료 — §2 의존성 규칙·§8 금지사항이 CI에서 자동 강제된다.
-   남은 직접-SQL 엔드포인트(`upsert_airport`, `delete_airport`, `get_monitor_coverage`,
-   `get_calendar_prices`, `get_price_history`)는 `_GET_CONN_ALLOWLIST` 로 동결돼 있다.
-   이들을 storage 계층으로 옮기면 allowlist 에서도 제거해야 한다(`test_no_stale_allowlist` 강제).
-
-4. `mcp_server.py` 는 Service 레이어로 분류했으나 물리적으로는 레포 루트에 있음.
-   추후 `flight_front/api/services/` 로 이동 예정 — 위치 이동만으로 import 경로 깨짐 주의.
+1. 어느 레이어 변경인가? → 해당 레이어 파일에만 손댄다.
+2. 스키마 변경? → `init_db()` 멱등성 유지, 관련 테스트 통과.
+3. 새 repo 함수/provider? → 테스트 먼저(TDD), 어댑터 인터페이스 충족.
+4. API 응답 변경? → `types.ts` 동시 갱신.
+5. 잠정 상수 변경? → 코드 상수 한 곳 + §7 갱신.
 
 ---
 
 ## 12. 명령어 레퍼런스
 
 ```bash
-# DB + Redis 만 (로컬 개발 기본)
-docker compose up -d
+docker compose up -d                                   # DB + Redis
+docker compose --profile full up -d                    # 풀 스택 (배포 서버)
 
-# 풀 스택 (배포 서버)
-docker compose --profile full up -d
+python -u -m flight_friend.worker                      # worker (crawl4ai + Chromium 필요)
+uvicorn flight_friend.api.main:app --reload            # API (/api/*, /healthz, SPA)
 
-# 1회성 수집 (cron 트리거가 사용)
-docker compose --profile collect run --rm collector python main.py
-
-# 로컬 수집 실행
-python main.py
-
-# FastAPI 백엔드
-uvicorn flight_front.api.main:app --reload
-
-# React 프론트엔드
-cd flight_front/web && npm run dev
-
-# 테스트
-pytest tests/
-pytest tests/test_flight_monitor.py::TestSaveLegs
-pytest tests/test_notifier.py
-
-# React 빌드
-cd flight_front/web && npm run build
+DATABASE_URL=postgresql://flight_user:flight_pass@localhost:5432/flights pytest tests/ -q
+cd flight_front/web && npm run dev                     # 프론트 개발 서버
+cd flight_front/web && npm run build                   # 프론트 빌드 (API가 dist 서빙)
 ```
