@@ -3,6 +3,7 @@ import type { FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { createTrip } from "../api";
 import type { Preferences } from "../types";
+import { WINDOW_ORDER_MESSAGE, isInvertedWindow } from "../utils";
 
 const IATA = /^[A-Z]{3}$/;
 const inputCls =
@@ -51,6 +52,7 @@ export default function NewTrip() {
     if (!IATA.test(destination)) return setError("목적지는 IATA 공항 코드 3자리(예: NRT)로 입력하세요.");
     if (!outDate || !retDate) return setError("출국일과 귀국일을 입력하세요.");
     if (retDate <= outDate) return setError("귀국일은 출국일 이후여야 합니다.");
+    if (isInvertedWindow(outFrom, outTo) || isInvertedWindow(inFrom, inTo)) return setError(WINDOW_ORDER_MESSAGE);
     const targetPrice = target === "" ? null : Number(target);
     if (targetPrice !== null && (!Number.isInteger(targetPrice) || targetPrice <= 0)) {
       return setError("목표가는 양의 정수(원)로 입력하세요.");

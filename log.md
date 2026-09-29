@@ -17,7 +17,7 @@
 
 - 설계: `docs/superpowers/specs/2026-09-28-flight-friend-v2-design.md` (합의 완료)
 - 구현 계획: `docs/superpowers/plans/2026-09-28-flight-friend-v2-m1.md` (M1, 17 tasks)
-- M1 코드(Task 1~16) 완료: `flight_friend/` 패키지 + 새 React 앱 + compose/Dockerfile/CI/deploy/AGENTS.md 연결. V1 코드는 아직 남아 있음(Task 17에서 삭제).
+- M1 코드(Task 1~16 + 최종 리뷰 수정) 완료: `flight_friend/` 패키지 + 새 React 앱 + compose/Dockerfile/CI/deploy/AGENTS.md 연결. V1 코드는 아직 남아 있음(Task 17에서 삭제).
 - 다음 task: Task 17 (사용자 게이트)
 - **머지 전/후 사용자 서버 작업 (OCI):** 호스트 crontab에서 V1 수집 cron(`scripts/collect_and_diagnose.sh`)과 spike cron 제거. 남겨두면 V1 collector가 raw_legs를 삭제한다.
 - 진행 중인 외부 작업: OCI 반복 측정(차단 여부) — 결과로 설계 §5.1 갱신 주기·W 확정 예정
@@ -255,3 +255,18 @@
 - 결정 / 발견: deploy의 `up -d`를 `up -d app mcp caddy`로 좁힘(전체 `up -d`는 미빌드 worker를 헬스체크 전에 인라인 빌드하게 됨). collector/mcp 서비스는 Task 17까지 유지.
 - 다음 작업자에게: **사용자가 OCI에서 V1 수집 cron과 spike cron을 제거해야 한다.** 머지 시 자동 배포되며 worker가 처음 기동한다. Task 17에서 V1 코드·collector/mcp 서비스·ruff 제외 목록·`flight_monitor.notifier` 이동 처리.
 - Task 16 Fix round 1: `init_schema()`를 API lifespan + worker 시작에서 호출(advisory lock), `/healthz`가 `schema_ready()` 실패 시 503, ruff `./main.py`로 V2 main 린트 복구, AGENTS.md 스키마 진입점 정정, deploy에 worker running 체크 추가. ruff 0 errors, pytest 217 passed.
+
+## 2026-09-29 — Claude Code — 최종 리뷰 수정
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` / `fix(v2): classify blocked/empty GF pages...`, `fix(v2): worker run timeout...`, `fix(v2): reject inverted time windows...`, `fix(v2-web): trip settings...`
+- 한 일 (최종 리뷰 항목 1~11):
+  1. GF `wait_for`를 카드 OR 차단 표지 OR 결과없음 문구로 확장, 타임아웃성 `success=False`는 받은 HTML로 blocked/empty 분류(네비게이션 오류 `net::ERR_*`만 error). 결과없음 문구는 라이브 GF 미검증 추정.
+  2. `run_with_timeout`(RUN_TIMEOUT 3분)으로 멈춘 크롤 차단 → run error + 크롤러 재생성. `evaluate_ops`는 finished run 최근 3건만, 스냅샷 없는 error run은 실패로 계산.
+  3. Trip 페이지에 `TripSettings`(추적 on/off, 목표가 저장/비우면 해제, id 불일치 응답 무시).
+  4. 추적 꺼짐/보관/지난 출국일 Trip은 `evaluate_alerts` 건너뜀.
+  5. 알림에 절대 Trip URL(`PUBLIC_BASE_URL` → `https://$DOMAIN` → 상대경로), 현지 체류시간, 가는편/오는편 예약 URL 추가. compose worker env · `.env.example` 갱신.
+  6. HH:MM 아닌 시각 카드 제외. 7. 검색 공항과 다른 dep/arr 카드 제외.
+  8. `providers.ts` 기본 제공자에서 naver 제거. 9. 시간대 시작>끝을 API 422 + FilterBar/NewTrip 인라인 메시지로 거부.
+  10. AGENTS.md `init_schema()`. 11. vite `/ws` 프록시 제거.
+- 검증: ruff 0 errors, pytest 232 passed, `npm run build` 통과. 브라우저(headless Chromium, 실제 API): 항목 3(토글/목표가 저장·비우기·새로고침 유지·390px 가로 스크롤 없음)과 9의 NewTrip 메시지 확인. 코드만 읽고 확인: 항목 8, 9의 FilterBar 메시지, 항목 1의 실제 GF 동작(fake crawler 테스트만), 항목 2의 실제 브라우저 재기동(crawler.close/start), 항목 5의 실제 발송.
+- 결정 / 발견: 서버 종료, 개발 DB 비어 있음.
+- 다음 작업자에게: Task 17(사용자 게이트) 및 사용자의 OCI 서버 작업(V1 수집 cron·spike cron 제거). 배포 시 `.env`에 `PUBLIC_BASE_URL` 설정 권장.

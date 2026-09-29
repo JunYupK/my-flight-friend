@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { patchTrip } from "../../api";
+import { WINDOW_ORDER_MESSAGE, isInvertedWindow } from "../../utils";
 import type { MergedLegView, Preferences, TripView } from "../../types";
 
 interface Props {
@@ -93,6 +94,11 @@ export default function FilterBar({ tripId, prefs, legs, onApplied }: Props) {
 
   function apply(next: Form) {
     const mine = ++seq.current;
+    if (isInvertedWindow(next.outFrom, next.outTo) || isInvertedWindow(next.inFrom, next.inTo)) {
+      setSaving(false);
+      setError(WINDOW_ORDER_MESSAGE);
+      return;
+    }
     setSaving(true);
     setError("");
     patchTrip(tripId, { prefs: toPrefs(next) })

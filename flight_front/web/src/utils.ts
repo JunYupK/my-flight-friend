@@ -72,3 +72,10 @@ export function formatStay(min: number): string {
   if (d === 0 && m > 0) parts.push(`${m}분`);
   return sign + parts.join(" ");
 }
+
+export const WINDOW_ORDER_MESSAGE = "시간대의 시작이 끝보다 늦을 수 없습니다.";
+
+/** 둘 다 채워졌고 시작이 끝보다 늦으면 true ("HH:MM" 문자열 비교). */
+export function isInvertedWindow(from: string, to: string): boolean {
+  return from !== "" && to !== "" && from > to;
+}

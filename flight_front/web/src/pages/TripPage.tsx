@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import { getRun, getTrip, startRun } from "../api";
 import type { CandidateView, RunStatus, TripView } from "../types";
 import StatusHeader from "../components/trip/StatusHeader";
+import TripSettings from "../components/trip/TripSettings";
 import TrackingSummary from "../components/trip/TrackingSummary";
 import HistoryChart from "../components/trip/HistoryChart";
 import Results from "../components/trip/Results";
@@ -168,6 +169,12 @@ export default function TripPage() {
         starting={starting}
         error={actionError}
         onCheck={onCheck}
+      />
+      <TripSettings
+        trip={trip.trip}
+        onApplied={(v) => {
+          if (v.trip.id === id) setTrip(v);
+        }}
       />
       <TrackingSummary stats={trip.stats} />
       <HistoryChart tripId={trip.trip.id} refreshKey={refreshKey} />

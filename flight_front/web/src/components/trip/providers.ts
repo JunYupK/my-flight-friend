@@ -18,7 +18,7 @@ export interface ProviderMark {
   reason: string | null;
 }
 
-const DEFAULT_PROVIDERS = ["google_flights", "naver"];
+const DEFAULT_PROVIDERS = ["google_flights"];
 
 /** 마지막 확인 결과 기준 제공자 표시. */
 export function marksFromStatuses(providers: ProviderStatus[]): ProviderMark[] {
