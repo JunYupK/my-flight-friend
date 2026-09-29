@@ -154,3 +154,65 @@ def test_search_oneway_errors_when_crawl4ai_missing():
     assert result.status == "error"
     assert result.error == "crawl4ai not installed"
     assert result.seconds == 0.0
+
+
+def _search_with(monkeypatch, result: _FakeResult):
+    monkeypatch.setattr(google_flights, "_default_config", lambda: object())
+    return asyncio.run(search_oneway(_FakeCrawler(result), "ICN", "FUK", date(2026, 10, 21)))
+
+
+def test_wait_timeout_with_block_html_is_blocked(monkeypatch) -> None:
+    result = _search_with(
+        monkeypatch,
+        _FakeResult(
+            success=False,
+            html="<html>unusual traffic from your network</html>",
+            error_message="Page.wait_for_function: Timeout 15000ms exceeded",
+        ),
+    )
+    assert result.status == "blocked"
+    assert result.error is None
+
+
+def test_wait_timeout_with_empty_html_is_empty(monkeypatch) -> None:
+    result = _search_with(
+        monkeypatch,
+        _FakeResult(success=False, html="", error_message="Wait condition failed: Timeout after 15000ms"),
+    )
+    assert result.status == "empty"
+
+
+def test_navigation_error_stays_error(monkeypatch) -> None:
+    result = _search_with(
+        monkeypatch,
+        _FakeResult(success=False, html=None, error_message="Page.goto: net::ERR_CONNECTION_RESET"),
+    )
+    assert result.status == "error"
+    assert result.error == "Page.goto: net::ERR_CONNECTION_RESET"
+
+
+def test_wait_for_js_covers_cards_block_and_no_results() -> None:
+    js = google_flights._WAIT_FOR_JS
+    assert "li.pIav2d" in js and "unusual traffic" in js and "innerText" in js
+
+
+def _card(**overrides: object) -> dict:
+    card: dict = {
+        "price": 100000, "dep_time": "08:00", "arr_time": "10:00", "stops": 0,
+        "airline": "KE", "dep_airport": "ICN", "arr_airport": "FUK", "flight_numbers": ["KE 1"],
+    }
+    card.update(overrides)
+    return card
+
+
+def test_malformed_times_are_skipped() -> None:
+    cards = [_card(dep_time="8:00"), _card(arr_time="오전 10:00"), _card(dep_time=None), _card()]
+    legs = cards_to_legs(cards, date(2026, 10, 21), "ICN", "FUK", "u")
+    assert len(legs) == 1
+    assert len(google_flights.cards_to_rts(cards, date(2026, 10, 21), "ICN", "FUK")) == 1
+
+
+def test_cards_with_other_airports_are_dropped() -> None:
+    cards = [_card(dep_airport="GMP"), _card(arr_airport="NRT"), _card(dep_airport=None, arr_airport=None)]
+    assert len(cards_to_legs(cards, date(2026, 10, 21), "ICN", "FUK", "u")) == 1
+    assert len(google_flights.cards_to_rts(cards, date(2026, 10, 21), "ICN", "FUK")) == 1

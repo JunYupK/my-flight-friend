@@ -353,6 +353,18 @@ def make_scroll_js() -> str:
 
 # --- 카드 → LegQuote/RtQuote ------------------------------------------------
 
+_HHMM = re.compile(r"^\d{2}:\d{2}$")
+
+
+def _valid_times(dep_time: object, arr_time: object) -> bool:
+    """HH:MM 형식이 아닌 시각은 stay_minutes를 깨뜨리므로 카드를 버린다."""
+    return (
+        isinstance(dep_time, str)
+        and isinstance(arr_time, str)
+        and _HHMM.match(dep_time) is not None
+        and _HHMM.match(arr_time) is not None
+    )
+
 
 def cards_to_legs(
     cards: list[dict], date_: date, dep: str, arr: str, search_url: str,
@@ -363,10 +375,12 @@ def cards_to_legs(
     for card in cards:
         dep_time = card.get("dep_time")
         arr_time = card.get("arr_time")
-        if not dep_time or not arr_time:
+        if not _valid_times(dep_time, arr_time):
             continue
         dep_airport = card.get("dep_airport") or dep
         arr_airport = card.get("arr_airport") or arr
+        if dep_airport != dep or arr_airport != arr:
+            continue
         flight_numbers = card.get("flight_numbers") or []
         airline = airline_iata(card.get("airline", ""), flight_numbers)
         key = flight_key(
@@ -402,10 +416,12 @@ def cards_to_rts(
     for card in cards:
         dep_time = card.get("dep_time")
         arr_time = card.get("arr_time")
-        if not dep_time or not arr_time:
+        if not _valid_times(dep_time, arr_time):
             continue
         dep_airport = card.get("dep_airport") or dep
         arr_airport = card.get("arr_airport") or arr
+        if dep_airport != dep or arr_airport != arr:
+            continue
         flight_numbers = card.get("flight_numbers") or []
         airline = airline_iata(card.get("airline", ""), flight_numbers)
         key = flight_key(
@@ -437,6 +453,15 @@ def _classify(cards: list[dict], html: str) -> Literal["ok", "blocked", "empty"]
     return "empty"
 
 
+# 카드가 없는 페이지(차단 / 결과 없음)에서도 wait_for가 풀리도록 한다. 차단 표지는 V1과 같은
+# 문자열, "결과 없음" 문구는 라이브 GF에서 검증하지 못한 보수적 추정(미검증).
+_WAIT_FOR_JS = (
+    "js:() => !!document.querySelector('li.pIav2d')"
+    " || /unusual traffic|recaptcha|sorry\\/index/i.test(document.documentElement.innerHTML)"
+    " || /항공편을 찾을 수 없|검색 결과가 없|No results|no flights/i.test(document.body.innerText)"
+)
+
+
 def _default_config() -> object | None:
     try:
         from crawl4ai import CrawlerRunConfig
@@ -445,11 +470,32 @@ def _default_config() -> object | None:
     return CrawlerRunConfig(
         magic=True,
         js_code=[make_scroll_js(), extract_js()],
-        wait_for="js:() => !!document.querySelector('li.pIav2d')",
+        wait_for=_WAIT_FOR_JS,
         delay_before_return_html=4.0,
         cache_mode="bypass",
         page_timeout=15000,
     )
+
+
+def _is_wait_timeout(error_message: str | None) -> bool:
+    """wait_for 타임아웃(=카드/차단/결과없음 표지가 안 뜸)이면 True. 네비게이션 실패(net::ERR_*)는 False."""
+    message = (error_message or "").lower()
+    if "net::err" in message:
+        return False
+    return "timeout" in message or "wait_for" in message or "waiting for" in message
+
+
+def _outcome(
+    result: CrawlResult,
+) -> tuple[Literal["ok", "blocked", "empty", "error"], list[dict], str | None]:
+    """크롤 결과 → (상태, 카드, 에러). 타임아웃 실패는 받은 HTML로 분류한다."""
+    html = result.html or ""
+    if not result.success:
+        if not _is_wait_timeout(result.error_message):
+            return "error", [], result.error_message
+        return _classify([], html), [], None
+    cards = parse_cards(html)
+    return _classify(cards, html), cards, None
 
 
 async def search_oneway(
@@ -467,14 +513,9 @@ async def search_oneway(
         return ProviderResult(status="error", legs=[], rts=[], error=str(e), seconds=time.perf_counter() - start)
 
     seconds = time.perf_counter() - start
-    if not result.success:
-        return ProviderResult(status="error", legs=[], rts=[], error=result.error_message, seconds=seconds)
-
-    html = result.html or ""
-    cards = parse_cards(html)
-    status = _classify(cards, html)
+    status, cards, error = _outcome(result)
     legs = cards_to_legs(cards, date_, dep, arr, url) if status == "ok" else []
-    return ProviderResult(status=status, legs=legs, rts=[], error=None, seconds=seconds)
+    return ProviderResult(status=status, legs=legs, rts=[], error=error, seconds=seconds)
 
 
 async def search_roundtrip(
@@ -492,11 +533,6 @@ async def search_roundtrip(
         return ProviderResult(status="error", legs=[], rts=[], error=str(e), seconds=time.perf_counter() - start)
 
     seconds = time.perf_counter() - start
-    if not result.success:
-        return ProviderResult(status="error", legs=[], rts=[], error=result.error_message, seconds=seconds)
-
-    html = result.html or ""
-    cards = parse_cards(html)
-    status = _classify(cards, html)
+    status, cards, error = _outcome(result)
     rts = cards_to_rts(cards, out_date, dep, arr) if status == "ok" else []
-    return ProviderResult(status=status, legs=[], rts=rts, error=None, seconds=seconds)
+    return ProviderResult(status=status, legs=[], rts=rts, error=error, seconds=seconds)
