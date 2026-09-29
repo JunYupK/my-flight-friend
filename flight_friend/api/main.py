@@ -2,6 +2,8 @@
 """Router 레이어: 요청 파싱·검증, repo/views 호출, 에러 → HTTP 코드 매핑만 한다."""
 
 import math
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime
 from pathlib import Path
 
@@ -9,12 +11,19 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
-from flight_friend import repo
+from flight_friend import db, repo
 from flight_friend.api import views
 from flight_friend.domain.schedule import KST, cooldown_remaining
 from flight_friend.types import Preferences, Trip
 
-app = FastAPI(title="Flight Friend V2")
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    db.init_schema()
+    yield
+
+
+app = FastAPI(title="Flight Friend V2", lifespan=lifespan)
 
 
 class PrefsBody(BaseModel):
@@ -56,8 +65,10 @@ def _require_trip(trip_id: int) -> Trip:
 
 
 @app.get("/healthz")
-def healthz() -> dict[str, bool]:
-    return {"ok": True}
+def healthz() -> JSONResponse:
+    if not db.schema_ready():
+        return JSONResponse({"ok": False}, status_code=503)
+    return JSONResponse({"ok": True})
 
 
 @app.get("/api/trips")

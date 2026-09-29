@@ -30,6 +30,8 @@ def get_conn() -> Generator[psycopg2.extensions.connection, None, None]:
 def init_schema() -> None:
     with get_conn() as conn:
         cur = conn.cursor()
+        # app + worker가 동시에 기동해도 CREATE ... IF NOT EXISTS 경합이 나지 않도록 직렬화 (트랜잭션 종료 시 해제)
+        cur.execute("SELECT pg_advisory_xact_lock(hashtext('flight_friend.init_schema'))")
 
         cur.execute("""
             CREATE TABLE IF NOT EXISTS trips (
@@ -135,3 +137,15 @@ def init_schema() -> None:
             CREATE INDEX IF NOT EXISTS idx_alerts_trip_id_kind_sent_at
                 ON alerts (trip_id, kind, sent_at)
         """)
+
+
+def schema_ready() -> bool:
+    """V2 스키마가 존재하고 DB에 닿는지. 어떤 실패든 False."""
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT to_regclass('public.trips') IS NOT NULL")
+            row = cur.fetchone()
+            return bool(row and row[0])
+    except Exception:  # noqa: BLE001 — 헬스체크는 예외 대신 False
+        return False

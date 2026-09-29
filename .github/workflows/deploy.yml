@@ -32,7 +32,8 @@ jobs:
 
             git pull origin master
 
-            # 롤백 포인트: 현재 가동 중인 app/mcp 이미지를 :prev 로 태깅.
+            # 롤백 포인트: 현재 가동 중인 app/mcp 이미지를 :prev 로 태깅 (worker 는 태깅 안 함 —
+            # 롤백 시 `git checkout <이전 커밋>` 후 `docker compose --profile full build worker && up -d worker`).
             # (docker image prune -f 는 dangling 만 제거하므로 태그가 살아남는다)
             # 수동 롤백:
             #   docker tag flight-friend-app:prev my-flight-friend-app:latest
@@ -120,6 +121,20 @@ jobs:
             echo "Building worker image (failure fails this workflow)"
             docker compose --profile full build worker
             docker compose --profile full up -d worker
+
+            # worker 가 실제로 running 인지 확인 (기동 직후 크래시 루프 감지)
+            for i in $(seq 1 10); do
+              if [ -n "$(docker compose --profile full ps --status running -q worker)" ]; then
+                echo "worker running (attempt $i)"
+                break
+              fi
+              if [ "$i" -eq 10 ]; then
+                echo "worker is not running"
+                docker compose --profile full logs --tail=80 worker
+                exit 1
+              fi
+              sleep 3
+            done
 
             # 미사용 이미지 정리
             docker image prune -f

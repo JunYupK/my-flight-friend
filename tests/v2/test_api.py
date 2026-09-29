@@ -290,3 +290,24 @@ def test_spa_fallback_and_api_404(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     assert r.status_code == 404 and r.json() == {"detail": "Not Found"}
     r = client.get("/trips/1")
     assert r.status_code == 200 and "spa" in r.text
+
+
+def test_lifespan_creates_schema_when_tables_missing():
+    from flight_friend import db
+
+    with db.get_conn() as conn:
+        conn.cursor().execute(
+            "DROP TABLE IF EXISTS alerts, rt_quotes, leg_quotes, snapshots, search_runs, trips CASCADE"
+        )
+    assert db.schema_ready() is False
+    with TestClient(app) as c:
+        assert c.get("/healthz").status_code == 200
+    assert db.schema_ready() is True
+
+
+def test_healthz_ok_and_503(monkeypatch):
+    assert client.get("/healthz").json() == {"ok": True}
+    monkeypatch.setattr("flight_friend.db.schema_ready", lambda: False)
+    r = client.get("/healthz")
+    assert r.status_code == 503
+    assert r.json() == {"ok": False}

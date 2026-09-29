@@ -8,7 +8,7 @@ from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from typing import Literal, Protocol
 
-from flight_friend import repo
+from flight_friend import db, repo
 from flight_friend.config import ORIGIN, STUCK_RUN_AFTER
 from flight_friend.domain.schedule import days_to_departure, freshness_window, is_due
 from flight_friend.domain.tracking import (
@@ -132,6 +132,7 @@ def evaluate_ops(now: datetime, send: Sender = send_alert) -> bool:
 
 
 async def main_loop() -> None:
+    db.init_schema()
     from crawl4ai import AsyncWebCrawler, BrowserConfig
 
     config = BrowserConfig(

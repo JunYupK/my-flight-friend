@@ -254,3 +254,4 @@
 - 검증: ruff 0 errors, pytest 전체, npm run build, compose config, YAML 파싱 (보고서 참고).
 - 결정 / 발견: deploy의 `up -d`를 `up -d app mcp caddy`로 좁힘(전체 `up -d`는 미빌드 worker를 헬스체크 전에 인라인 빌드하게 됨). collector/mcp 서비스는 Task 17까지 유지.
 - 다음 작업자에게: **사용자가 OCI에서 V1 수집 cron과 spike cron을 제거해야 한다.** 머지 시 자동 배포되며 worker가 처음 기동한다. Task 17에서 V1 코드·collector/mcp 서비스·ruff 제외 목록·`flight_monitor.notifier` 이동 처리.
+- Task 16 Fix round 1: `init_schema()`를 API lifespan + worker 시작에서 호출(advisory lock), `/healthz`가 `schema_ready()` 실패 시 503, ruff `./main.py`로 V2 main 린트 복구, AGENTS.md 스키마 진입점 정정, deploy에 worker running 체크 추가. ruff 0 errors, pytest 217 passed.
