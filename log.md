@@ -17,7 +17,7 @@
 
 - 설계: `docs/superpowers/specs/2026-09-28-flight-friend-v2-design.md` (합의 완료)
 - 구현 계획: `docs/superpowers/plans/2026-09-28-flight-friend-v2-m1.md` (M1, 17 tasks — 사용자 검토 대기, 실행 전)
-- 다음 task: Task 11
+- 다음 task: Task 12
 - 진행 중인 외부 작업: OCI 반복 측정(차단 여부) — 결과로 설계 §5.1 갱신 주기·W 확정 예정
 - 작업 브랜치: `claude/dazzling-shannon-4x04v7`
 
@@ -197,3 +197,20 @@
 - 결정 / 발견: 알림 메시지 끝에 공백 + `/trips/{id}`. new_low 퍼센트는 `series[:-1]` 최저 대비. `main_loop`은 테스트하지 않음(1분 주기 유지보수는 monotonic 시계).
 - 다음 작업자에게: `flight_monitor.notifier.send_alert`는 Task 17에서 이동 예정. Task 11 진행.
 
+
+## 2026-09-29 — Claude Code — Task 11: API — views · 엔드포인트
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` / feat(v2): trip API and views
+- 한 일: `flight_friend/api/{views,main}.py` — views(Service, dict 빌드, FastAPI 무의존) + main(Router, 검증/에러 매핑). `httpx` requirements 추가. `tests/v2/test_api.py` 17개.
+- 검증: `pytest tests/v2` 121 passed, `pytest tests` 210 passed, ruff clean.
+- 결정 / 발견 (프론트 types.ts 기준 JSON, 날짜/시각은 ISO 문자열, 시각은 aware — DB 세션 tz라 +09:00일 수 있음):
+  - `GET /api/trips` → `[{id, destination, out_date, ret_date, days_to_departure, tracking, current, current_observed_at, change_vs_start_pct, archived}]`
+  - `POST /api/trips` → 201 `{id, run_id}`; 422(코드 `^[A-Z]{3}$`, ret>out, out>=KST 오늘). body `{destination, out_date, ret_date, prefs?, target_price?}`
+  - `GET/PATCH /api/trips/{id}` → `{trip:{id, origin, destination, out_date, ret_date, adults, cabin, prefs, target_price, tracking, archived, days_to_departure, created_at}, run:{id,status,requested_at}|null, providers:[{provider,status,observed_at,last_ok_at}], stats:{current,start,start_day,low,low_day,median,days,comparable}, legs:{out:[MergedLegView],in:[...]}, candidates:[{out_flight_key,in_flight_key,price,stay_min}], near_miss:{direction,flight_key,violated,combo_price,saving}|null, rt_reference:[{airline_iata,rt_min,ow_sum,diff}], window_minutes}`
+  - `MergedLegView` = `{flight_key, dep_time, arr_time, airline_name, airline_iata, flight_numbers, stops, duration_min, dep_airport, arr_airport, best_price, best_provider, in_condition, violations, prices:[{provider,price,observed_at,booking_url,stale}]}`
+  - PATCH body `{prefs?, tracking?, target_price?}`: `target_price: null`=해제, 생략=유지. prefs는 통째 교체(`Preferences.to_dict()` 형태, window는 `[from,to]`).
+  - `POST /api/trips/{id}/runs` → 202 `{run_id}` (열린 run 있으면 그 id) / 429 `{retry_after_seconds}`
+  - `GET /api/runs/{id}` → `{id, status, snapshots:[{provider,kind,direction,status}]}`
+  - `GET /api/trips/{id}/history` → `[{day,combo,out_min,in_min,partial}]`
+  - `GET /api/admin/runs` → recent_runs(시각 ISO), `GET /api/admin/providers?days=7` → `[{provider,day,total,ok,empty,blocked,error}]`
+  - `GET /healthz`; 비-API 경로는 `flight_front/web/dist` SPA fallback (dist 없으면 미등록).
+- 다음 작업자에게: 프론트(Task 12~)는 위 형태를 `types.ts`로. 알 수 없는 id는 404. `prices[].stale`이면 best_price 제외됨(전부 stale이면 best_price null).
