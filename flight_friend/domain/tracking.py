@@ -74,6 +74,12 @@ def run_values(snapshots: list[Snapshot], prefs: Preferences) -> list[RunValue]:
     return values
 
 
+def current_value(snapshots: list[Snapshot], prefs: Preferences, now: datetime, window: timedelta) -> int | None:
+    """W 안의 최신 스냅샷으로 만든 조건 내 최저 왕복 조합 가격 (없으면 None)."""
+    best = cheapest_combo(in_condition(current_legs(snapshots, now, window), prefs), prefs.max_price)
+    return best[2] if best else None
+
+
 def daily_series(values: list[RunValue]) -> list[DayPoint]:
     by_day: dict[date, list[RunValue]] = {}
     for v in values:

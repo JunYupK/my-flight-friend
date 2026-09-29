@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from flight_friend.domain.tracking import (
     DayPoint,
     RunValue,
+    current_value,
     daily_series,
     run_values,
     should_alert_new_low,
@@ -200,3 +201,11 @@ def test_target_alert_once_then_further_drop() -> None:
     assert should_alert_target(240_000, None, None) is False
     assert should_alert_target(240_000, 250_000, 245_000) is False
     assert should_alert_target(230_000, 250_000, 245_000) is True
+
+
+def test_current_value_cheapest_in_window() -> None:
+    snaps = run_pair(1, 100_000, 150_000, T0)
+    now = T0 + timedelta(hours=1)
+    assert current_value(snaps, Preferences(), now, timedelta(hours=6)) == 250_000
+    assert current_value(snaps, Preferences(max_price=200_000), now, timedelta(hours=6)) is None
+    assert current_value(snaps, Preferences(), now + timedelta(hours=10), timedelta(hours=6)) is None

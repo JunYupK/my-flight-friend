@@ -17,7 +17,7 @@
 
 - 설계: `docs/superpowers/specs/2026-09-28-flight-friend-v2-design.md` (합의 완료)
 - 구현 계획: `docs/superpowers/plans/2026-09-28-flight-friend-v2-m1.md` (M1, 17 tasks — 사용자 검토 대기, 실행 전)
-- 다음 task: Task 10
+- 다음 task: Task 11
 - 진행 중인 외부 작업: OCI 반복 측정(차단 여부) — 결과로 설계 §5.1 갱신 주기·W 확정 예정
 - 작업 브랜치: `claude/dazzling-shannon-4x04v7`
 
@@ -189,3 +189,11 @@
 - 검증: 구현 전 pytest → ModuleNotFoundError(RED), 구현 후 14 passed. 전체 `pytest tests` 183 passed, ruff clean.
 - 결정 / 발견: 알림 임계는 `drop >= ALERT_DROP_KRW or drop >= ALERT_DROP_PCT * reference` 공통 함수. 하루 최저 combo 동률이면 먼저 관측된 run의 partial 사용. new_low의 이전 최저는 `series[:-1]`(마지막 = 오늘).
 - 다음 작업자에게: Task 10 진행. `current`는 호출자가 Task 7/8로 W를 적용해 계산해서 넘겨야 한다.
+
+## 2026-09-29 — Claude Code — Task 10: search-worker
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7`, feat(v2): search worker with scheduler and alerts
+- 한 일: `flight_friend/worker.py` 추가 — `execute_run`(oneway out/in + roundtrip을 gather 동시 실행, 스냅샷 3개 저장, 예외 시 error), `schedule_due_trips`, `evaluate_alerts`(new_low/target, 발송 성공 시에만 record_alert), `evaluate_ops`(최근 3 run GF oneway 전부 비ok, 6시간 쿨다운), `main_loop`(crawl4ai는 함수 내부 import, 반복마다 예외 로깅 후 계속). `domain/tracking.py`에 `current_value` 추가. 테스트 `tests/v2/test_worker.py` 9개 + tracking 1개.
+- 검증: 구현 전 pytest → ModuleNotFoundError(RED), 구현 후 통과. 전체 `pytest tests` 통과, `ruff check flight_friend tests/v2` clean, crawl4ai 없이 `import flight_friend.worker` 성공.
+- 결정 / 발견: 알림 메시지 끝에 공백 + `/trips/{id}`. new_low 퍼센트는 `series[:-1]` 최저 대비. `main_loop`은 테스트하지 않음(1분 주기 유지보수는 monotonic 시계).
+- 다음 작업자에게: `flight_monitor.notifier.send_alert`는 Task 17에서 이동 예정. Task 11 진행.
+
