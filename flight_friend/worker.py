@@ -47,53 +47,66 @@ class ProviderSpec:
     roundtrip: Callable[[str, str, date, date], Awaitable[ProviderResult]]
 
 
-async def _guarded(name: str, call: Awaitable[ProviderResult]) -> ProviderResult:
+async def _guarded(name: str, factory: Callable[[], Awaitable[ProviderResult]]) -> ProviderResult:
     try:
-        return await call
+        return await factory()
     except Exception as e:
         logger.exception("provider %s failed", name)
         return ProviderResult(status="error", legs=[], rts=[], error=str(e), seconds=0.0)
 
 
-async def execute_run(run: Run, trip: Trip, providers: list[ProviderSpec]) -> None:
+async def _execute(run: Run, trip: Trip, providers: list[ProviderSpec], timeout: float | None) -> bool:
+    """제공자 호출을 각각 태스크로 돌리고 모든 스냅샷을 저장한다. 시간 초과가 있었으면 True."""
+    timed_out = False
     try:
         if repo.get_trip(trip.id) is None:
             raise LookupError(f"trip {trip.id} not found")
         plan: list[tuple[str, Literal["oneway", "roundtrip"], Literal["out", "in"] | None, date]] = []
-        calls: list[Awaitable[ProviderResult]] = []
+        tasks: list[asyncio.Task[ProviderResult]] = []
         for spec in providers:
             plan += [
                 (spec.name, "oneway", "out", trip.out_date),
                 (spec.name, "oneway", "in", trip.ret_date),
                 (spec.name, "roundtrip", None, trip.out_date),
             ]
-            calls += [
-                _guarded(spec.name, spec.oneway(ORIGIN, trip.destination, trip.out_date)),
-                _guarded(spec.name, spec.oneway(trip.destination, ORIGIN, trip.ret_date)),
-                _guarded(spec.name, spec.roundtrip(ORIGIN, trip.destination, trip.out_date, trip.ret_date)),
+            factories: list[Callable[[], Awaitable[ProviderResult]]] = [
+                partial(spec.oneway, ORIGIN, trip.destination, trip.out_date),
+                partial(spec.oneway, trip.destination, ORIGIN, trip.ret_date),
+                partial(spec.roundtrip, ORIGIN, trip.destination, trip.out_date, trip.ret_date),
             ]
-        results = await asyncio.gather(*calls)
+            tasks += [asyncio.ensure_future(_guarded(spec.name, f)) for f in factories]
+        started = time.monotonic()
+        _, pending = await asyncio.wait(tasks, timeout=timeout)
+        for task in pending:
+            task.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
+        elapsed = time.monotonic() - started
+        timed_out = bool(pending)
         observed_at = datetime.now(UTC)
-        for (name, kind, direction, day), result in zip(plan, results, strict=True):
+        for (name, kind, direction, day), task in zip(plan, tasks, strict=True):
+            if task in pending:
+                logger.error("run %s: provider %s %s timed out", run.id, name, kind)
+                result = ProviderResult(status="error", legs=[], rts=[], error="timeout", seconds=elapsed)
+            else:
+                result = task.result()
             repo.save_snapshot(run.id, trip.id, name, kind, direction, day, result, observed_at)
     except Exception:
         logger.exception("run %s failed", run.id)
         repo.finish_run(run.id, "error")
-        return
-    repo.finish_run(run.id, "done")
+        return timed_out
+    repo.finish_run(run.id, "error" if timed_out else "done")
+    return timed_out
+
+
+async def execute_run(run: Run, trip: Trip, providers: list[ProviderSpec]) -> None:
+    await _execute(run, trip, providers, None)
 
 
 async def run_with_timeout(
     run: Run, trip: Trip, providers: list[ProviderSpec], timeout: timedelta = RUN_TIMEOUT
 ) -> bool:
-    """execute_run에 시간 상한을 둔다. 시간 초과면 run을 error로 닫고 True를 반환한다."""
-    try:
-        await asyncio.wait_for(execute_run(run, trip, providers), timeout=timeout.total_seconds())
-    except TimeoutError:
-        logger.error("run %s timed out after %s", run.id, timeout)
-        repo.finish_run(run.id, "error")
-        return True
-    return False
+    """execute_run에 시간 상한을 둔다. 시간 초과면 끝난 결과는 저장하고 run을 error로 닫고 True를 반환한다."""
+    return await _execute(run, trip, providers, timeout.total_seconds())
 
 
 def schedule_due_trips(now: datetime) -> int:
@@ -266,8 +279,10 @@ async def main_loop() -> None:
                 logger.exception("worker iteration failed")
             await asyncio.sleep(2)
     finally:
-        await client.aclose()
-        await crawler.close()
+        try:
+            await crawler.close()
+        finally:
+            await client.aclose()
 
 
 if __name__ == "__main__":

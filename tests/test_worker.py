@@ -422,6 +422,38 @@ def test_run_with_timeout_marks_error_on_hang() -> None:
     assert finished is not None and finished.status == "error"
 
 
+def test_timeout_keeps_finished_provider_results() -> None:
+    trip = make_trip()
+    async def hang_out(dep: str, arr: str, date_: date) -> ProviderResult:
+        await asyncio.Event().wait()
+        return ok(1)
+
+    hung_base = fake_spec("google_flights")
+    hung = ProviderSpec("google_flights", hang_out, hung_base.roundtrip)
+    sent: list[str] = []
+
+    def send(message: str) -> str | None:
+        sent.append(message)
+        return "telegram"
+
+    for _ in range(3):
+        run = claim(trip)
+        timed_out = asyncio.run(
+            run_with_timeout(run, trip, [hung, fake_spec("naver")], timedelta(milliseconds=50))
+        )
+        assert timed_out is True
+        finished = repo.get_run(run.id)
+        assert finished is not None and finished.status == "error"
+    snaps = [s for s in repo.load_snapshots(trip.id) if s.run_id == run.id]
+    naver_snaps = [s for s in snaps if s.provider == "naver"]
+    assert len(naver_snaps) == 3 and all(s.status == "ok" for s in naver_snaps)
+    gf = {(s.kind, s.direction): s for s in snaps if s.provider == "google_flights"}
+    assert gf[("oneway", "out")].status == "error" and gf[("oneway", "out")].error == "timeout"
+    assert gf[("oneway", "in")].error == "timeout" and gf[("roundtrip", None)].status == "ok"
+    assert evaluate_ops(NOW, send) == ["google_flights"]
+    assert sent == [GF_MESSAGE]
+
+
 def test_run_with_timeout_passes_through_when_fast() -> None:
     trip = make_trip()
     run = claim(trip)

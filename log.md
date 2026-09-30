@@ -338,3 +338,8 @@
 - 한 일: `worker.py` — `ProviderSpec`, `execute_run/run_with_timeout(providers)`(제공자 호출 예외는 error 스냅샷으로 변환, run은 done), `main_loop`에 `httpx.AsyncClient` 추가·매 run마다 GF/Naver spec 구성, `evaluate_ops`를 제공자별(`ops:{name}` 쿨다운)·`list[str]` 반환으로 변경, 알림에 "카드 조건 시 N원 (라벨 등)" 추가. 테스트 갱신·추가.
 - 검증: `pytest tests/ -q` 181 passed, `python -m ruff check .` 통과, `import flight_friend.worker` 성공.
 - 다음 작업자에게: 기존 `ops` 알림 kind는 더 이상 쓰이지 않음(`ops:google_flights`로 대체 — 배포 직후 쿨다운이 새로 시작됨).
+
+## 2026-09-30 — Claude Code — M2 Task 7 수정: 타임아웃 시 끝난 제공자 결과 보존
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` / `fix(m2): keep finished provider results when a run times out`
+- 한 일: 제공자 호출을 개별 태스크로 실행, RUN_TIMEOUT 시 끝난 결과는 저장하고 미완료 호출은 취소 후 `error/"timeout"` 스냅샷으로 저장, run은 error·`run_with_timeout`은 True 유지. 호출 팩토리를 `_guarded` 내부에서 호출, main_loop finally에서 crawler/client close 독립 처리.
+- 검증: `pytest tests/ -q` 182 passed, ruff 통과.
