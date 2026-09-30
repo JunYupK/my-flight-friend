@@ -19,6 +19,22 @@ from urllib.parse import urlparse
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+
+def _require_local_db() -> None:
+    """모든 모드(seed/--reset/--fake-run)에서 DB에 닿기 전에 로컬 DB인지 확인한다.
+
+    flight_friend.db 가 import 시점에 DATABASE_URL 을 읽으므로 import 전에 호출한다.
+    """
+    url = os.environ.get("DATABASE_URL")
+    if not url:
+        sys.exit("DATABASE_URL 이 필요합니다 (예: postgresql://flight_user:flight_pass@localhost:5432/flights)")
+    host = urlparse(url).hostname
+    if host not in ("localhost", "127.0.0.1", "::1"):
+        sys.exit(f"dev_seed 는 로컬 DB(localhost/127.0.0.1/::1)에서만 실행됩니다 (host={host})")
+
+
+_require_local_db()
+
 from flight_friend import db, repo
 from flight_friend.types import LegQuote, Preferences, ProviderResult, RtQuote
 
@@ -180,13 +196,6 @@ def main() -> None:
     ap.add_argument("--reset", action="store_true", help="V2 테이블을 먼저 비운다 (개발 DB 전용)")
     ap.add_argument("--fake-run", type=int, metavar="TRIP_ID", help="해당 Trip에 가짜 run 진행(스냅샷 6개)을 넣는다")
     args = ap.parse_args()
-    if not os.environ.get("DATABASE_URL"):
-        sys.exit("DATABASE_URL 이 필요합니다")
-    if args.reset:
-        host = urlparse(os.environ["DATABASE_URL"]).hostname
-        if host not in ("localhost", "127.0.0.1"):
-            print(f"--reset 은 로컬 DB(localhost/127.0.0.1)에서만 허용됩니다 (host={host})")
-            sys.exit(1)
     db.init_schema()
     if args.fake_run is not None:
         fake_run(args.fake_run)
