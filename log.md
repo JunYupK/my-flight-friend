@@ -308,3 +308,9 @@
 - 한 일: `LegQuote.cond_price/cond_label/cond_booking_url`, `RtQuote.cond_total_price/cond_label`(기본 None) 추가, `init_schema`에 `ADD COLUMN IF NOT EXISTS` 5개, `save_snapshot`/`_row_to_leg`/`_row_to_rt` 매핑, `record_alert` kind 타입 `str`로 확대. 아직 아무도 쓰지 않아 M1 동작 불변.
 - 검증: `pytest tests/ -q` 150 passed, `python -m ruff check .` 통과.
 - 다음 작업자에게: Task 3(Naver 편도 provider)에서 cond_* 채우기.
+
+## 2026-09-30 — Claude Code — M2 Task 3: Naver provider (편도)
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` / `feat(m2): naver provider oneway`
+- 한 일: `providers/naver.py`(`search_oneway`, `build_booking_url`, `build_search_url`, 내부 `_post_search`/`_itinerary_ok`/`_fares`), `config.py`에 `NAVER_ONEWAY_TIMEOUT`(45)/`NAVER_ROUNDTRIP_TIMEOUT`(60), `tests/test_naver.py`(fixture 기반, MockTransport).
+- 검증: `pytest tests/ -q` 통과, `python -m ruff check .` 통과.
+- 다음 작업자에게: Task 4(왕복)는 `_post_search`/`_itinerary_ok`/`_fares` 재사용. 부분 완료 스트림은 status ok + error `"partners 3/20"`.
