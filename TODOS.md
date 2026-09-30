@@ -1,33 +1,18 @@
+# TODOS
 
-## ✅ raw_legs 90일 정리 — 완료 (2026-06)
-**What:** raw_legs 90일 이상 삭제
-**상태:** `storage.cleanup_old_data()` 구현 → `main.py` 수집 완료 후 매 run마다 호출.
-  별도 crontab 불필요 (수집 파이프라인에 내장). `DELETE FROM raw_legs WHERE collected_at < NOW() - INTERVAL '90 days'`.
-**남은 것:** price_history DROP은 아래 항목 참조 (별개).
+_최종 업데이트: 2026-09-30_
 
-## price_history DROP 시 코드 정리 (price_events 2주 누적 후 ~2026-04-21)
-**What:** price_history 테이블 DROP 후 아래 코드 제거
-  1. `storage.py`: `save_prices()` 함수 전체
-  2. `storage.py`: `init_db()` 내 `price_history` CREATE TABLE DDL
-  3. `storage.py`: `init_db()` 내 `v_best_observed` DROP + CREATE VIEW (price_history 의존)
-**Context:**
-  - 2026-04-07 기준: save_prices 콜백 main.py에서 이미 제거됨 (price_history 신규 쓰기 없음)
-  - price_history 마지막 업데이트: 2026-04-03 (사실상 dead)
-  - 모든 API는 flight_legs / raw_legs / price_events 기반으로 전환 완료
-  - 2026-06-16: `/api/timing/advance`(`deals_cache.py::_query_timing_advance`)가 price_history를 읽던
-    마지막 누락 소비자였음. raw_legs 기반 self-join으로 이전 완료 — DROP 차단 요소 해소됨.
-  - 2026-06-17: `should_notify_median_drop()`(price_history 기반 중앙값 알림) 제거됨 — 알림이
-    `(목적지, 출발월)` 집약 + 목표가/쿨다운/하락 dedup으로 단순화. price_history 읽는 코드 더 줄어듦.
-**Depends on:** DB에서 price_history 테이블 DROP 완료 확인 후
+## M2 — Naver 제공자
+**What:** Naver spike (현 수집 경로 동작 여부, 요청 형식, 필드 커버리지) → 결과로 별도 계획 → `providers/naver.py` 어댑터.
+**Context:** 스펙 §11. 2026-09 spike에서 V1 Naver 수집기가 0건 (2026-08-31부터 불능). 시간 일치 쌍의 69%에서 Naver가 GF보다 저렴.
+V1 구현은 커밋 `d8e0422`의 `flight_monitor/collector_naver.py` 참고.
 
-## flight_legs 보존 정책
-**What:** `flight_legs`에서 `date < NOW() - 13개월`인 행 삭제 cron 추가 검토.
-**Why:** `flight_legs`는 UPSERT라 노선당 1행만 유지되지만, 출발일이 지난 과거 날짜 row는 갱신되지 않고
-  영구 보존되어 무제한 증가한다. `/api/timing/seasonal`이 12개월 lookback만 사용하므로 13개월(버퍼 1개월)
-  이전 데이터는 조회되지 않음에도 삭제되지 않고 계속 쌓인다.
-**Pros:** 테이블/인덱스 크기 제어, vacuum/조회 성능 유지.
-**Cons:** 13개월 이전 과거 가격 데이터 손실 (포트폴리오 원본 보존 강조와 트레이드오프).
-**Context:** 위 "DB 정리 정책 구현" 항목(raw_legs 90일 삭제)과 같은 마이그레이션 스크립트에서 함께 처리하는
-  것을 권장. `idx_flight_legs_out`/`idx_flight_legs_in`(destination, date) 부분 인덱스가 있어
-  `date < ...` 조건의 삭제 자체는 인덱스 레인지 스캔으로 가능.
-**Depends on:** 없음 (독립적으로 실행 가능).
+## 잠정 상수 확정
+**What:** 갱신 주기 티어(6h/2h/1h)와 신선도 창(W = 주기 × 2) 확정.
+**Context:** 실제 추적 데이터로 가격 변동 빈도와 GF 차단 여부를 보고 `domain/schedule.py` 상수만 바꾼다 (AGENTS §7).
+
+## V1 테이블 정리
+**What:** 서버에서 `scripts/v1_freeze.sql` 실행 (pg_dump 백업 후) → 분석이 끝나면 `v1` 스키마 DROP 여부 결정.
+
+## 이후 후보 (스펙 §11)
+- 왕복 2단계 확장, 관심 항공편 고정, 다중 목적지 Trip, V1 참고 이력, 하루 요약 알림

@@ -2,7 +2,7 @@
 #
 # Google Flights 어댑터: 템플릿 없는 protobuf tfs URL 생성, 카드 추출 JS/파서,
 # 카드 → LegQuote/RtQuote 변환, crawl4ai 기반 편도/왕복 검색.
-# V1 (flight_monitor/collector_google_flights.py, crawler_utils.py)에서 순수 부품만 이전.
+# V1 (커밋 d8e0422의 flight_monitor/collector_google_flights.py, crawler_utils.py)에서 순수 부품만 이전.
 
 from __future__ import annotations
 

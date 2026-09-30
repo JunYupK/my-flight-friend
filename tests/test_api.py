@@ -1,12 +1,8 @@
-# tests/v2/test_api.py
+# tests/test_api.py
 
-import os
-import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Literal
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 import pytest
 from fastapi.testclient import TestClient

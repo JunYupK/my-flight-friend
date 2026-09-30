@@ -1,10 +1,6 @@
-# tests/v2/test_results_legs.py
+# tests/test_results_legs.py
 
-import os
-import sys
 from datetime import UTC, date, datetime, timedelta
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from flight_friend.domain.results import current_legs, near_miss, violations
 from flight_friend.types import LegQuote, Preferences, Snapshot

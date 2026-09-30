@@ -1,5 +1,8 @@
+# flight_friend/notifier.py
+
 import os
 import sys
+
 import requests
 
 
@@ -39,27 +42,3 @@ def send_alert(message: str) -> str | None:
     print("[알림] Telegram/Discord 모두 실패 또는 미설정", file=sys.stderr)
     return None
 
-
-def notify(offer: dict, target_price: int) -> str | None:
-    dest = offer["destination_name"]
-    dep_date = offer["departure_date"]
-    ret_date = offer["return_date"]
-    stay = offer["stay_nights"]
-    price = int(offer["price"])
-
-    if offer["is_mixed_airline"]:
-        airline_info = (
-            f"가는편 {offer['out_airline']} / 오는편 {offer['in_airline']}"
-            f"\n⚠️ 다른 항공사 조합 — 개별 예약 필요"
-        )
-    else:
-        airline_info = f"{offer['out_airline']} (동일 항공사 왕복)"
-
-    msg = (
-        f"✈️ 왕복 최저가 발견!\n"
-        f"📍 인천 → {dest}\n"
-        f"📅 출발: {dep_date}  귀국: {ret_date} ({stay}박)\n"
-        f"💰 왕복 총액: {price:,}원\n"
-        f"🛫 {airline_info}"
-    )
-    return send_alert(msg)

@@ -1,10 +1,6 @@
-# tests/v2/test_tracking.py
+# tests/test_tracking.py
 
-import os
-import sys
 from datetime import UTC, date, datetime, timedelta
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from flight_friend.domain.tracking import (
     DayPoint,

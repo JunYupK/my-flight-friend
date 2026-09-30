@@ -1,13 +1,9 @@
-# tests/v2/test_google_flights.py
+# tests/test_google_flights.py
 
 import asyncio
 import base64
 import os
-import sys
 from datetime import date
-
-# 프로젝트 루트를 sys.path에 추가
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from flight_friend.providers import google_flights
 from flight_friend.providers.google_flights import (

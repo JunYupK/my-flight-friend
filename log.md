@@ -17,10 +17,9 @@
 
 - 설계: `docs/superpowers/specs/2026-09-28-flight-friend-v2-design.md` (합의 완료)
 - 구현 계획: `docs/superpowers/plans/2026-09-28-flight-friend-v2-m1.md` (M1, 17 tasks)
-- M1 코드(Task 1~16 + 최종 리뷰 수정) 완료: `flight_friend/` 패키지 + 새 React 앱 + compose/Dockerfile/CI/deploy/AGENTS.md 연결. V1 코드는 아직 남아 있음(Task 17에서 삭제).
-- 다음 task: Task 17 (사용자 게이트)
-- **머지 전/후 사용자 서버 작업 (OCI):** 호스트 crontab에서 V1 수집 cron(`scripts/collect_and_diagnose.sh`)과 spike cron 제거. 남겨두면 V1 collector가 raw_legs를 삭제한다.
-- 진행 중인 외부 작업: OCI 반복 측정(차단 여부) — 결과로 설계 §5.1 갱신 주기·W 확정 예정
+- M1 완료: PR #62 머지·배포 (2026-09-29), OCI에서 자동 추적 정상 확인. Task 17(V1 은퇴) 코드 작업 완료 — V1 코드는 커밋 `d8e0422` (태그는 생략 — 필요하면 `git tag v1-final d8e0422`로 나중에).
+- **사용자 서버 작업 (Task 17 머지 후):** `pg_dump` 백업 → `scripts/v1_freeze.sql` 실행, 1회 `docker compose --profile full up -d --remove-orphans`로 mcp/redis 컨테이너 정리.
+- 다음: M2 Naver spike (`TODOS.md`)
 - 작업 브랜치: `claude/dazzling-shannon-4x04v7`
 
 ---
@@ -270,3 +269,20 @@
 - 검증: ruff 0 errors, pytest 232 passed, `npm run build` 통과. 브라우저(headless Chromium, 실제 API): 항목 3(토글/목표가 저장·비우기·새로고침 유지·390px 가로 스크롤 없음)과 9의 NewTrip 메시지 확인. 코드만 읽고 확인: 항목 8, 9의 FilterBar 메시지, 항목 1의 실제 GF 동작(fake crawler 테스트만), 항목 2의 실제 브라우저 재기동(crawler.close/start), 항목 5의 실제 발송.
 - 결정 / 발견: 서버 종료, 개발 DB 비어 있음.
 - 다음 작업자에게: Task 17(사용자 게이트) 및 사용자의 OCI 서버 작업(V1 수집 cron·spike cron 제거). 배포 시 `.env`에 `PUBLIC_BASE_URL` 설정 권장.
+
+## 2026-09-30 — Claude Code — Task 17: V1 은퇴
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` (master `c889adf`에서 재시작) / `chore: retire V1 code (tagged v1-final)`
+- 한 일:
+  - V1 기준점은 V2 시작 직전 커밋 `d8e0422` (`v1-final` 태그는 사용자 결정으로 생략).
+  - `flight_monitor/notifier.py` → `flight_friend/notifier.py` 이동 (V1 전용 `notify()` 제거, `send_alert` 등만 유지), 테스트는 `tests/v2/test_notifier.py`로.
+  - 삭제: `main.py`, `diagnosis_agent.py`, `mcp_server.py`, `Dockerfile.mcp`, `scripts/*`(V1), `flight_monitor/`, `flight_front/api/`, `flight_front/__init__.py`, V1 테스트 8개.
+  - compose에서 `collector`·`mcp`·`redis` 서비스와 app의 `/hostfs` 마운트·`REDIS_URL` 제거 (V2는 redis·hostfs 미사용). Caddyfile `/mcp` 라우트 제거, deploy.yml에서 mcp 빌드·태깅·헬스체크 제거.
+  - `flight-friend` MCP 서버가 사라지므로 이를 설정하던 SessionStart 훅(`.claude/hooks/session-start.sh`)과 `.claude/settings.json` 삭제.
+  - requirements에서 V1 전용 패키지(amadeus, mcp, redis, anthropic, psutil, aiofiles) 제거. `Dockerfile.collector` CMD를 worker로.
+  - `ruff.toml` V1 제외 목록 삭제. 아키텍처 테스트는 V1 규칙 삭제, providers/db/repo의 웹 프레임워크 금지를 V2 규칙에 추가.
+  - `scripts/v1_freeze.sql`: V1 테이블 9개 + `v_best_observed` 뷰 + `record_price_change()` 함수를 `v1` 스키마로 이동 (함수는 search_path=v1 고정). 트랜잭션, 멱등.
+  - AGENTS.md / ISSUES.md / TODOS.md를 V2 기준으로 갱신.
+- 검증: pytest 147 passed (V1 테스트 85개 삭제분 제외), `ruff check .` 통과, `npm run build` 통과. freeze SQL은 V1 `init_db()` + V2 `init_schema()`로 만든 임시 DB에서 실행: public에 V2 6개만 남음, v1에 9개, 재실행 오류 없음, 이동 후 `v1.flight_legs` UPDATE 시 트리거가 `v1.price_events`에 기록됨.
+- 결정 / 발견: `readme.md`와 CLAUDE.md 포트폴리오는 V1 기준 서술이 남아 있음 — 갱신 여부는 사용자 결정.
+- 다음 작업자에게: 서버에서 freeze SQL 실행 전 백업 필수. M2 Naver spike.
+- Task 17 추가 (사용자 요청): `tests/v2/*` → `tests/`로 평탄화(`tests/fixtures/` 포함), 파일마다 있던 `sys.path.insert`를 `tests/conftest.py` 한 곳으로. autouse fixture 이름 `v2_db` → `clean_db`, `pytest.mark.no_db` 모듈은 DB 초기화를 건너뜀(`test_architecture.py`는 DB 없이 4 passed 확인). pytest 147 passed, ruff 0.16.9 clean. CI lint 실패(`notifier.py` import 순서 I001)는 로컬 ruff가 0.15.8이었던 탓 — 로컬 검증은 `python -m ruff`(0.16.9)로.
