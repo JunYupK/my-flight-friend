@@ -65,6 +65,7 @@ export default function NewTrip() {
     if (Object.keys(next).length > 0 || !range.from || !range.to) return;
 
     setSubmitting(true);
+    let id: number;
     try {
       const res = await createTrip({
         destination,
@@ -73,9 +74,7 @@ export default function NewTrip() {
         prefs,
         target_price: tracking ? targetPrice : null,
       });
-      if (!tracking) await patchTrip(res.id, { tracking: false });
-      toast("Trip을 만들었어요 · 확인 중");
-      navigate(`/trips/${res.id}`);
+      id = res.id;
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Trip 생성에 실패했습니다.";
       if (/ret_date|out_date/.test(msg)) {
@@ -84,7 +83,20 @@ export default function NewTrip() {
         setErrors({ form: msg });
       }
       setSubmitting(false);
+      return;
     }
+    // Trip은 이미 만들어졌으므로 이후 실패해도 항상 상세로 이동 (재시도 시 중복 생성 방지)
+    if (!tracking) {
+      try {
+        await patchTrip(id, { tracking: false });
+      } catch {
+        toast.error("추적 끄기에 실패했어요 · 상세 화면에서 꺼 주세요");
+        navigate(`/trips/${id}`);
+        return;
+      }
+    }
+    toast("Trip을 만들었어요 · 확인 중");
+    navigate(`/trips/${id}`);
   };
 
   return (
@@ -93,10 +105,22 @@ export default function NewTrip() {
       <Card className="rounded-2xl">
         <CardContent className="space-y-6">
           <Section title="목적지" error={errors.destination}>
-            <DestinationCombobox value={destination} onChange={setDestination} />
+            <DestinationCombobox
+              value={destination}
+              onChange={(v) => {
+                setDestination(v);
+                setErrors((e) => ({ ...e, destination: undefined }));
+              }}
+            />
           </Section>
           <Section title="날짜" error={errors.dates}>
-            <DateRangePicker value={range} onChange={setRange} />
+            <DateRangePicker
+              value={range}
+              onChange={(v) => {
+                setRange(v);
+                setErrors((e) => ({ ...e, dates: undefined }));
+              }}
+            />
           </Section>
           <Section title="조건">
             <ConditionFields prefs={prefs} onChange={setPrefs} />
@@ -119,7 +143,10 @@ export default function NewTrip() {
                   inputMode="numeric"
                   min={1}
                   value={target}
-                  onChange={(e) => setTarget(e.target.value)}
+                  onChange={(e) => {
+                    setTarget(e.target.value);
+                    setErrors((er) => ({ ...er, target: undefined }));
+                  }}
                   aria-invalid={!!errors.target}
                 />
               </div>

@@ -422,3 +422,4 @@
 - 검증(코드만): `npm run build`, ruff, pytest 201 passed. `직접 입력`(표에 없는 3글자 코드), AirlineChips, 상세 조건 Collapsible 펼침, 422 필드 문구, 추적 off 경로, 슬라이더 끝 1440 → "23:59"는 화면에서 확인하지 않음.
 - 결정 / 발견: React 18에서 shadcn `Button`이 ref를 전달하지 않아 `PopoverTrigger asChild`(앵커 미설정)로 팝오버가 화면 밖(`translate(0,-200%)`)에 고정됨 → `ui/button.tsx`를 `forwardRef`로 수정. 번들 587→910kB(경고만).
 - 다음 작업자에게: 다른 shadcn ui 컴포넌트를 `asChild` 트리거에 쓸 때도 React 18 ref 전달 확인. Trip 상세 시트(Task 8)는 `ConditionFields`를 그대로 사용.
+- (Task 6 fix round 1) NewTrip: createTrip 성공 후엔 항상 `/trips/{id}`로 이동, 추적 끄기 PATCH 실패 시 에러 토스트만(중복 생성 방지). 필드 편집 시 해당 오류 지움. 검증(브라우저): 추적 OFF로 생성 → `GET /api/trips/{id}` `tracking == false`. 검증(코드만): PATCH 실패 분기(토스트+이동)는 try/catch 구조 확인만.
