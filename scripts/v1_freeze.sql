@@ -2,7 +2,7 @@
 --
 -- V1 테이블을 public 에서 v1 스키마로 옮겨 동결한다. 데이터는 그대로 남고
 -- (분석용으로 v1.raw_legs 등으로 조회), V2 테이블(trips, search_runs, snapshots,
--- leg_quotes, rt_quotes, alerts)은 건드리지 않는다. V1 코드는 v1-final 태그에 있다.
+-- leg_quotes, rt_quotes, alerts)은 건드리지 않는다. V1 코드는 커밋 d8e0422 에 있다.
 --
 -- 실행 전 반드시 백업 (서버, ~/my-flight-friend):
 --   mkdir -p backups

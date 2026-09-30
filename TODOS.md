@@ -5,7 +5,7 @@ _최종 업데이트: 2026-09-30_
 ## M2 — Naver 제공자
 **What:** Naver spike (현 수집 경로 동작 여부, 요청 형식, 필드 커버리지) → 결과로 별도 계획 → `providers/naver.py` 어댑터.
 **Context:** 스펙 §11. 2026-09 spike에서 V1 Naver 수집기가 0건 (2026-08-31부터 불능). 시간 일치 쌍의 69%에서 Naver가 GF보다 저렴.
-V1 구현은 `v1-final` 태그의 `flight_monitor/collector_naver.py` 참고.
+V1 구현은 커밋 `d8e0422`의 `flight_monitor/collector_naver.py` 참고.
 
 ## 잠정 상수 확정
 **What:** 갱신 주기 티어(6h/2h/1h)와 신선도 창(W = 주기 × 2) 확정.

@@ -19,7 +19,7 @@
 
 **배포:** OCI 한국 리전 단일 `docker-compose.yml`. `app`(FastAPI + SPA), `worker`(상주, Chromium), `db`, `caddy`.
 
-> **V1은 제거됨 (Task 17).** 코드는 `v1-final` 태그에 있다. V1 테이블은 `scripts/v1_freeze.sql`로 `v1` 스키마에 동결.
+> **V1은 제거됨 (Task 17).** 코드는 커밋 `d8e0422`(V2 직전 master)에 있다 (`git show d8e0422:<경로>`). V1 테이블은 `scripts/v1_freeze.sql`로 `v1` 스키마에 동결.
 
 ---
 

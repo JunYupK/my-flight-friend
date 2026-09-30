@@ -17,7 +17,7 @@
 
 - 설계: `docs/superpowers/specs/2026-09-28-flight-friend-v2-design.md` (합의 완료)
 - 구현 계획: `docs/superpowers/plans/2026-09-28-flight-friend-v2-m1.md` (M1, 17 tasks)
-- M1 완료: PR #62 머지·배포 (2026-09-29), OCI에서 자동 추적 정상 확인. Task 17(V1 은퇴) 코드 작업 완료 — V1 코드는 `v1-final` 태그(`d8e0422`).
+- M1 완료: PR #62 머지·배포 (2026-09-29), OCI에서 자동 추적 정상 확인. Task 17(V1 은퇴) 코드 작업 완료 — V1 코드는 커밋 `d8e0422` (태그는 생략 — 필요하면 `git tag v1-final d8e0422`로 나중에).
 - **사용자 서버 작업 (Task 17 머지 후):** `pg_dump` 백업 → `scripts/v1_freeze.sql` 실행, 1회 `docker compose --profile full up -d --remove-orphans`로 mcp/redis 컨테이너 정리.
 - 다음: M2 Naver spike (`TODOS.md`)
 - 작업 브랜치: `claude/dazzling-shannon-4x04v7`
@@ -273,7 +273,7 @@
 ## 2026-09-30 — Claude Code — Task 17: V1 은퇴
 - 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` (master `c889adf`에서 재시작) / `chore: retire V1 code (tagged v1-final)`
 - 한 일:
-  - `v1-final` 태그를 V2 시작 직전 커밋 `d8e0422`에 생성 (push는 사용자 승인 후).
+  - V1 기준점은 V2 시작 직전 커밋 `d8e0422` (`v1-final` 태그는 사용자 결정으로 생략).
   - `flight_monitor/notifier.py` → `flight_friend/notifier.py` 이동 (V1 전용 `notify()` 제거, `send_alert` 등만 유지), 테스트는 `tests/v2/test_notifier.py`로.
   - 삭제: `main.py`, `diagnosis_agent.py`, `mcp_server.py`, `Dockerfile.mcp`, `scripts/*`(V1), `flight_monitor/`, `flight_front/api/`, `flight_front/__init__.py`, V1 테스트 8개.
   - compose에서 `collector`·`mcp`·`redis` 서비스와 app의 `/hostfs` 마운트·`REDIS_URL` 제거 (V2는 redis·hostfs 미사용). Caddyfile `/mcp` 라우트 제거, deploy.yml에서 mcp 빌드·태깅·헬스체크 제거.
