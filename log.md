@@ -19,7 +19,7 @@
 - 구현 계획: `docs/superpowers/plans/2026-09-28-flight-friend-v2-m1.md` (M1, 17 tasks)
 - M1 완료: PR #62 머지·배포 (2026-09-29), OCI에서 자동 추적 정상 확인. Task 17(V1 은퇴) 코드 작업 완료 — V1 코드는 커밋 `d8e0422` (태그는 생략 — 필요하면 `git tag v1-final d8e0422`로 나중에).
 - **사용자 서버 작업 (Task 17 머지 후):** `pg_dump` 백업 → `scripts/v1_freeze.sql` 실행, 1회 `docker compose --profile full up -d --remove-orphans`로 mcp/redis 컨테이너 정리.
-- 다음: M2 — 설계 `docs/superpowers/specs/2026-09-30-flight-friend-m2-naver-design.md` (사용자 검토 대기) → 구현 계획. 구현 착수 전 OCI에서 Naver API 확인이 게이트.
+- 다음: M2 — 설계 `docs/superpowers/specs/2026-09-30-flight-friend-m2-naver-design.md` (승인), 계획 `docs/superpowers/plans/2026-09-30-flight-friend-m2-naver.md` (9 tasks, 사용자 검토 대기). Task 1은 OCI에서 Naver API 확인 게이트(사용자 작업).
 - 작업 브랜치: `claude/dazzling-shannon-4x04v7`
 
 ---
@@ -300,4 +300,5 @@
 - 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` / `docs: M2 Naver provider design`
 - 한 일: spike 결과로 M2 설계 문서 작성. 결정: 조건 없는(A01)·조건부 가격 이중 보관, 계산은 조건 없는 가격 기준, 코드셰어 제외, 편명 보조 매칭(시각 차이는 GF 우선으로 조용히 합침), Naver 왕복 수집, API만 사용(막히면 실패로 드러냄), 견적 행에 cond_* 칸 추가, 판매사 선택 딥링크, 상세 기본 펼침 + 큰 토글(FE 대개편 예정이라 최소 변경).
 - 다음 작업자에게: 사용자 설계 검토 후 writing-plans로 M2 구현 계획. 첫 task는 OCI 확인 게이트.
+- M2 구현 계획 작성: 9 tasks (1 OCI 게이트 → 2 cond 칸 → 3·4 Naver 편도·왕복 → 5 병합 → 6 왕복 참고가·API → 7 worker·ops → 8 화면 → 9 마무리). 테스트 fixture `tests/fixtures/naver_oneway_icn_fuk.sse`(부분·최종 2줄, 매핑 8: 코드셰어 1·경유+sameFare 1 포함), `naver_roundtrip_icn_fuk.sse`(조합 6: 코드셰어 1)는 spike 실응답을 잘라 만듦 — 계획의 기대값이 이 파일 기준.
 
