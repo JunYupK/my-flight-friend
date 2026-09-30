@@ -69,6 +69,7 @@ export interface TripInfo {
   archived: boolean;
   days_to_departure: number;
   created_at: string;
+  next_auto_at: string | null;
 }
 
 export interface ProviderPriceView {

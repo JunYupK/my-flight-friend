@@ -1,6 +1,7 @@
 """로컬 개발 DB에 UI 검증용 Trip 4개를 시드한다. 개발 DB 전용.
 
     DATABASE_URL=postgresql://... python scripts/dev_seed.py [--reset]
+    DATABASE_URL=postgresql://... python scripts/dev_seed.py --fake-run <trip_id>   # 진행 표시 확인용
 
 (a) 추적 중 · GF+Naver · 14일치 run · 조건부 요금 · 목표가
 (b) Naver만 성공 (GF error)
@@ -12,6 +13,7 @@ import argparse
 import os
 import random
 import sys
+import time
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlparse
 
@@ -149,9 +151,34 @@ def seed_d() -> int:
     return trip
 
 
+def fake_run(trip_id: int, interval: float = 2.5) -> None:
+    """열린 run(없으면 새 run)에 6개 스냅샷을 interval초 간격으로 넣고 끝낸다 (worker 없이 RunProgress 확인용)."""
+    trip = repo.get_trip(trip_id)
+    if trip is None:
+        sys.exit(f"trip {trip_id} 없음")
+    run = repo.latest_run(trip_id)
+    run_id = run.id if run is not None and run.status in ("queued", "running") else repo.enqueue_run(trip_id, "manual")
+    with db.get_conn() as conn:
+        conn.cursor().execute("UPDATE search_runs SET status='running', started_at=now() WHERE id=%s", (run_id,))
+    print(f"run {run_id}: {interval}s 간격으로 스냅샷 6개 저장")
+    for provider in ("google_flights", "naver"):
+        for kind, direction, flights, d in (
+            ("oneway", "out", OUT_FLIGHTS[:4], trip.out_date),
+            ("oneway", "in", IN_FLIGHTS[:3], trip.ret_date),
+            ("roundtrip", None, [], trip.out_date),
+        ):
+            time.sleep(interval)
+            legs = [leg(f, trip.destination, direction or "out", f[8]) for f in flights]
+            rts = [RtQuote("7C", "7C1401", 232000)] if kind == "roundtrip" else []
+            repo.save_snapshot(run_id, trip_id, provider, kind, direction, d, ok(legs, rts), datetime.now(UTC))
+            print(f"  {provider} {kind} {direction}")
+    repo.finish_run(run_id, "done")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--reset", action="store_true", help="V2 테이블을 먼저 비운다 (개발 DB 전용)")
+    ap.add_argument("--fake-run", type=int, metavar="TRIP_ID", help="해당 Trip에 가짜 run 진행(스냅샷 6개)을 넣는다")
     args = ap.parse_args()
     if not os.environ.get("DATABASE_URL"):
         sys.exit("DATABASE_URL 이 필요합니다")
@@ -161,6 +188,9 @@ def main() -> None:
             print(f"--reset 은 로컬 DB(localhost/127.0.0.1)에서만 허용됩니다 (host={host})")
             sys.exit(1)
     db.init_schema()
+    if args.fake_run is not None:
+        fake_run(args.fake_run)
+        return
     if args.reset:
         reset()
     rng = random.Random(42)

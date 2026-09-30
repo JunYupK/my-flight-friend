@@ -423,3 +423,10 @@
 - 결정 / 발견: React 18에서 shadcn `Button`이 ref를 전달하지 않아 `PopoverTrigger asChild`(앵커 미설정)로 팝오버가 화면 밖(`translate(0,-200%)`)에 고정됨 → `ui/button.tsx`를 `forwardRef`로 수정. 번들 587→910kB(경고만).
 - 다음 작업자에게: 다른 shadcn ui 컴포넌트를 `asChild` 트리거에 쓸 때도 React 18 ref 전달 확인. Trip 상세 시트(Task 8)는 `ConditionFields`를 그대로 사용.
 - (Task 6 fix round 1) NewTrip: createTrip 성공 후엔 항상 `/trips/{id}`로 이동, 추적 끄기 PATCH 실패 시 에러 토스트만(중복 생성 방지). 필드 편집 시 해당 오류 지움. 검증(브라우저): 추적 OFF로 생성 → `GET /api/trips/{id}` `tracking == false`. 검증(코드만): PATCH 실패 분기(토스트+이동)는 try/catch 구조 확인만.
+
+## 2026-09-30 — Claude Code — FE 개편 Task 7: Trip 상세 머리·지금 최선·진행 표시
+- 브랜치 / 커밋: claude/dazzling-shannon-4x04v7 / `feat(fe): trip header, run progress, best-combo hero`
+- 한 일: TripHeader, RunProgress(6칸 칩, 2초 폴링), BestComboHero(추적 요약·Sparkline 포함), CandidateChips, NearMissLine, TripSettingsSheet 추가. TripPage 재구성, `TripInfo.next_auto_at` 타입 추가. StatusHeader/TrackingSummary/Candidates/NearMissHint/TripSettings 삭제(Results에서 Candidates·NearMissHint 제거, 상단 jump 요청 prop 추가). dev_seed.py에 `--fake-run <trip_id>` 추가.
+- 검증: 브라우저 확인 — ui_snap 1200/390 라이트·다크(trips 1,2,3), OVERFLOW 없음, 설정 시트, fake-run 진행 칩 중간/완료 캡처(shots/task-7). 코드만 확인 — 쿨다운(429) 표시, near-miss 문구(시드에 near_miss 없음), 후보 칩 스크롤 동작. `npm run build`, `ruff check .`, pytest 201 passed.
+- 결정 / 발견: NearMissLine은 문구 생성을 위해 `legs` prop 추가. TripSettingsSheet는 open/onOpenChange prop 추가. RunProgress 제공자 목록 = trip.providers ∪ snapshot ∪ 알려진 제공자.
+- 다음 작업자에게: Results 안에 FilterBar/LegList 구 스타일 유지(Task 8 교체). pytest는 dev DB를 비우니 이후 reseed 필요.

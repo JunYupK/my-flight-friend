@@ -1,36 +1,27 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
+import { Hourglass } from "lucide-react";
+import { toast } from "sonner";
 import { getRun, getTrip, startRun } from "../api";
-import type { CandidateView, RunStatus, TripView } from "../types";
-import StatusHeader from "../components/trip/StatusHeader";
-import TripSettings from "../components/trip/TripSettings";
-import TrackingSummary from "../components/trip/TrackingSummary";
+import type { RunStatus, TripView } from "../types";
+import EmptyState from "@/components/common/EmptyState";
+import ErrorState from "@/components/common/ErrorState";
+import { Skeleton } from "@/components/ui/skeleton";
+import BestComboHero from "../components/trip/BestComboHero";
+import CandidateChips from "../components/trip/CandidateChips";
 import HistoryChart from "../components/trip/HistoryChart";
+import NearMissLine from "../components/trip/NearMissLine";
 import Results from "../components/trip/Results";
+import RunProgress from "../components/trip/RunProgress";
 import SelectionBar from "../components/trip/SelectionBar";
-import { marksFromRun, marksFromStatuses, providerLabel } from "@/lib/providers";
-import type { ProviderMark } from "@/lib/providers";
+import TripHeader from "../components/trip/TripHeader";
+import TripSettingsSheet from "../components/trip/TripSettingsSheet";
+import { PROVIDERS } from "@/lib/providers";
 
-const POLL_MS = 2500;
+const POLL_MS = 2000;
 
 function errText(e: unknown): string {
   return e instanceof Error ? e.message : "알 수 없는 오류";
-}
-
-function RunProgress({ marks }: { marks: ProviderMark[] }) {
-  return (
-    <section className="rounded-2xl bg-apple-surface p-4 text-sm">
-      <p className="font-medium text-apple-text">첫 검색 진행 중…</p>
-      <ul className="mt-2 space-y-1 text-apple-secondary">
-        {marks.map((m) => (
-          <li key={m.provider}>
-            {providerLabel(m.provider)}{" "}
-            {m.state === "pending" ? "진행 중" : m.state === "ok" ? "✓" : `✕(${m.reason})`}
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
 }
 
 export default function TripPage() {
@@ -43,7 +34,8 @@ export default function TripPage() {
   const [run, setRun] = useState<RunStatus | null>(null);
   const [starting, setStarting] = useState(false);
   const [cooldown, setCooldown] = useState(0);
-  const [actionError, setActionError] = useState("");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [jump, setJump] = useState<{ dir: "out" | "in"; key: string; n: number } | null>(null);
   const [selOut, setSelOut] = useState<string | null>(null);
   const [selIn, setSelIn] = useState<string | null>(null);
 
@@ -72,7 +64,8 @@ export default function TripPage() {
     setRunId(null);
     setRun(null);
     setCooldown(0);
-    setActionError("");
+    setSettingsOpen(false);
+    setJump(null);
     setSelOut(null);
     setSelIn(null);
     getTrip(id)
@@ -112,11 +105,11 @@ export default function TripPage() {
         }
       } catch (e: unknown) {
         if (cancelled) return;
-        setActionError(errText(e));
+        toast.error(errText(e));
       }
       timer = window.setTimeout(tick, POLL_MS);
     };
-    timer = window.setTimeout(tick, POLL_MS);
+    timer = window.setTimeout(tick, 0);
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
@@ -132,53 +125,66 @@ export default function TripPage() {
 
   const onCheck = useCallback(async () => {
     setStarting(true);
-    setActionError("");
     try {
       const r = await startRun(id);
       if (r.kind === "started") setRunId(r.runId);
       else setCooldown(Math.max(1, Math.ceil(r.cooldownSeconds)));
     } catch (e: unknown) {
-      setActionError(errText(e));
+      toast.error(errText(e));
     } finally {
       setStarting(false);
     }
   }, [id]);
 
-  if (!Number.isInteger(id)) return <p className="text-sm text-red-500">잘못된 여행 주소입니다.</p>;
-  if (loading) return <p className="text-sm text-apple-secondary">불러오는 중…</p>;
-  if (error || !trip) return <p className="text-sm text-red-500">{error || "여행을 찾을 수 없습니다."}</p>;
+  if (!Number.isInteger(id)) return <ErrorState message="잘못된 여행 주소입니다." />;
+  if (loading)
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-16 w-full" />
+        <Skeleton className="h-56 w-full rounded-2xl" />
+      </div>
+    );
+  if (error || !trip) return <ErrorState message={error || "여행을 찾을 수 없습니다."} />;
 
   const running = runId !== null;
-  const marks = running ? marksFromRun(run, trip.providers) : marksFromStatuses(trip.providers);
   const selOutLeg = trip.legs.out.find((l) => l.flight_key === selOut) ?? null;
   const selInLeg = trip.legs.in.find((l) => l.flight_key === selIn) ?? null;
-  const pickCandidate = (c: CandidateView) => {
-    setSelOut(c.out_flight_key);
-    setSelIn(c.in_flight_key);
+  const pick = (outKey: string, inKey: string) => {
+    setSelOut(outKey);
+    setSelIn(inKey);
   };
+  const jumpTo = (dir: "out" | "in", key: string) => setJump((j) => ({ dir, key, n: (j?.n ?? 0) + 1 }));
   const refreshKey = JSON.stringify(trip.trip.prefs) + String(trip.stats.current ?? "") + (trip.run ? `${trip.run.id}:${trip.run.status}` : "");
   const noLegs = trip.legs.out.length === 0 && trip.legs.in.length === 0;
+  const providerIds = Array.from(
+    new Set([...trip.providers.map((p) => p.provider), ...(run?.snapshots ?? []).map((s) => s.provider), ...Object.keys(PROVIDERS)]),
+  );
 
   return (
-    <div className={`space-y-4 ${selOutLeg && selInLeg ? "pb-28" : ""}`}>
-      <StatusHeader
+    <div className={`space-y-5 ${selOutLeg && selInLeg ? "pb-28" : ""}`}>
+      <TripHeader
         view={trip}
-        marks={marks}
-        running={running}
-        cooldown={cooldown}
-        starting={starting}
-        error={actionError}
-        onCheck={onCheck}
+        onRun={onCheck}
+        running={running || starting}
+        cooldownSeconds={cooldown > 0 ? cooldown : null}
+        onOpenSettings={() => setSettingsOpen(true)}
       />
-      <TripSettings
-        trip={trip.trip}
-        onApplied={(v) => {
-          if (v.trip.id === id) setTrip(v);
-        }}
-      />
-      <TrackingSummary stats={trip.stats} />
+      {running && <RunProgress snapshots={run?.snapshots ?? []} providers={providerIds} />}
+      {noLegs && !running && (
+        <EmptyState
+          icon={Hourglass}
+          title="아직 확인 전이에요"
+          description="‘지금 확인’을 누르면 가격을 가져와요."
+        />
+      )}
+      {!noLegs && (
+        <>
+          <BestComboHero view={trip} onSelect={pick} onJump={jumpTo} />
+          <CandidateChips candidates={trip.candidates} legs={trip.legs} onSelect={pick} />
+          <NearMissLine nearMiss={trip.near_miss} legs={trip.legs} onJump={jumpTo} />
+        </>
+      )}
       <HistoryChart tripId={trip.trip.id} refreshKey={refreshKey} />
-      {noLegs && running && <RunProgress marks={marks} />}
       {!noLegs && (
         <Results
           view={trip}
@@ -186,7 +192,7 @@ export default function TripPage() {
           selIn={selIn}
           onSelectOut={setSelOut}
           onSelectIn={setSelIn}
-          onPick={pickCandidate}
+          jump={jump}
           onApplied={(v) => {
             if (v.trip.id === id) setTrip(v);
           }}
@@ -201,6 +207,14 @@ export default function TripPage() {
           rtReference={trip.rt_reference}
         />
       )}
+      <TripSettingsSheet
+        view={trip}
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        onSaved={(v) => {
+          if (v.trip.id === id) setTrip(v);
+        }}
+      />
     </div>
   );
 }
