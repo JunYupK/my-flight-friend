@@ -20,7 +20,7 @@
 - M1 완료: PR #62 머지·배포 (2026-09-29), OCI에서 자동 추적 정상 확인. Task 17(V1 은퇴) 코드 작업 완료 — V1 코드는 커밋 `d8e0422` (태그는 생략 — 필요하면 `git tag v1-final d8e0422`로 나중에).
 - **사용자 서버 작업 (Task 17 머지 후):** `pg_dump` 백업 → `scripts/v1_freeze.sql` 실행, 1회 `docker compose --profile full up -d --remove-orphans`로 mcp/redis 컨테이너 정리.
 - M2(Naver 제공자) 완료: PR #64 머지·배포 (2026-09-30). OCI에서 Naver 편도·왕복 스냅샷 ok 확인.
-- 다음 순서(사용자 결정): FE 대개편 → Skyscanner 소스 → V1 테이블 동결 → README. FE 설계: `docs/superpowers/specs/2026-09-30-flight-friend-fe-redesign-design.md` (사용자 검토 대기).
+- 다음 순서(사용자 결정): FE 대개편 → Skyscanner 소스 → V1 테이블 동결 → README. FE 설계: `docs/superpowers/specs/2026-09-30-flight-friend-fe-redesign-design.md` (승인), 계획: `docs/superpowers/plans/2026-09-30-flight-friend-fe-redesign.md` (9 tasks, 사용자 검토 대기).
 - 작업 브랜치: `claude/dazzling-shannon-4x04v7`
 
 ---
@@ -375,4 +375,4 @@
 - 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` / `docs: FE redesign design`
 - 한 일: 결정 — 전면 재설계(시각 > 정보 구조 > 모바일), shadcn/ui + 21st.dev·Mobbin 슬롯 교체, 제공자 배지 + 나란히 비교, Trip 상세 결정 우선 + 데스크톱 2단, 자잘한 변경 11개 전부, 메인 대시보드 카드 + 전체 다시 확인, 제자리 교체 + Vite 6·Tailwind v4, 모던 뉴트럴 테마(zinc+sky, Pretendard). 백엔드는 키 추가만(목록 API 필드, `POST /api/trips/refresh`, 조회 단위 스냅샷 저장·run 진행, next_auto_at, admin error).
 - 다음 작업자에게: 사용자 설계 검토 후 writing-plans.
-
+- FE 구현 계획 작성: 9 tasks (1–2 백엔드 API → 3 도구·shadcn·시드/스냅샷 스크립트 → 4 공용 컴포넌트·골격 → 5 대시보드 → 6 새 Trip → 7·8 Trip 상세 → 9 admin·정리).
