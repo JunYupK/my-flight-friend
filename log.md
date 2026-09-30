@@ -390,3 +390,10 @@
 - 검증: `pytest tests/ -q -W error::RuntimeWarning` 201 passed, `python -m ruff check .` 통과.
 - 결정 / 발견: 스냅샷 observed_at이 호출별로 달라져 `test_execute_run_saves_six_snapshots`의 "observed_at 1개" 단언 제거.
 - 다음 작업자에게: Task 3 진행.
+
+## 2026-09-30 — Claude Code — FE 대개편 Task 3: 도구 업그레이드·shadcn 초기화·검증 스크립트
+- 브랜치 / 커밋: claude/dazzling-shannon-4x04v7 / `chore(fe): vite 6, tailwind v4, shadcn/ui base, seed and snapshot scripts`
+- 한 일: Vite 6.4 + @vitejs/plugin-react 5.2(6.x는 vite 8 요구) + Tailwind 4.3 + @tailwindcss/vite. tailwind/postcss config 삭제, `apple-*` 토큰·그림자·radius를 `index.css`의 `@theme`로 이전(클래스 다크모드 `@custom-variant dark` 유지, v3 border 기본색 복원). shadcn CLI(React 18 유지, new-york/zinc, sky primary, `--provider-google_flights/naver`)로 컴포넌트 추가(+dialog는 calendar/command 의존). `@/` 별칭, `cn`. Pretendard CDN 링크. `scripts/dev_seed.py`, `scripts/ui_snap.py`.
+- 검증: 브라우저 확인 — `npm run build` 통과, uvicorn+시드 후 `/ /trips/1 /trips/new /admin` 라이트·다크 1200/390 스크린샷으로 옛 화면 유지 확인, 390px 오버플로 없음. 코드만 — Pretendard 적용(샌드박스에서 CDN 미로드, 화면은 Roboto 폴백), sonner 테마 연동. pytest 201 passed, ruff 통과.
+- 결정 / 발견: `sonner.tsx`는 next-themes `useTheme`를 쓰지만 Provider가 없어 항상 "system" — Toaster 사용 시 `.dark` 클래스 기준으로 고쳐야 함. `TooltipProvider`는 앱 루트에 감싸야 함. 번들 587kB(경고만).
+- 다음 작업자에게: 개발 DB는 `python scripts/dev_seed.py --reset`로 재시드(a/b/c/d = trip 1~4). 스크린샷은 `.superpowers/`(gitignore).
