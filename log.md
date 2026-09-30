@@ -294,3 +294,4 @@
 - 다음 작업자에게: 사용자의 OCI 실행 결과(`summary.txt`, `requests.jsonl`)로 경로 결정 → M2 계획.
 - Naver spike 결과 (같은 날, 사용자가 세션 네트워크를 열어 줌): 내부 API `searchFlights`(SSE)를 브라우저 없이 직접 호출해 편명·시각·파트너별 요금 수신. V2 GF 파서 결과와 flight_key 40/40 일치. 예약 딥링크 없음, 조건부(카드) 요금과 코드셰어 중복 존재, 도착 시각 1분 흔들림 1건. 상세는 스펙 §13.1. `scripts/naver_spike.py`를 직접 API 프로브로 교체 (OCI 한국 IP 확인용). 세션 Chromium이 에이전트 프록시 CA를 신뢰하도록 NSS DB(`~/.pki/nssdb`)에 `/root/.ccr/agent-proxy-ca.crt` 등록함 — 새 컨테이너에서는 다시 필요.
 - 다음 작업자에게: M2 설계 결정 필요 — (1) 표시 가격 기준 A01 vs 조건부 포함, (2) 코드셰어 처리, (3) 시각 흔들림 대응, (4) OCI에서 API 동작 확인.
+- Naver 예약 딥링크 확인: `/detail/...&selectedFlight=1:{itineraryId}:{fareType}:HK:{항공사}:` 로 판매사 선택 페이지가 열림 (fareType 필수). 헤드리스 기본 UA에서는 Naver가 결과를 안 그림 — 데스크톱 UA 필요. 사용자 M2 결정 4건을 스펙 §13.1 끝에 기록. 다음: M2 설계.
