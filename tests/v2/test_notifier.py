@@ -1,15 +1,8 @@
-"""
-테스트: notifier 모듈
-외부 HTTP 호출은 monkeypatch로 mock.
-"""
+# tests/v2/test_notifier.py — 외부 HTTP 호출은 monkeypatch로 mock.
 
-import os
-import sys
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-
-from flight_monitor import notifier
+from flight_friend import notifier
 
 
 @pytest.fixture(autouse=True)

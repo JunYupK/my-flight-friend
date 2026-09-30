@@ -18,19 +18,6 @@ services:
       timeout: 5s
       retries: 5
 
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    ports:
-      - "6379:6379"
-    networks:
-      - backend
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   app:
     build: .
     restart: unless-stopped
@@ -39,20 +26,13 @@ services:
       - "8000"
     environment:
       DATABASE_URL: postgresql://flight_user:${DB_PASSWORD:-flight_pass}@db:5432/flights
-      REDIS_URL: redis://redis:6379
     env_file:
       - .env
-    volumes:
-      # /api/monitor/system 디스크 지표용 — 호스트 루트를 읽기전용 마운트(컨테이너
-      # overlay fs가 아닌 실제 호스트 디스크 사용량을 보기 위함). CPU/메모리는 /proc로 충분.
-      - /:/hostfs:ro
     networks:
       - frontend
       - backend
     depends_on:
       db:
-        condition: service_healthy
-      redis:
         condition: service_healthy
     healthcheck:
       # python:3.11-slim 베이스에 curl/wget 없음 → 표준 라이브러리 사용
@@ -62,27 +42,7 @@ services:
       retries: 3
       start_period: 20s
 
-  collector:
-    build:
-      context: .
-      dockerfile: Dockerfile.collector
-    # collect 전용: full에 넣으면 배포(--profile full up -d)가 main.py를 flock 우회로
-    # 자동 실행해 cron run과 중첩된다. 수집은 cron 래퍼(run --rm collector)로만 실행.
-    profiles: [collect]
-    environment:
-      DATABASE_URL: postgresql://flight_user:${DB_PASSWORD:-flight_pass}@db:5432/flights
-      REDIS_URL: redis://redis:6379
-    env_file:
-      - .env
-    networks:
-      - backend
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-
-  # V2 worker: 상주 프로세스(Trip 갱신 스케줄러). crawl4ai + Chromium 필요 → Dockerfile.collector.
+  # worker: 상주 프로세스(Trip 갱신 스케줄러). crawl4ai + Chromium 필요 → Dockerfile.collector.
   worker:
     build:
       context: .
@@ -92,7 +52,6 @@ services:
     profiles: [full]
     environment:
       DATABASE_URL: postgresql://flight_user:${DB_PASSWORD:-flight_pass}@db:5432/flights
-      REDIS_URL: redis://redis:6379
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
       DOMAIN: ${DOMAIN:-localhost}
     env_file:
@@ -102,32 +61,6 @@ services:
     depends_on:
       db:
         condition: service_healthy
-
-  mcp:
-    build:
-      context: .
-      dockerfile: Dockerfile.mcp
-    restart: unless-stopped
-    profiles: [full]
-    expose:
-      - "8001"
-    environment:
-      DATABASE_URL: postgresql://flight_user:${DB_PASSWORD:-flight_pass}@db:5432/flights
-    env_file:
-      - .env
-    networks:
-      - frontend
-      - backend
-    depends_on:
-      db:
-        condition: service_healthy
-    healthcheck:
-      # FastMCP SSE 서버는 GET /sse 가 hang 하므로 TCP 연결 확인만 수행
-      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('localhost', 8001), 5).close()"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
 
   caddy:
     image: caddy:2-alpine
@@ -149,7 +82,6 @@ services:
       - frontend
     depends_on:
       - app
-      - mcp
     healthcheck:
       # Caddy admin API (컨테이너 내부 전용 포트 2019).
       # admin 은 127.0.0.1:2019 (IPv4 전용) 에 바인딩되는데, 기존 healthcheck 가

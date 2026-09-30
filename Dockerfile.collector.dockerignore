@@ -5,7 +5,7 @@ __pycache__
 *.pyc
 .venv
 
-# React 소스만 제외 — flight_front/api/ 는 main.py가 deals_cache 임포트로 사용
+# worker는 React 소스가 필요 없다
 flight_front/web/
 
 .github
@@ -17,7 +17,6 @@ Dockerfile*
 CLAUDE.md
 ISSUES.md
 readme.md
-test_flight_monitor.py
 tests/
 .claude
 .pytest_cache

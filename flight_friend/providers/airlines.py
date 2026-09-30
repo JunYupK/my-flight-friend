@@ -11,7 +11,7 @@ from datetime import date
 # 항공사 표기 → IATA 코드 매핑.
 # 비교 시 키/입력 모두 소문자화 + 공백 전부 제거 후 조회한다.
 _AIRLINE_IATA: dict[str, str] = {
-    # V1 (flight_monitor/collector_google_flights.py) 전체 이전
+    # V1 (v1-final 태그의 flight_monitor/collector_google_flights.py) 전체 이전
     "대한항공": "KE", "아시아나항공": "OZ",
     "진에어": "LJ", "제주항공": "7C", "티웨이항공": "TW",
     "에어서울": "RS", "에어부산": "BX", "이스타항공": "ZE",

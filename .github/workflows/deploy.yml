@@ -32,7 +32,7 @@ jobs:
 
             git pull origin master
 
-            # 롤백 포인트: 현재 가동 중인 app/mcp 이미지를 :prev 로 태깅 (worker 는 태깅 안 함 —
+            # 롤백 포인트: 현재 가동 중인 app 이미지를 :prev 로 태깅 (worker 는 태깅 안 함 —
             # 롤백 시 `git checkout <이전 커밋>` 후 `docker compose --profile full build worker && up -d worker`).
             # (docker image prune -f 는 dangling 만 제거하므로 태그가 살아남는다)
             # 수동 롤백:
@@ -40,14 +40,12 @@ jobs:
             #   docker compose --profile full up -d app
             APP_ID=$(docker compose --profile full images -q app 2>/dev/null | head -1 || true)
             [ -n "$APP_ID" ] && docker tag "$APP_ID" flight-friend-app:prev || true
-            MCP_ID=$(docker compose --profile full images -q mcp 2>/dev/null | head -1 || true)
-            [ -n "$MCP_ID" ] && docker tag "$MCP_ID" flight-friend-mcp:prev || true
 
-            # app + mcp 이미지 리빌드 (worker 는 헬스체크 이후 별도 빌드)
-            docker compose --profile full build app mcp
+            # app 이미지 리빌드 (worker 는 헬스체크 이후 별도 빌드)
+            docker compose --profile full build app
 
             # 무중단 재시작 (caddy 포함 풀스택)
-            docker compose --profile full up -d app mcp caddy
+            docker compose --profile full up -d app caddy
 
             # 1) app 이 컨테이너 내부에서 실제로 :8000 을 열었는지 직접 확인.
             #    기존엔 Caddy 경유 curl 로만 판정했는데, app 재생성으로 IP 가 바뀌면
@@ -68,7 +66,7 @@ jobs:
               sleep 3
             done
 
-            # 2) app/mcp 가 새 IP 를 받았을 수 있으므로 Caddy 를 재시작해 upstream 재해석.
+            # 2) app 이 새 IP 를 받았을 수 있으므로 Caddy 를 재시작해 upstream 재해석.
             #    이게 빠지면 Caddy 가 죽은 옛 IP 를 물고 있어 502 가 지속된다(지금까지
             #    수동 restart 로 풀던 현상). restart 시 caddy 가 upstream 을 다시 DNS 해석한다.
             echo "Restarting caddy to re-resolve upstreams..."
@@ -90,25 +88,6 @@ jobs:
               if [ "$i" -eq 20 ]; then
                 echo "App end-to-end check failed after 20 attempts"
                 docker compose --profile full logs --tail=80 app caddy
-                exit 1
-              fi
-              sleep 2
-            done
-
-            # MCP: Caddy auth guard 가 Bearer 토큰 없는 요청에 401 반환하면 정상.
-            # SSE 엔드포인트 hang 방지 위해 --max-time 필수.
-            for i in $(seq 1 20); do
-              code=$(curl -sk --max-time 5 \
-                  --resolve "${DOMAIN}:443:127.0.0.1" \
-                  -o /dev/null -w "%{http_code}" \
-                  "https://${DOMAIN}/mcp/sse" || echo "000")
-              if [ "$code" = "200" ] || [ "$code" = "401" ]; then
-                echo "MCP deploy OK (attempt $i, code=$code)"
-                break
-              fi
-              if [ "$i" -eq 20 ]; then
-                echo "MCP health check failed after 20 attempts (last code=$code)"
-                docker compose --profile full logs --tail=80 mcp caddy
                 exit 1
               fi
               sleep 2

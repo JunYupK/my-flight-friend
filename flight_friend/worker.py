@@ -25,10 +25,10 @@ from flight_friend.domain.tracking import (
     should_alert_new_low,
     should_alert_target,
 )
+from flight_friend.notifier import send_alert
 from flight_friend.providers import google_flights
 from flight_friend.providers.google_flights import Crawler
 from flight_friend.types import ProviderResult, Run, Trip
-from flight_monitor.notifier import send_alert
 
 logger = logging.getLogger(__name__)
 

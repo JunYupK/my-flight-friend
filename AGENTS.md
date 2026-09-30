@@ -17,10 +17,9 @@
   추적 중(`tracking`) Trip은 worker가 출발까지 남은 일수 티어에 따라 자동 갱신한다.
 - 데이터 소스는 현재 Google Flights 하나(편도 leg + 왕복 rt). 제공자는 어댑터 인터페이스로 추가한다 (§5).
 
-**배포:** OCI 한국 리전 단일 `docker-compose.yml`. `app`(FastAPI + SPA), `worker`(상주, Chromium), `db`, `redis`, `caddy`.
+**배포:** OCI 한국 리전 단일 `docker-compose.yml`. `app`(FastAPI + SPA), `worker`(상주, Chromium), `db`, `caddy`.
 
-> **V1 (Task 17에서 제거 예정):** `flight_monitor/`, `flight_front/api/`, `main.py`, `mcp_server.py`, `diagnosis_agent.py`,
-> `scripts/`, V1 테스트. V2 worker가 `flight_monitor.notifier`만 잠시 재사용한다(Task 17에서 이동). V1 코드는 새로 손대지 않는다.
+> **V1은 제거됨 (Task 17).** 코드는 `v1-final` 태그에 있다. V1 테이블은 `scripts/v1_freeze.sql`로 `v1` 스키마에 동결.
 
 ---
 
@@ -36,12 +35,12 @@ types/config → db/repo → providers → domain → worker / api views → api
 | **DB/Repo** | `flight_friend/db.py`, `repo.py` | 스키마(`init_schema()`), CRUD, 트랜잭션 | 비즈니스 로직, HTTP 의존 |
 | **Providers** | `flight_friend/providers/` | 외부 수집(크롤링), 결과를 `ProviderResult`로 정규화 | DB 접근, 웹 프레임워크 |
 | **Domain** | `flight_friend/domain/` (`results`, `schedule`, `tracking`) | 순수 로직: 결과 조합·후보·near-miss, 갱신 주기, 알림 판정 | `fastapi`/`starlette`, `db`/`repo` import |
-| **Worker** | `flight_friend/worker.py` | run 소비, provider 호출, snapshot 저장, 알림 | 웹 프레임워크 |
+| **Worker** | `flight_friend/worker.py`, `notifier.py` | run 소비, provider 호출, snapshot 저장, 알림 판정·발송 | 웹 프레임워크 |
 | **Views** | `flight_friend/api/views.py` | repo + domain → JSON 직렬화 dict | `fastapi`/`starlette` import |
 | **API** | `flight_friend/api/main.py` | HTTP 엔드포인트(`/api/*`, `/healthz`), SPA 서빙 | `providers` import, SQL 직접 작성 |
 | **Web** | `flight_front/web/src/` | React SPA, `api.ts` 경유 호출 | 백엔드 모듈 import |
 
-`tests/test_architecture.py`가 위 금지 규칙(views/domain → 웹 프레임워크, api/main → providers, domain → db/repo)을
+`tests/test_architecture.py`가 위 금지 규칙(views/domain/providers/db/repo → 웹 프레임워크, api/main → providers, domain → db/repo)을
 `ast` 정적 분석으로 검증한다 (DB 불필요, CI 항상 실행).
 
 ---
@@ -111,7 +110,7 @@ class ProviderResult:
 - `/healthz`는 `db.schema_ready()`로 스키마·DB 연결을 확인해 실패 시 503을 돌려준다.
 - 모든 DB 접근은 `repo.py` 경유. 테스트는 `clean_db` 류 fixture로 격리.
 - **V1 테이블(`raw_legs`, `flight_legs`, `deals`, `price_events`, `price_history`, `alert_state`, `collection_runs` 등)은 동결.**
-  V2는 읽지도 쓰지도 않는다. Task 17 이후 정리 예정.
+  `scripts/v1_freeze.sql`이 `v1` 스키마로 옮긴다 (분석용 읽기만). V2는 읽지도 쓰지도 않는다.
 
 ---
 
@@ -133,30 +132,30 @@ class ProviderResult:
 
 ```bash
 DATABASE_URL=postgresql://flight_user:flight_pass@localhost:5432/flights pytest tests/ -q
-ruff check .            # CI는 ruff==0.16.9 고정. V1 경로는 ruff.toml extend-exclude (Task 17에서 제거)
+ruff check .            # CI는 ruff==0.16.9 고정
 ```
 
 ---
 
 ## 9. 운영 · 배포
 
-- `docker compose up -d` → db + redis (로컬 개발)
-- `docker compose --profile full up -d` → app / worker / mcp(V1) / caddy 포함 풀 스택
+- `docker compose up -d` → db (로컬 개발)
+- `docker compose --profile full up -d` → app / worker / caddy 포함 풀 스택
 - `worker`는 `Dockerfile.collector`(crawl4ai + Chromium)로 빌드, `restart: unless-stopped` 상주. 크롤러가 무거워 배포 시
   app 헬스체크 이후 별도 빌드·기동한다 (`.github/workflows/deploy.yml`).
 - `app` 헬스체크와 배포 readiness probe는 `/healthz` (`{"ok": true}`).
 - CI(`ci.yml`): `pytest tests/` + `ruff check .` + React build. 실패 시 배포(`deploy.yml`) 미트리거. master push + CI 성공 → SSH 자동 배포.
-- 알림 채널은 Telegram 1순위 → Discord 2순위 fallback, 첫 성공 채널만 발송 (`flight_monitor.notifier`, Task 17에서 이동).
+- 알림 채널은 Telegram 1순위 → Discord 2순위 fallback, 첫 성공 채널만 발송 (`flight_friend/notifier.py`).
 - 호스트 crontab의 **V1 수집 cron과 spike cron은 제거**해야 한다 (worker가 대체).
 
 ### 환경 변수
 
 ```bash
 DATABASE_URL=postgresql://flight_user:flight_pass@localhost:5432/flights   # 필수
-REDIS_URL=redis://localhost:6379            # 선택
 TELEGRAM_BOT_TOKEN= / TELEGRAM_CHAT_ID=     # 선택 — 알림 1순위
 DISCORD_WEBHOOK_URL=                        # 선택 — 알림 2순위
 DB_PASSWORD=flight_pass / DOMAIN=localhost  # docker-compose
+PUBLIC_BASE_URL=                            # 선택 — 알림의 Trip 링크 기준 URL
 ```
 
 신규 환경변수는 `docker-compose.yml` + `.env.example` + 본 섹션을 같이 갱신한다.
@@ -166,16 +165,15 @@ DB_PASSWORD=flight_pass / DOMAIN=localhost  # docker-compose
 ## 10. 금지사항 (절대 위반 금지)
 
 ```
-❌ V1 collector(main.py / collector 서비스) 실행 — raw_legs 를 삭제한다. V1 테이블은 동결
+❌ V1 테이블(v1 스키마) 쓰기 — 동결된 분석용 데이터
 ❌ api/main.py 에 SQL 직접 작성, providers import
-❌ views.py / domain/* 에서 fastapi·starlette import, domain/* 에서 db·repo import
+❌ views.py / domain/* / providers/* / db·repo 에서 fastapi·starlette import, domain/* 에서 db·repo import
 ❌ snapshots / leg_quotes / rt_quotes 의 UPDATE·DELETE (append-only)
 ❌ 하드코딩된 DATABASE_URL 문자열
 ❌ 테스트에서 실제 외부 API 호출 (크롤러/알림 mock 필수)
 ❌ React 컴포넌트에서 직접 fetch() 호출 (api.ts 경유 필수)
 ❌ 크롤러 코드에서 asyncio.run() 중첩
 ❌ notifier 에 비즈니스 로직(메시지 포맷 외) 추가
-❌ 새 V1 코드 추가 / V1 파일 수정 (Task 17에서 삭제)
 ```
 
 ---
@@ -193,7 +191,7 @@ DB_PASSWORD=flight_pass / DOMAIN=localhost  # docker-compose
 ## 12. 명령어 레퍼런스
 
 ```bash
-docker compose up -d                                   # DB + Redis
+docker compose up -d                                   # DB
 docker compose --profile full up -d                    # 풀 스택 (배포 서버)
 
 python -u -m flight_friend.worker                      # worker (crawl4ai + Chromium 필요)
