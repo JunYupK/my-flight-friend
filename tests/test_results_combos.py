@@ -194,3 +194,33 @@ def test_rt_reference_uses_latest_ok_per_provider() -> None:
     failed = rt_snap("google_flights", [], observed_at=NOW, status="blocked")
     result = rt_reference([old, new, failed], _fuk_legs(), NOW, W)
     assert [r.rt_min for r in result] == [360_600]
+
+
+def test_rt_reference_takes_cheaper_provider() -> None:
+    snaps = [
+        rt_snap("google_flights", [RtQuote("7C", "o7c", 320_000)]),
+        rt_snap("naver", [RtQuote("7C", "o7c", 311_165)]),
+    ]
+    result = rt_reference(snaps, _fuk_legs(), NOW, W)
+    assert [(r.rt_min, r.rt_provider) for r in result] == [(311_165, "naver")]
+
+
+def test_rt_reference_tie_picks_first_provider_name() -> None:
+    snaps = [
+        rt_snap("naver", [RtQuote("7C", "o7c", 320_000)]),
+        rt_snap("google_flights", [RtQuote("7C", "o7c", 320_000)]),
+    ]
+    assert rt_reference(snaps, _fuk_legs(), NOW, W)[0].rt_provider == "google_flights"
+
+
+def test_rt_reference_cond_only_when_cheaper() -> None:
+    snaps = [
+        rt_snap("google_flights", [RtQuote("7C", "o7c", 320_000)]),
+        rt_snap("naver", [RtQuote("7C", "o7c", 311_165, cond_total_price=299_000, cond_label="카드할인")]),
+    ]
+    r = rt_reference(snaps, _fuk_legs(), NOW, W)[0]
+    assert (r.cond_rt_min, r.cond_label) == (299_000, "카드할인")
+    for cond in (311_165, 330_000):
+        snaps = [rt_snap("naver", [RtQuote("7C", "o7c", 311_165, cond_total_price=cond, cond_label="x")])]
+        r = rt_reference(snaps, _fuk_legs(), NOW, W)[0]
+        assert (r.cond_rt_min, r.cond_label) == (None, None)

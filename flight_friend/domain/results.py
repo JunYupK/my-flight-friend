@@ -227,6 +227,9 @@ class RtReference:
     rt_min: int
     ow_sum: int | None
     diff: int | None  # ow_sum - rt_min (양수 = 왕복이 쌈)
+    rt_provider: str
+    cond_rt_min: int | None = None
+    cond_label: str | None = None
 
 
 def stay_minutes(out: LegQuote, out_date: date, inn: LegQuote, ret_date: date) -> int:
@@ -330,22 +333,32 @@ def rt_reference(
             continue
         if s.provider not in latest or s.observed_at > latest[s.provider].observed_at:
             latest[s.provider] = s
-    rt_min: dict[str, int] = {}
-    for s in latest.values():
+    rt_min: dict[str, tuple[int, str]] = {}
+    cond_min: dict[str, tuple[int, str | None]] = {}
+    for s in sorted(latest.values(), key=lambda x: x.provider):
         if s.observed_at < cutoff:
             continue
         for q in s.rts:
-            if q.total_price < rt_min.get(q.airline_iata, q.total_price + 1):
-                rt_min[q.airline_iata] = q.total_price
+            if q.total_price < rt_min.get(q.airline_iata, (q.total_price + 1, ""))[0]:
+                rt_min[q.airline_iata] = (q.total_price, s.provider)
+            if q.cond_total_price is not None and q.cond_total_price < cond_min.get(
+                q.airline_iata, (q.cond_total_price + 1, None)
+            )[0]:
+                cond_min[q.airline_iata] = (q.cond_total_price, q.cond_label)
     out_min = _cheapest_by_airline(legs.get("out", []))
     in_min = _cheapest_by_airline(legs.get("in", []))
     refs: list[RtReference] = []
-    for airline, total in rt_min.items():
+    for airline, (total, provider) in rt_min.items():
         if airline in out_min and airline in in_min:
             ow_sum: int | None = out_min[airline] + in_min[airline]
             diff = ow_sum - total
         else:
             ow_sum, diff = None, None
-        refs.append(RtReference(airline, total, ow_sum, diff))
+        cond = cond_min.get(airline)
+        if cond is not None and cond[0] >= total:
+            cond = None
+        refs.append(
+            RtReference(airline, total, ow_sum, diff, provider, cond[0] if cond else None, cond[1] if cond else None)
+        )
     refs.sort(key=lambda r: (r.rt_min, r.airline_iata))
     return refs

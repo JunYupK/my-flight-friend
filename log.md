@@ -326,3 +326,9 @@
 - 한 일: `domain/results.py` — `_group`(flight_key 1차 + (date, 공항, 편명) 2차 union-find, 편명 빈 견적 제외), 대표 leg=GF 최저(없으면 전체 최저), 제공자별 최저 1건으로 `prices`, `CondPrice`/`MergedLeg.best_cond`/`ProviderPrice.cond_*` 추가(신선 가격 중 cond 최저 < best_price일 때만). 테스트 5개 추가.
 - 검증: `pytest tests/ -q` 174 passed, `python -m ruff check .` 통과.
 - 다음 작업자에게: 대표 leg의 flight_key가 GF 키이므로 tracking 키는 GF 기준으로 안정. 표시 계층(Task 6+)에서 `best_cond` 사용.
+
+## 2026-09-30 — Claude Code — M2 Task 6: 왕복 참고가 조건부·제공자 + API 뷰
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` / `feat(m2): roundtrip reference per provider and conditional fields in API`
+- 한 일: `RtReference`에 `rt_provider`/`cond_rt_min`/`cond_label` 추가(rt_min 낸 제공자, 동가면 이름 오름차순 첫째; cond는 신선 스냅샷 중 최저 cond_total_price가 rt_min보다 엄격히 낮을 때만). `api/views.py`에 `best_cond`, `prices[].cond_*`, `rt_reference[].rt_provider/cond_rt_min/cond_label` 추가(기존 키 유지). 테스트 4개 추가·test_trip_view_shape 키 갱신.
+- 검증: `pytest tests/ -q` 178 passed, `python -m ruff check .` 통과.
+- 다음 작업자에게: 프론트엔드가 새 키를 아직 사용하지 않음.
