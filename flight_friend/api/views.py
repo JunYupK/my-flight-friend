@@ -1,6 +1,7 @@
 # flight_friend/api/views.py
 """Service 레이어: repo + domain 결과를 JSON 직렬화 가능한 dict로 만든다 (FastAPI 의존 없음)."""
 
+from dataclasses import replace
 from datetime import date, datetime, timedelta
 
 from flight_friend import repo
@@ -9,6 +10,7 @@ from flight_friend.domain.results import (
     MergedLeg,
     NearMiss,
     RtReference,
+    cheapest_combo,
     current_legs,
     in_condition,
     near_miss,
@@ -16,7 +18,12 @@ from flight_friend.domain.results import (
     rt_reference,
     violations,
 )
-from flight_friend.domain.schedule import KST, days_to_departure, freshness_window
+from flight_friend.domain.schedule import (
+    KST,
+    days_to_departure,
+    freshness_window,
+    refresh_interval,
+)
 from flight_friend.domain.tracking import (
     DayPoint,
     Stats,
@@ -25,7 +32,7 @@ from flight_friend.domain.tracking import (
     run_values,
     tracking_stats,
 )
-from flight_friend.types import Run, Snapshot, Trip
+from flight_friend.types import Preferences, Run, Snapshot, Trip
 
 JsonDict = dict[str, object]
 
@@ -134,6 +141,73 @@ def _rt_view(r: RtReference) -> JsonDict:
     }
 
 
+def _next_auto_at(trip: Trip, now: datetime) -> str | None:
+    if not trip.tracking or is_archived(trip, now):
+        return None
+    run = repo.latest_run(trip.id)
+    if run is None:
+        return now.isoformat()
+    return (run.requested_at + refresh_interval(days_to_departure(trip.out_date, _today(now)))).isoformat()
+
+
+def _leg_summary(m: MergedLeg) -> JsonDict:
+    leg = m.leg
+    return {
+        "airline_iata": leg.airline_iata,
+        "airline_name": leg.airline_name,
+        "dep_time": leg.dep_time,
+        "arr_time": leg.arr_time,
+        "stops": leg.stops,
+        "flight_numbers": leg.flight_numbers,
+        "best_provider": m.best_provider,
+    }
+
+
+def _provider_totals(legs: dict[str, list[MergedLeg]], prefs: Preferences) -> dict[str, int]:
+    providers = {p.provider for d in legs.values() for m in d for p in m.prices if not p.stale}
+    totals: dict[str, int] = {}
+    for provider in sorted(providers):
+        priced: dict[str, list[MergedLeg]] = {}
+        for d, merged in legs.items():
+            priced[d] = []
+            for m in merged:
+                mine = next((p for p in m.prices if p.provider == provider and not p.stale), None)
+                if mine is not None:
+                    priced[d].append(
+                        replace(m, best_price=mine.price, best_provider=provider, best_cond=None)
+                    )
+        combo = cheapest_combo(in_condition(priced, prefs), prefs.max_price)
+        if combo is not None:
+            totals[provider] = combo[2]
+    return totals
+
+
+_STATUS_RANK = {"ok": 0, "empty": 1, "blocked": 2, "error": 3}
+
+
+def _provider_status(snaps: list[Snapshot]) -> dict[str, str]:
+    oneway = [s for s in snaps if s.kind == "oneway"]
+    status: dict[str, str] = {}
+    for provider in sorted({s.provider for s in oneway}):
+        mine = [s for s in oneway if s.provider == provider]
+        last_run = max(s.run_id for s in mine)
+        status[provider] = max(
+            (s.status for s in mine if s.run_id == last_run), key=lambda x: _STATUS_RANK.get(x, 0)
+        )
+    return status
+
+
+def _cond_total(out: MergedLeg, inn: MergedLeg) -> int | None:
+    if out.best_cond is None and inn.best_cond is None:
+        return None
+
+    def cheapest(m: MergedLeg) -> int:
+        assert m.best_price is not None
+        return min(m.best_cond.price, m.best_price) if m.best_cond else m.best_price
+
+    return cheapest(out) + cheapest(inn)
+
+
 def _trip_dict(trip: Trip, now: datetime) -> JsonDict:
     return {
         "id": trip.id,
@@ -149,6 +223,7 @@ def _trip_dict(trip: Trip, now: datetime) -> JsonDict:
         "archived": is_archived(trip, now),
         "days_to_departure": days_to_departure(trip.out_date, _today(now)),
         "created_at": trip.created_at.isoformat(),
+        "next_auto_at": _next_auto_at(trip, now),
     }
 
 
@@ -210,12 +285,15 @@ def trip_list_item(trip: Trip, now: datetime) -> JsonDict:
     snaps = repo.load_snapshots(trip.id)
     window = _window(trip, now)
     current = current_value(snaps, trip.prefs, now, window)
-    stats = tracking_stats(daily_series(run_values(snaps, trip.prefs)), current)
+    series = daily_series(run_values(snaps, trip.prefs))
+    stats = tracking_stats(series, current)
     legs = current_legs(snaps, now, window)
     used = [p.observed_at for d in legs.values() for m in d for p in m.prices if not p.stale]
     change: float | None = None
     if stats.comparable and stats.start and current is not None:
         change = round((current / stats.start - 1) * 100, 1)
+    combo = cheapest_combo(in_condition(legs, trip.prefs), trip.prefs.max_price)
+    run = repo.latest_run(trip.id)
     return {
         "id": trip.id,
         "destination": trip.destination,
@@ -227,6 +305,23 @@ def trip_list_item(trip: Trip, now: datetime) -> JsonDict:
         "current_observed_at": _iso(max(used) if used else None),
         "change_vs_start_pct": change,
         "archived": is_archived(trip, now),
+        "best_combo": None
+        if combo is None
+        else {
+            "out": _leg_summary(combo[0]),
+            "in": _leg_summary(combo[1]),
+            "total": combo[2],
+            "cond_total": _cond_total(combo[0], combo[1]),
+        },
+        "provider_totals": _provider_totals(legs, trip.prefs),
+        "series": [_day_point(p) for p in series],
+        "low": stats.low,
+        "low_day": _iso(stats.low_day),
+        "is_low_now": current is not None and stats.low is not None and current <= stats.low,
+        "target_price": trip.target_price,
+        "next_auto_at": _next_auto_at(trip, now),
+        "provider_status": _provider_status(snaps),
+        "open_run_id": run.id if run is not None and run.status in ("queued", "running") else None,
     }
 
 

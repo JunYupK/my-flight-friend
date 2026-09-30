@@ -376,3 +376,10 @@
 - 한 일: 결정 — 전면 재설계(시각 > 정보 구조 > 모바일), shadcn/ui + 21st.dev·Mobbin 슬롯 교체, 제공자 배지 + 나란히 비교, Trip 상세 결정 우선 + 데스크톱 2단, 자잘한 변경 11개 전부, 메인 대시보드 카드 + 전체 다시 확인, 제자리 교체 + Vite 6·Tailwind v4, 모던 뉴트럴 테마(zinc+sky, Pretendard). 백엔드는 키 추가만(목록 API 필드, `POST /api/trips/refresh`, 조회 단위 스냅샷 저장·run 진행, next_auto_at, admin error).
 - 다음 작업자에게: 사용자 설계 검토 후 writing-plans.
 - FE 구현 계획 작성: 9 tasks (1–2 백엔드 API → 3 도구·shadcn·시드/스냅샷 스크립트 → 4 공용 컴포넌트·골격 → 5 대시보드 → 6 새 Trip → 7·8 Trip 상세 → 9 admin·정리).
+
+## 2026-09-30 — Claude Code — FE 대개편 Task 1: 목록·상세 API 필드
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` / `feat(fe-api): dashboard fields on trip list, next_auto_at`
+- 한 일: `GET /api/trips` 항목에 best_combo, provider_totals, series, low, low_day, is_low_now, target_price, next_auto_at, provider_status, open_run_id 추가. `trip.next_auto_at`(상세)도 추가. 기존 키 유지.
+- 검증: `pytest tests/ -q` 전체 통과, `python -m ruff check .` 통과.
+- 결정 / 발견: `low`/`is_low_now`는 추적 일수가 MIN_TRACKING_DAYS 미만이면 null/False(기존 tracking_stats 동작). `series`는 기존 `_day_point` 형식(out_min/in_min 포함).
+- 다음 작업자에게: Task 2(백엔드 refresh API) 진행.

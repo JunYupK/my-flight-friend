@@ -281,10 +281,78 @@ def test_trip_list_items() -> None:
     assert set(item) == {
         "id", "destination", "out_date", "ret_date", "days_to_departure", "tracking", "current",
         "current_observed_at", "change_vs_start_pct", "archived",
+        "best_combo", "provider_totals", "series", "low", "low_day", "is_low_now", "target_price",
+        "next_auto_at", "provider_status", "open_run_id",
     }
     assert item["current"] == 170000 and item["current_observed_at"] is not None
     assert item["change_vs_start_pct"] is None and item["archived"] is False
     assert items[past]["archived"] is True and items[past]["current"] is None
+
+
+def test_list_item_new_trip_nulls() -> None:
+    trip_id = make_trip()
+    item = next(i for i in client.get("/api/trips").json() if i["id"] == trip_id)
+    assert item["best_combo"] is None and item["series"] == []
+    assert item["provider_totals"] == {} and item["provider_status"] == {}
+    assert item["is_low_now"] is False and item["low"] is None and item["low_day"] is None
+    assert item["target_price"] is None and item["open_run_id"] is None
+    assert isinstance(item["next_auto_at"], str)
+
+
+def test_list_item_best_combo_and_provider_totals() -> None:
+    trip_id = make_trip()
+    now = datetime.now(UTC)
+    add_run(trip_id, [quote("A", 200000)], [quote("C", 150000)], now)
+    add_run(trip_id, [quote("A", 180000)], [quote("C", 160000)], now, provider="naver")
+    item = next(i for i in client.get("/api/trips").json() if i["id"] == trip_id)
+    combo = item["best_combo"]
+    assert combo["total"] == 330000 and combo["cond_total"] is None
+    assert combo["out"]["best_provider"] == "naver" and combo["in"]["best_provider"] == "google_flights"
+    assert set(combo["out"]) == {
+        "airline_iata", "airline_name", "dep_time", "arr_time", "stops", "flight_numbers", "best_provider",
+    }
+    assert item["provider_totals"] == {"google_flights": 350000, "naver": 340000}
+    assert item["low"] is None and item["is_low_now"] is False  # 1일치 → 비교 불가
+    assert len(item["series"]) == 1 and set(item["series"][0]) >= {"day", "combo", "partial"}
+
+
+def test_list_item_single_provider_totals() -> None:
+    trip_id = make_trip()
+    add_run(trip_id, [quote("A", 180000)], [quote("C", 160000)], datetime.now(UTC), provider="naver")
+    item = next(i for i in client.get("/api/trips").json() if i["id"] == trip_id)
+    assert item["provider_totals"] == {"naver": 340000}
+
+
+def test_list_item_cond_total() -> None:
+    trip_id = make_trip()
+    out = quote("A", 171000)
+    out.cond_price = 161700
+    out.cond_label = "카드할인"
+    add_run(trip_id, [out], [quote("C", 150000)], datetime.now(UTC), provider="naver")
+    item = next(i for i in client.get("/api/trips").json() if i["id"] == trip_id)
+    assert item["best_combo"]["total"] == 321000 and item["best_combo"]["cond_total"] == 311700
+
+
+def test_list_item_status_and_open_run() -> None:
+    trip_id = make_trip()
+    now = datetime.now(UTC)
+    run_id = repo.enqueue_run(trip_id, "manual")
+    repo.save_snapshot(run_id, trip_id, "naver", "oneway", "out", OUT, result([], "blocked"), now)
+    repo.save_snapshot(run_id, trip_id, "naver", "oneway", "in", RET, result([quote("C", 1)]), now)
+    item = next(i for i in client.get("/api/trips").json() if i["id"] == trip_id)
+    assert item["provider_status"] == {"naver": "blocked"}
+    assert item["open_run_id"] == run_id
+    with db.get_conn() as conn:
+        conn.cursor().execute("UPDATE search_runs SET status = 'done' WHERE id = %s", (run_id,))
+    item = next(i for i in client.get("/api/trips").json() if i["id"] == trip_id)
+    assert item["open_run_id"] is None
+
+
+def test_trip_view_next_auto_at() -> None:
+    trip_id = make_trip()
+    assert isinstance(client.get(f"/api/trips/{trip_id}").json()["trip"]["next_auto_at"], str)
+    client.patch(f"/api/trips/{trip_id}", json={"tracking": False})
+    assert client.get(f"/api/trips/{trip_id}").json()["trip"]["next_auto_at"] is None
 
 
 def test_unknown_ids_404() -> None:
