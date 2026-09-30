@@ -383,3 +383,10 @@
 - 검증: `pytest tests/ -q` 전체 통과, `python -m ruff check .` 통과.
 - 결정 / 발견: `low`/`is_low_now`는 추적 일수가 MIN_TRACKING_DAYS 미만이면 null/False(기존 tracking_stats 동작). `series`는 기존 `_day_point` 형식(out_min/in_min 포함).
 - 다음 작업자에게: Task 2(백엔드 refresh API) 진행.
+
+## 2026-09-30 — Claude Code — FE 대개편 Task 2: 전체 다시 확인, 조회 단위 저장, admin 오류
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` / `feat(fe-api): refresh-all endpoint, per-call snapshot saves, admin snapshot errors`
+- 한 일: `POST /api/trips/refresh`(보관 Trip 제외, running/cooldown skip, 나머지 manual run 적재; `/api/trips/{trip_id}`보다 먼저 선언). worker `_execute`가 조회 task마다 끝나는 즉시 자기 observed_at으로 스냅샷 저장(타임아웃 시 남은 task만 error "timeout"). `recent_runs` 스냅샷에 `error`.
+- 검증: `pytest tests/ -q -W error::RuntimeWarning` 201 passed, `python -m ruff check .` 통과.
+- 결정 / 발견: 스냅샷 observed_at이 호출별로 달라져 `test_execute_run_saves_six_snapshots`의 "observed_at 1개" 단언 제거.
+- 다음 작업자에게: Task 3 진행.

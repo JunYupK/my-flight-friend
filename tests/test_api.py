@@ -249,6 +249,27 @@ def test_manual_run_returns_open_run() -> None:
     assert r.status_code == 202 and r.json() == {"run_id": run_id}
 
 
+def test_refresh_all_queues_and_skips() -> None:
+    normal = make_trip()
+    running = make_trip()
+    repo.enqueue_run(running, "schedule")
+    cooling = make_trip()
+    cid = repo.enqueue_run(cooling, "manual")
+    with db.get_conn() as conn:
+        conn.cursor().execute("UPDATE search_runs SET status = 'done' WHERE id = %s", (cid,))
+    archived = repo.create_trip("FUK", TODAY - timedelta(days=5), TODAY - timedelta(days=2), Preferences())
+    r = client.post("/api/trips/refresh")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["queued"] == [normal]
+    assert sorted(data["skipped"], key=lambda s: s["reason"]) == sorted(
+        [{"trip_id": running, "reason": "running"}, {"trip_id": cooling, "reason": "cooldown"}],
+        key=lambda s: s["reason"],
+    )
+    assert archived not in data["queued"] and archived not in [s["trip_id"] for s in data["skipped"]]
+    assert repo.has_open_run(normal)
+
+
 def test_run_detail() -> None:
     trip_id = make_trip()
     run_id = add_run(trip_id, [quote("A", 1)], [quote("C", 2)], datetime.now(UTC))

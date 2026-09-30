@@ -97,6 +97,26 @@ def create_trip(body: TripCreate) -> dict[str, int]:
     return {"id": trip_id, "run_id": repo.enqueue_run(trip_id, "manual")}
 
 
+@app.post("/api/trips/refresh")
+def refresh_all() -> dict[str, list]:
+    now = _now()
+    queued: list[int] = []
+    skipped: list[dict[str, int | str]] = []
+    for trip in repo.list_trips():
+        if views.is_archived(trip, now):
+            continue
+        if repo.has_open_run(trip.id):
+            skipped.append({"trip_id": trip.id, "reason": "running"})
+            continue
+        last = repo.latest_run(trip.id)
+        if cooldown_remaining(last.requested_at if last else None, now).total_seconds() > 0:
+            skipped.append({"trip_id": trip.id, "reason": "cooldown"})
+            continue
+        repo.enqueue_run(trip.id, "manual")
+        queued.append(trip.id)
+    return {"queued": queued, "skipped": skipped}
+
+
 @app.get("/api/trips/{trip_id}")
 def get_trip(trip_id: int) -> views.JsonDict:
     return views.trip_view(_require_trip(trip_id), _now())

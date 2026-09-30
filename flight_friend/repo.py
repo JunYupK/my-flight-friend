@@ -466,7 +466,7 @@ def recent_runs(limit: int = 50) -> list[dict]:
         if run_ids:
             cur.execute(
                 """
-                SELECT run_id, provider, kind, direction, status
+                SELECT run_id, provider, kind, direction, status, error
                 FROM snapshots
                 WHERE run_id = ANY(%s)
                 ORDER BY id ASC
@@ -480,6 +480,7 @@ def recent_runs(limit: int = 50) -> list[dict]:
                         "kind": snap_row["kind"],
                         "direction": snap_row["direction"],
                         "status": snap_row["status"],
+                        "error": snap_row["error"],
                     }
                 )
 
