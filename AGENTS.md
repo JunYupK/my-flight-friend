@@ -39,7 +39,7 @@ types/config → db/repo → providers → domain → worker / api views → api
 | **Worker** | `flight_friend/worker.py`, `notifier.py` | run 소비, provider 호출, snapshot 저장, 알림 판정·발송 | 웹 프레임워크 |
 | **Views** | `flight_friend/api/views.py` | repo + domain → JSON 직렬화 dict | `fastapi`/`starlette` import |
 | **API** | `flight_friend/api/main.py` | HTTP 엔드포인트(`/api/*`, `/healthz`), SPA 서빙 | `providers` import, SQL 직접 작성 |
-| **Web** | `flight_front/web/src/` | React SPA, `api.ts` 경유 호출 | 백엔드 모듈 import |
+| **Web** | `flight_front/web/src/` | React SPA (Vite·Tailwind v4·shadcn/ui, 경로 별칭 `@/` → `src/`). 컴포넌트는 `components/{ui,common,layout,dashboard,inputs,trip}`, 모든 호출은 `api.ts` 경유 | 백엔드 모듈 import, 컴포넌트에서 `fetch()` 직접 호출 |
 
 `tests/test_architecture.py`가 위 금지 규칙(views/domain/providers/db/repo → 웹 프레임워크, api/main → providers, domain → db/repo)을
 `ast` 정적 분석으로 검증한다 (DB 불필요, CI 항상 실행).
@@ -58,7 +58,12 @@ types/config → db/repo → providers → domain → worker / api views → api
 | JSON 응답 조립 | `flight_friend/api/views.py` |
 | HTTP 엔드포인트 | `flight_friend/api/main.py` |
 | 잠정 상수 | `flight_friend/config.py`, `domain/schedule.py` |
-| React 컴포넌트 / 페이지 | `flight_front/web/src/components/`, `pages/` |
+| 페이지 | `flight_front/web/src/pages/` |
+| shadcn/ui 기본 컴포넌트 (CLI로 추가) | `flight_front/web/src/components/ui/` |
+| 여러 화면 공용 (배지·가격·빈/오류 상태) | `flight_front/web/src/components/common/` |
+| 화면별 컴포넌트 | `flight_front/web/src/components/{layout,dashboard,inputs,trip}/` |
+| 제공자 이름·색·상태 문구 | `flight_front/web/src/lib/providers.ts` |
+| 테마 토큰 (라이트·다크) | `flight_front/web/src/index.css` (`:root` / `.dark`) |
 | API 클라이언트 / 공유 타입 | `flight_front/web/src/api.ts` / `types.ts` |
 | 테스트 | `tests/test_<모듈>.py` (fixture 파일은 `tests/fixtures/`) |
 | 아키텍처 규칙 | `tests/test_architecture.py` |
@@ -203,4 +208,8 @@ uvicorn flight_friend.api.main:app --reload            # API (/api/*, /healthz, 
 DATABASE_URL=postgresql://flight_user:flight_pass@localhost:5432/flights pytest tests/ -q
 cd flight_front/web && npm run dev                     # 프론트 개발 서버
 cd flight_front/web && npm run build                   # 프론트 빌드 (API가 dist 서빙)
+
+python scripts/dev_seed.py --reset                     # 화면 확인용 시드 Trip 4종 (localhost DB만, a= b= c= d= 출력)
+python scripts/ui_snap.py --out <dir> [--dark] [--chromium PATH] / /trips/1 /admin
+                                                       # 1200/390px 전체 스크린샷, 390px 가로 스크롤이면 OVERFLOW·종료 1
 ```

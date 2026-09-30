@@ -9,7 +9,11 @@ export default function CondPriceTag({ price, label }: { price: number; label: s
         <span className="inline-flex max-w-full items-center gap-1 text-xs text-muted-foreground">
           <CreditCard className="size-3 shrink-0" />
           <Money value={price} />
-          {label && <span className="truncate">{label}</span>}
+          {label && (
+            <span className="truncate" title={label}>
+              {label}
+            </span>
+          )}
         </span>
       </TooltipTrigger>
       <TooltipContent>{label ? `${label} 적용 시` : "조건 적용 시"}</TooltipContent>

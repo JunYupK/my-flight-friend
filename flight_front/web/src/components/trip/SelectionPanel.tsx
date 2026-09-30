@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronRight, ExternalLink, MousePointerClick } from "lucide-react";
 import CondPriceTag from "@/components/common/CondPriceTag";
 import Money from "@/components/common/Money";
@@ -117,6 +117,12 @@ export default function SelectionPanel({ out, inn, outDate, retDate, rtReference
   const [sheetOpen, setSheetOpen] = useState(false);
   const pair = out && inn && out.best_price != null && inn.best_price != null ? { out, inn } : null;
   const nights = nightsBetween(outDate, retDate);
+  const hasPair = pair !== null;
+
+  // 선택이 풀리면 시트도 닫아 둔다 — 다시 짝이 맞춰졌을 때 저절로 열리지 않게.
+  useEffect(() => {
+    if (!hasPair) setSheetOpen(false);
+  }, [hasPair]);
 
   return (
     <>

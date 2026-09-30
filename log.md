@@ -444,3 +444,11 @@
 - 검증(코드만): 조건 밖 편으로의 jump(시드에 near_miss 없음 — LegTabs가 Collapsible을 열도록 구현), stale 가격만 있는 편(“최신 가격 없음”, 선택 불가), 선택 없음 시 데스크톱 안내 문구/모바일 바 숨김, 저장 실패 문구.
 - 결정 / 발견: Radix Tabs/Collapsible 내용은 Presence가 layout effect 뒤에 붙여 같은 커밋의 passive effect에선 DOM에 없음 → 스크롤을 rAF로 한 프레임 미룸. 탭 숫자는 조건 안 편 수. 옛 목록의 `출발시각` 정렬 토글·출국/귀국/조합 3계열 차트는 명세에 없어 뺌(가격순, 조합 최저 1계열).
 - 다음 작업자에게: npm build, pytest 201 passed(이후 재시드). ui_snap 전체 페이지 캡처에서는 fixed 하단 바가 중간에 찍힘(캡처 특성).
+
+## 2026-09-30 — Claude Code — FE 대개편 Task 9: /admin·마무리·정리
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7`, `feat(fe): admin redesign, remove legacy tokens and components`
+- 한 일: `pages/Admin.tsx` 재작성 — 최근 실행(ProviderBadge + 상태 칩 `✓/차단 의심/결과 없음/오류`, 실패 칩 Radix 툴팁 + 네이티브 title에 `error`), 제공자별 일자 성공률(표 + 막대, 기간 7/14/30일), `<640px`는 표 대신 카드 목록(모바일은 툴팁이 탭으로 안 열리므로 오류 문구를 카드 안에 그대로 표시), Skeleton/ErrorState(다시 시도)/EmptyState. `types.ts` `AdminRunSnapshot.error`. `index.css`에서 `apple-*`·`--c-*`·`shadow-apple*`·`.tnum`·radius 덮어쓰기 제거, base를 shadcn 토큰(`--border`, `--background`/`--foreground`)으로, 폰트 스택 `-apple-system` → `system-ui`. `utils.formatDuration`(미사용) 삭제. 옛 컴포넌트는 Task 5–8에서 이미 모두 삭제돼 남은 것 없음.
+- 이월 리뷰 항목: `api.getHistory` in-flight 공유를 `getTrip`/`patchTrip` 응답 시 해당 id 무효화(+ 늦게 끝난 옛 요청이 새 항목을 지우지 않게 identity 확인). 말줄임 요소에 네이티브 `title` 추가(LegCard 조건부 라벨, CondPriceTag, StaleBadge, DashboardTripCard 항공사·바닥줄, DestinationCombobox 공항명). SelectionPanel은 `pair`가 null이 되면 `sheetOpen=false`.
+- 검증(브라우저): 재시드 후 `ui_snap.py` `/ /trips/new /trips/1 /trips/2 /trips/3 /admin` 1200/390 라이트·다크 exit 0, OVERFLOW 없음(shots/task-9). /admin 390 카드 목록·다크 확인, KIX #2 GF `출국 오류` 칩 hover 툴팁 `TimeoutError: page load`, title 문자열 확인. Playwright route로 /admin 로딩 Skeleton·500 ErrorState(`불러오지 못했습니다: boom` + 다시 시도)·빈 목록 EmptyState 캡처. body 배경/글자/카드 테두리 계산값이 라이트 `oklch(1 0 0)`/`oklch(0.141…)`/`oklch(0.92…)`, 다크 `oklch(0.141…)`/`oklch(0.985 0 0)`/`oklch(1 0 0 / 0.1)`로 shadcn 토큰을 따름.
+- 검증(코드만): `차단 의심`·`결과 없음` 칩(시드에 blocked/empty 스냅샷 없음), getHistory 무효화, SelectionPanel 시트 리셋 — 동작은 화면에서 재현하지 않음. `rg "apple-" src` 0건, `npm run build`(500kB 청크 경고만 — recharts만 분리해도 515kB라 해결 안 됨), `python -m ruff check .`, pytest 201 passed(이후 재시드).
+- 다음 작업자에게: 21st.dev 슬롯 교체는 TODOS에. `package.json`의 `@radix-ui/react-slot`·`date-fns`는 src에서 직접 import하지 않음(ui는 `radix-ui` 사용) — 정리 여부 판단 필요.

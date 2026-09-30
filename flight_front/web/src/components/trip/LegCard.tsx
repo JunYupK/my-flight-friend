@@ -119,7 +119,9 @@ export default function LegCard({ leg, direction, selected, highlighted, onSelec
                     {p.cond_label && (
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <span className="truncate">{p.cond_label}</span>
+                          <span className="truncate" title={p.cond_label}>
+                            {p.cond_label}
+                          </span>
                         </TooltipTrigger>
                         <TooltipContent>{p.cond_label}</TooltipContent>
                       </Tooltip>

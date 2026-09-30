@@ -219,7 +219,11 @@ export interface AdminRun {
   requested_at: string;
   started_at: string | null;
   finished_at: string | null;
-  snapshots: RunSnapshotStatus[];
+  snapshots: AdminRunSnapshot[];
+}
+
+export interface AdminRunSnapshot extends RunSnapshotStatus {
+  error: string | null;
 }
 
 // GET /api/admin/providers — repo.provider_stats 그대로 (day는 KST 날짜 "YYYY-MM-DD").

@@ -3,7 +3,11 @@
 _최종 업데이트: 2026-09-30_
 
 ## 진행 순서 (사용자 결정, 2026-09-30)
-1. FE 대개편 → 2. Skyscanner 소스 추가 → 3. V1 테이블 동결(`scripts/v1_freeze.sql`) → 4. README·포트폴리오 V2 기준 재작성
+1. ~~FE 대개편~~ (완료 2026-09-30, Task 1–9) → 2. Skyscanner 소스 추가 → 3. V1 테이블 동결(`scripts/v1_freeze.sql`) → 4. README·포트폴리오 V2 기준 재작성
+
+## 21st.dev·Mobbin 슬롯 교체
+**What:** FE 대개편 spec §8 슬롯(`DashboardTripCard`, `Sparkline`, `PriceHistoryChart`, `DateRangePicker`, `DestinationCombobox`, `BestComboHero`, `LegCard`, `SelectionPanel`, `EmptyState`)을 사용자가 고른 21st.dev 컴포넌트/Mobbin 화면으로 하나씩 교체.
+**Context:** 지금은 shadcn 기본 구현. 슬롯마다 한 파일·default export·props 고정이라 그 파일만 바꾸면 된다. 추가 라이브러리(framer-motion 등)가 필요하면 교체 시점에 판단 (spec §12 위험).
 
 ## Naver 차단 시 브라우저 재시도 (후보)
 **What:** Naver 직접 API 호출이 차단되면 브라우저(crawl4ai) 경유 재시도 폴백 (M2 설계 D7). 2026-09-30 배포 후 OCI에서 Naver 스냅샷 ok 확인 — 차단이 생길 때만 진행.

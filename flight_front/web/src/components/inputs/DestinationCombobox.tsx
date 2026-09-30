@@ -59,7 +59,9 @@ export default function DestinationCombobox({
                 >
                   <Check className={cn("size-4", value === a.code ? "opacity-100" : "opacity-0")} />
                   <span className="font-medium">{a.city}</span>
-                  <span className="truncate text-muted-foreground">{a.name}</span>
+                  <span className="truncate text-muted-foreground" title={a.name}>
+                    {a.name}
+                  </span>
                   <span className="ml-auto text-xs tabular-nums text-muted-foreground">{a.code}</span>
                 </CommandItem>
               ))}

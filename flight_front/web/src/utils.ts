@@ -7,11 +7,6 @@ export function formatDate(d: string) {
   return `${parts[1]}.${parts[2]}(${DAY_NAMES[dt.getDay()]})`;
 }
 
-export function formatDuration(min: number | null) {
-  if (min == null) return "-";
-  return `${Math.floor(min / 60)}h ${min % 60}m`;
-}
-
 /** ISO 시각 → 현재까지 경과 시간(시간 단위, 소수). 파싱 실패 시 Infinity. */
 export function hoursSince(iso: string): number {
   const t = new Date(iso).getTime();

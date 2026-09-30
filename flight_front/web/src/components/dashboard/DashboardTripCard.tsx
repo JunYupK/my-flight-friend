@@ -35,7 +35,9 @@ function LegLine({ label, leg }: { label: string; leg: LegSummary }) {
   return (
     <div className="flex min-w-0 items-baseline gap-2 text-xs">
       <span className="w-6 shrink-0 text-muted-foreground">{label}</span>
-      <span className="min-w-0 truncate">{leg.airline_name ?? leg.airline_iata ?? "-"}</span>
+      <span className="min-w-0 truncate" title={leg.airline_name ?? leg.airline_iata ?? undefined}>
+        {leg.airline_name ?? leg.airline_iata ?? "-"}
+      </span>
       <span className="shrink-0 tabular-nums text-muted-foreground">{time}</span>
       <span className="shrink-0 text-muted-foreground">{stops}</span>
     </div>
@@ -169,7 +171,9 @@ export default function DashboardTripCard({ trip }: { trip: TripSummary }) {
               확인 중…
             </span>
           ) : (
-            <span className="min-w-0 truncate">{footer}</span>
+            <span className="min-w-0 truncate" title={footer}>
+              {footer}
+            </span>
           )}
           <span className="flex shrink-0 items-center gap-1.5">
             {Object.entries(trip.provider_status).map(([p, st]) => (
