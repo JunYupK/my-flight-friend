@@ -19,7 +19,8 @@
 - 구현 계획: `docs/superpowers/plans/2026-09-28-flight-friend-v2-m1.md` (M1, 17 tasks)
 - M1 완료: PR #62 머지·배포 (2026-09-29), OCI에서 자동 추적 정상 확인. Task 17(V1 은퇴) 코드 작업 완료 — V1 코드는 커밋 `d8e0422` (태그는 생략 — 필요하면 `git tag v1-final d8e0422`로 나중에).
 - **사용자 서버 작업 (Task 17 머지 후):** `pg_dump` 백업 → `scripts/v1_freeze.sql` 실행, 1회 `docker compose --profile full up -d --remove-orphans`로 mcp/redis 컨테이너 정리.
-- M2(Naver 제공자) 코드 완료 (계획 Task 2–9, 브랜치 `claude/dazzling-shannon-4x04v7`). 최종 리뷰·수정 완료. **Task 1(OCI 한국 IP 사전 확인)은 사용자 결정으로 생략** — V1 Naver 수집이 OCI에서 동작했으므로 된다고 가정하고, 배포 후 `/admin`의 Naver 스냅샷 상태로 사후 확인 (TODOS 참고). 다음: PR·머지·배포.
+- M2(Naver 제공자) 완료: PR #64 머지·배포 (2026-09-30). OCI에서 Naver 편도·왕복 스냅샷 ok 확인.
+- 다음 순서(사용자 결정): FE 대개편 → Skyscanner 소스 → V1 테이블 동결 → README.
 - 작업 브랜치: `claude/dazzling-shannon-4x04v7`
 
 ---
@@ -364,4 +365,9 @@
 - 한 일: 사용자 결정 — "이전 V1에서도 잘 됐으니 된다고 가정". 사전 확인(spike 스크립트 실행) 없이 게이트를 닫고, 확인을 배포 후 관측으로 옮김.
 - 검증: 없음 (가정). 세션(미국 IP)에서는 새 provider로 실제 API 호출 성공 (ICN→FUK 74편).
 - 다음 작업자에게: 배포 후 `/admin`에서 Naver 스냅샷이 `ok`인지 확인. `blocked`/`error`가 3회 이어지면 `ops:naver` 알림이 오고, 그때 브라우저 재시도(설계 D7)를 진행한다. 참고로 V1 Naver 수집은 2026-08-31부터 OCI에서 0건이었다(당시 원인 후보: 헤드리스 기본 UA — 새 provider는 데스크톱 UA로 직접 API 호출).
+
+## 2026-09-30 — Claude Code — M2 배포 확인
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` (master `6d579f5`에서 재시작) / `docs: M2 deployed, next-work order`
+- 한 일: 사용자가 배포 후 `/admin`에서 GF·Naver 6개 스냅샷 모두 ✓ 확인(CTS #2, OIT #4 수동 run). TODOS에서 OCI 확인·배포 메모 제거, 진행 순서 기록.
+- 다음 작업자에게: FE 대개편 brainstorming부터.
 
