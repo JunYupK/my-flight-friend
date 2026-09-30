@@ -435,3 +435,12 @@
 - 커밋: `fix(fe): trip hero tooltips, cond label, failed-run empty state`
 - 한 일: 항공사 truncate에 title, 양 편 조건 라벨 동일 시 표시/다르면 `카드 조건 혼합`, 전 편 없음+providers 있음이면 "확인에 실패했어요", 폴링 실패 토스트 고정 id, providers.ts 미사용 헬퍼 삭제, 도시명 미매핑 시 코드 중복 제거, current==null이면 `확인가 없음`.
 - 검증: 빌드 OK. 브라우저 — ui_snap /trips/1, /trips/3 1200/390 (shots/task-7/fix1), OVERFLOW 없음. 코드만 — 실패 빈 상태·혼합 라벨(시드에 해당 케이스 없음).
+
+## 2026-09-30 — Claude Code — FE 대개편 Task 8: Trip 상세 항공편 목록·선택 패널·가격 추이
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7`, `feat(fe): leg tabs, selection panel, condition sheet, price history`
+- 한 일: `LegCard` 재작성(슬롯, 기본 접힘, `상세 ▾/▴`, ProviderPriceRow·CondPriceTag·StaleBadge, 조건부 줄 말줄임+툴팁), `LegTabs`(가는/오는 편 탭, 가격순, `조건 밖 N개` Collapsible), `ConditionSheet`(요약 칩 → ConditionFields 시트 → patchTrip, seq·trip.id 가드), `SelectionPanel`(lg sticky / 모바일 하단 한 줄 바 `합계 · N박 ›` → 바텀 시트), `PriceHistoryChart`(Collapsible, 조합 최저 라인, 최저점, 목표가 기준선, 부분 데이터 속 빈 점). TripPage 2단(`lg:grid-cols-[1fr_360px]`). 삭제: LegList/FilterBar/SelectionBar/HistoryChart/Results, 고아 `isInvertedWindow`/`WINDOW_ORDER_MESSAGE`. `utils.nightsBetween` 추가.
+- 이월 이슈: jump는 TripPage 한 곳에서 처리(effect 1회 스크롤 → 3초 뒤 null), LegTabs는 렌더 중 탭·조건 밖 펼침을 맞춤 → 재마운트 시 재생 없음. history 중복: Hero props 고정이라 `api.getHistory`에 같은 id 동시 요청 합치기(in-flight Map) 추가 → 상세 로드 시 `/history` 1회(브라우저 확인).
+- 검증(브라우저): ui_snap `/trips/1 /trips/2 /trips/3` 1200/390 라이트·다크 exit 0, OVERFLOW 없음. Playwright(390): 하단 바 한 줄(390×56, 뷰포트 하단 고정), 긴 라벨 `현대 M2/M3 Edition2(이용실적 충족시)` 펼침 줄에서 말줄임(scrollW 225 > clientW 143) + hover 툴팁 표시, 바텀 시트 내용, Hero `↓`로 오는 편 탭 전환 + 스크롤 + amber 강조(390·1200, 반복 클릭도 재스크롤), 조건 시트에서 직항 저장 → 칩 `직항`, 탭 `가는 편 (5)`, `조건 밖 1개`(KE2201 경유), 토스트 `저장했어요`. 가격 추이 펼침 1200/390 라이트·다크. b(Naver 단독)는 배지 1개·왕복 참고 줄 없음.
+- 검증(코드만): 조건 밖 편으로의 jump(시드에 near_miss 없음 — LegTabs가 Collapsible을 열도록 구현), stale 가격만 있는 편(“최신 가격 없음”, 선택 불가), 선택 없음 시 데스크톱 안내 문구/모바일 바 숨김, 저장 실패 문구.
+- 결정 / 발견: Radix Tabs/Collapsible 내용은 Presence가 layout effect 뒤에 붙여 같은 커밋의 passive effect에선 DOM에 없음 → 스크롤을 rAF로 한 프레임 미룸. 탭 숫자는 조건 안 편 수. 옛 목록의 `출발시각` 정렬 토글·출국/귀국/조합 3계열 차트는 명세에 없어 뺌(가격순, 조합 최저 1계열).
+- 다음 작업자에게: npm build, pytest 201 passed(이후 재시드). ui_snap 전체 페이지 캡처에서는 fixed 하단 바가 중간에 찍힘(캡처 특성).

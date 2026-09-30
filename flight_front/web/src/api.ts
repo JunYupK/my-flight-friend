@@ -84,8 +84,16 @@ export function getRun(id: number): Promise<RunStatus> {
   return request<RunStatus>(`/api/runs/${id}`);
 }
 
+const historyInFlight = new Map<number, Promise<DayPoint[]>>();
+
+/** 같은 Trip에 대한 동시 요청(상세의 Hero·가격 추이)은 한 번만 보낸다. */
 export function getHistory(id: number): Promise<DayPoint[]> {
-  return request<DayPoint[]>(`/api/trips/${id}/history`);
+  let p = historyInFlight.get(id);
+  if (!p) {
+    p = request<DayPoint[]>(`/api/trips/${id}/history`).finally(() => historyInFlight.delete(id));
+    historyInFlight.set(id, p);
+  }
+  return p;
 }
 
 export function getAdminRuns(): Promise<AdminRun[]> {

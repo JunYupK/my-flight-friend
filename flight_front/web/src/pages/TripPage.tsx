@@ -2,23 +2,26 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { Hourglass } from "lucide-react";
 import { toast } from "sonner";
-import { getRun, getTrip, startRun } from "../api";
-import type { RunStatus, TripView } from "../types";
+import { getHistory, getRun, getTrip, startRun } from "../api";
+import type { DayPoint, RunStatus, TripView } from "../types";
 import EmptyState from "@/components/common/EmptyState";
 import ErrorState from "@/components/common/ErrorState";
 import { Skeleton } from "@/components/ui/skeleton";
 import BestComboHero from "../components/trip/BestComboHero";
 import CandidateChips from "../components/trip/CandidateChips";
-import HistoryChart from "../components/trip/HistoryChart";
+import ConditionSheet from "../components/trip/ConditionSheet";
+import { legDomId } from "../components/trip/LegCard";
+import LegTabs from "../components/trip/LegTabs";
 import NearMissLine from "../components/trip/NearMissLine";
-import Results from "../components/trip/Results";
+import PriceHistoryChart from "../components/trip/PriceHistoryChart";
 import RunProgress from "../components/trip/RunProgress";
-import SelectionBar from "../components/trip/SelectionBar";
+import SelectionPanel from "../components/trip/SelectionPanel";
 import TripHeader from "../components/trip/TripHeader";
 import TripSettingsSheet from "../components/trip/TripSettingsSheet";
 import { PROVIDERS } from "@/lib/providers";
 
 const POLL_MS = 2000;
+const HIGHLIGHT_MS = 3000;
 
 function errText(e: unknown): string {
   return e instanceof Error ? e.message : "알 수 없는 오류";
@@ -36,6 +39,7 @@ export default function TripPage() {
   const [cooldown, setCooldown] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [jump, setJump] = useState<{ dir: "out" | "in"; key: string; n: number } | null>(null);
+  const [points, setPoints] = useState<DayPoint[]>([]);
   const [selOut, setSelOut] = useState<string | null>(null);
   const [selIn, setSelIn] = useState<string | null>(null);
 
@@ -66,6 +70,7 @@ export default function TripPage() {
     setCooldown(0);
     setSettingsOpen(false);
     setJump(null);
+    setPoints([]);
     setSelOut(null);
     setSelIn(null);
     getTrip(id)
@@ -116,6 +121,39 @@ export default function TripPage() {
     };
   }, [runId, id]);
 
+  // 가격 추이: 조건·현재가·run 상태가 바뀌면 다시 불러온다 (Hero의 동시 요청과는 api에서 합쳐짐)
+  const historyKey = trip
+    ? `${JSON.stringify(trip.trip.prefs)}|${trip.stats.current ?? ""}|${trip.run ? `${trip.run.id}:${trip.run.status}` : ""}`
+    : null;
+  useEffect(() => {
+    if (historyKey === null) return;
+    let cancelled = false;
+    getHistory(id)
+      .then((d) => {
+        if (!cancelled) setPoints(d);
+      })
+      .catch(() => {
+        if (!cancelled) setPoints([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [id, historyKey]);
+
+  // 이동 요청은 한 번만 처리: 탭 전환은 LegTabs가 렌더 중에 맞추고, 여기서 스크롤한 뒤 잠시 후 강조를 끈다
+  useEffect(() => {
+    if (!jump) return;
+    // 탭·Collapsible 내용은 Radix Presence가 한 박자 늦게 붙이므로 다음 프레임에 찾는다
+    const raf = window.requestAnimationFrame(() =>
+      document.getElementById(legDomId(jump.dir, jump.key))?.scrollIntoView({ behavior: "smooth", block: "center" }),
+    );
+    const t = window.setTimeout(() => setJump(null), HIGHLIGHT_MS);
+    return () => {
+      window.cancelAnimationFrame(raf);
+      window.clearTimeout(t);
+    };
+  }, [jump]);
+
   // 쿨다운 카운트다운
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -154,14 +192,18 @@ export default function TripPage() {
     setSelIn(inKey);
   };
   const jumpTo = (dir: "out" | "in", key: string) => setJump((j) => ({ dir, key, n: (j?.n ?? 0) + 1 }));
-  const refreshKey = JSON.stringify(trip.trip.prefs) + String(trip.stats.current ?? "") + (trip.run ? `${trip.run.id}:${trip.run.status}` : "");
+  const applyView = (v: TripView) => {
+    if (v.trip.id === id) setTrip(v);
+  };
   const noLegs = trip.legs.out.length === 0 && trip.legs.in.length === 0;
   const providerIds = Array.from(
     new Set([...trip.providers.map((p) => p.provider), ...(run?.snapshots ?? []).map((s) => s.provider), ...Object.keys(PROVIDERS)]),
   );
 
+  const chart = <PriceHistoryChart points={points} target={trip.trip.target_price} />;
+
   return (
-    <div className={`space-y-5 ${selOutLeg && selInLeg ? "pb-28" : ""}`}>
+    <div className="space-y-5">
       <TripHeader
         view={trip}
         onRun={onCheck}
@@ -170,53 +212,46 @@ export default function TripPage() {
         onOpenSettings={() => setSettingsOpen(true)}
       />
       {running && <RunProgress snapshots={run?.snapshots ?? []} providers={providerIds} />}
-      {noLegs && !running && (
-        <EmptyState
-          icon={Hourglass}
-          title={trip.providers.length > 0 ? "확인에 실패했어요" : "아직 확인 전이에요"}
-          description={
-            trip.providers.length > 0 ? "다시 확인해 주세요." : "‘지금 확인’을 누르면 가격을 가져와요."
-          }
-        />
-      )}
-      {!noLegs && (
+      {noLegs ? (
+        <>
+          {!running && (
+            <EmptyState
+              icon={Hourglass}
+              title={trip.providers.length > 0 ? "확인에 실패했어요" : "아직 확인 전이에요"}
+              description={
+                trip.providers.length > 0 ? "다시 확인해 주세요." : "‘지금 확인’을 누르면 가격을 가져와요."
+              }
+            />
+          )}
+          {points.some((p) => p.combo != null) && chart}
+        </>
+      ) : (
         <>
           <BestComboHero view={trip} onSelect={pick} onJump={jumpTo} />
           <CandidateChips candidates={trip.candidates} legs={trip.legs} onSelect={pick} />
           <NearMissLine nearMiss={trip.near_miss} legs={trip.legs} onJump={jumpTo} />
+          <div className="grid gap-5 lg:grid-cols-[1fr_360px] lg:items-start">
+            <div className="min-w-0 space-y-4">
+              <ConditionSheet view={trip} onSaved={applyView} />
+              <LegTabs
+                view={trip}
+                selected={{ out: selOut ?? undefined, in: selIn ?? undefined }}
+                highlighted={jump?.key ?? null}
+                onSelect={(dir, key) => (dir === "out" ? setSelOut(key) : setSelIn(key))}
+              />
+              {chart}
+            </div>
+            <SelectionPanel
+              out={selOutLeg}
+              inn={selInLeg}
+              outDate={trip.trip.out_date}
+              retDate={trip.trip.ret_date}
+              rtReference={trip.rt_reference}
+            />
+          </div>
         </>
       )}
-      <HistoryChart tripId={trip.trip.id} refreshKey={refreshKey} />
-      {!noLegs && (
-        <Results
-          view={trip}
-          selOut={selOut}
-          selIn={selIn}
-          onSelectOut={setSelOut}
-          onSelectIn={setSelIn}
-          jump={jump}
-          onApplied={(v) => {
-            if (v.trip.id === id) setTrip(v);
-          }}
-        />
-      )}
-      {selOutLeg && selInLeg && (
-        <SelectionBar
-          out={selOutLeg}
-          inn={selInLeg}
-          outDate={trip.trip.out_date}
-          retDate={trip.trip.ret_date}
-          rtReference={trip.rt_reference}
-        />
-      )}
-      <TripSettingsSheet
-        view={trip}
-        open={settingsOpen}
-        onOpenChange={setSettingsOpen}
-        onSaved={(v) => {
-          if (v.trip.id === id) setTrip(v);
-        }}
-      />
+      <TripSettingsSheet view={trip} open={settingsOpen} onOpenChange={setSettingsOpen} onSaved={applyView} />
     </div>
   );
 }
