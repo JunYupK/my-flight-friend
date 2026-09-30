@@ -332,3 +332,9 @@
 - 한 일: `RtReference`에 `rt_provider`/`cond_rt_min`/`cond_label` 추가(rt_min 낸 제공자, 동가면 이름 오름차순 첫째; cond는 신선 스냅샷 중 최저 cond_total_price가 rt_min보다 엄격히 낮을 때만). `api/views.py`에 `best_cond`, `prices[].cond_*`, `rt_reference[].rt_provider/cond_rt_min/cond_label` 추가(기존 키 유지). 테스트 4개 추가·test_trip_view_shape 키 갱신.
 - 검증: `pytest tests/ -q` 178 passed, `python -m ruff check .` 통과.
 - 다음 작업자에게: 프론트엔드가 새 키를 아직 사용하지 않음.
+
+## 2026-09-30 — Claude Code — M2 Task 7: worker 다중 제공자 실행 + 제공자별 운영 알림
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` / `feat(m2): run google flights and naver together, per-provider ops alerts`
+- 한 일: `worker.py` — `ProviderSpec`, `execute_run/run_with_timeout(providers)`(제공자 호출 예외는 error 스냅샷으로 변환, run은 done), `main_loop`에 `httpx.AsyncClient` 추가·매 run마다 GF/Naver spec 구성, `evaluate_ops`를 제공자별(`ops:{name}` 쿨다운)·`list[str]` 반환으로 변경, 알림에 "카드 조건 시 N원 (라벨 등)" 추가. 테스트 갱신·추가.
+- 검증: `pytest tests/ -q` 181 passed, `python -m ruff check .` 통과, `import flight_friend.worker` 성공.
+- 다음 작업자에게: 기존 `ops` 알림 kind는 더 이상 쓰이지 않음(`ops:google_flights`로 대체 — 배포 직후 쿨다운이 새로 시작됨).
