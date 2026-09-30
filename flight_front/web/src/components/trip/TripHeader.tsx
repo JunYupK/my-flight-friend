@@ -51,8 +51,8 @@ export default function TripHeader({ view, onRun, running, cooldownSeconds, onOp
       <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
         <div className="min-w-0">
           <h1 className="text-xl font-semibold tracking-tight">
-            {cityName(trip.destination) ?? trip.destination}{" "}
-            <span className="text-muted-foreground">{trip.destination}</span>
+            {cityName(trip.destination) ?? trip.destination}
+            {cityName(trip.destination) && <span className="text-muted-foreground"> {trip.destination}</span>}
           </h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
             {md(trip.out_date)}–{md(trip.ret_date)} · {nights}박 {nights + 1}일 · {dday(trip.days_to_departure)}

@@ -430,3 +430,8 @@
 - 검증: 브라우저 확인 — ui_snap 1200/390 라이트·다크(trips 1,2,3), OVERFLOW 없음, 설정 시트, fake-run 진행 칩 중간/완료 캡처(shots/task-7). 코드만 확인 — 쿨다운(429) 표시, near-miss 문구(시드에 near_miss 없음), 후보 칩 스크롤 동작. `npm run build`, `ruff check .`, pytest 201 passed.
 - 결정 / 발견: NearMissLine은 문구 생성을 위해 `legs` prop 추가. TripSettingsSheet는 open/onOpenChange prop 추가. RunProgress 제공자 목록 = trip.providers ∪ snapshot ∪ 알려진 제공자.
 - 다음 작업자에게: Results 안에 FilterBar/LegList 구 스타일 유지(Task 8 교체). pytest는 dev DB를 비우니 이후 reseed 필요.
+
+### 2026-09-30 — Claude Code — Task 7 리뷰 수정 1차
+- 커밋: `fix(fe): trip hero tooltips, cond label, failed-run empty state`
+- 한 일: 항공사 truncate에 title, 양 편 조건 라벨 동일 시 표시/다르면 `카드 조건 혼합`, 전 편 없음+providers 있음이면 "확인에 실패했어요", 폴링 실패 토스트 고정 id, providers.ts 미사용 헬퍼 삭제, 도시명 미매핑 시 코드 중복 제거, current==null이면 `확인가 없음`.
+- 검증: 빌드 OK. 브라우저 — ui_snap /trips/1, /trips/3 1200/390 (shots/task-7/fix1), OVERFLOW 없음. 코드만 — 실패 빈 상태·혼합 라벨(시드에 해당 케이스 없음).

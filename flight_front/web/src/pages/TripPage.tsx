@@ -105,7 +105,7 @@ export default function TripPage() {
         }
       } catch (e: unknown) {
         if (cancelled) return;
-        toast.error(errText(e));
+        toast.error(errText(e), { id: "run-poll-error" });
       }
       timer = window.setTimeout(tick, POLL_MS);
     };
@@ -173,8 +173,10 @@ export default function TripPage() {
       {noLegs && !running && (
         <EmptyState
           icon={Hourglass}
-          title="아직 확인 전이에요"
-          description="‘지금 확인’을 누르면 가격을 가져와요."
+          title={trip.providers.length > 0 ? "확인에 실패했어요" : "아직 확인 전이에요"}
+          description={
+            trip.providers.length > 0 ? "다시 확인해 주세요." : "‘지금 확인’을 누르면 가격을 가져와요."
+          }
         />
       )}
       {!noLegs && (

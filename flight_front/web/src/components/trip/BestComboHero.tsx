@@ -36,7 +36,9 @@ function LegRow({
           {overnight && <span className="ml-1 text-xs font-medium text-amber-600 dark:text-amber-400">+1</span>}
         </div>
         <div className="flex min-w-0 items-center gap-x-2 text-xs text-muted-foreground">
-          <span className="truncate">{leg.airline_name ?? leg.airline_iata ?? "항공사 미상"}</span>
+          <span className="truncate" title={leg.airline_name ?? leg.airline_iata ?? undefined}>
+            {leg.airline_name ?? leg.airline_iata ?? "항공사 미상"}
+          </span>
           {stops && <span className="shrink-0">{stops}</span>}
         </div>
       </div>
@@ -98,7 +100,9 @@ function TrackingSummary({ stats, points }: { stats: Stats; points: DayPoint[] }
           </div>
         </dl>
       ) : (
-        <p className="text-sm text-muted-foreground">추적 {stats.days}일째 · 비교 이력 수집 중</p>
+        <p className="text-sm text-muted-foreground">
+          {stats.current == null ? "확인가 없음" : `추적 ${stats.days}일째 · 비교 이력 수집 중`}
+        </p>
       )}
       {points.filter((p) => p.combo != null).length >= 2 && (
         <Sparkline points={points} low={stats.low} className="h-16 w-full" />
@@ -147,7 +151,12 @@ export default function BestComboHero({ view, onSelect, onJump }: Props) {
 
   const hasCond = out.best_cond != null || inn.best_cond != null;
   const condTotal = hasCond ? condPrice(out) + condPrice(inn) : null;
-  const condLabel = out.best_cond && inn.best_cond ? null : (out.best_cond ?? inn.best_cond)?.label ?? null;
+  const condLabel =
+    out.best_cond && inn.best_cond
+      ? out.best_cond.label === inn.best_cond.label
+        ? out.best_cond.label
+        : "카드 조건 혼합"
+      : (out.best_cond ?? inn.best_cond)?.label ?? null;
 
   return (
     <section className="grid gap-x-8 gap-y-5 rounded-2xl border bg-card p-4 text-card-foreground shadow-sm sm:p-5 lg:grid-cols-[minmax(0,1fr)_280px]">
