@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import time
@@ -115,7 +116,11 @@ async def _post_search(
 ) -> tuple[str, dict | None, str | None]:
     """(status, 마지막 스냅샷 | None, error). 스냅샷이 있으면 status는 "ok"(임시)."""
     try:
-        resp = await client.post(API_URL, json=body, headers=_HEADERS, timeout=timeout)
+        resp = await asyncio.wait_for(
+            client.post(API_URL, json=body, headers=_HEADERS, timeout=timeout), timeout
+        )
+    except TimeoutError:  # 단계별 타임아웃이 아닌 전체 상한
+        return "error", None, "timeout"
     except Exception as e:  # noqa: BLE001 - 네트워크/타임아웃 전부 error
         return "error", None, f"{type(e).__name__}: {e}"[:300]
     if resp.status_code in (403, 429):
@@ -156,7 +161,12 @@ def _itinerary_ok(segments: list[dict], dep: str, arr: str) -> bool:
     if not segments:
         return False
     for seg in segments:
+        if not isinstance(seg, dict):
+            return False
         mk = (seg.get("marketingCarrier") or {}).get("airlineCode")
+        number = (seg.get("marketingCarrier") or {}).get("flightNumber")
+        if not mk or number is None or not str(number).strip():
+            return False
         op = (seg.get("operatingCarrier") or {}).get("airlineCode")
         if op and op != mk:
             return False
@@ -293,9 +303,13 @@ def _snapshot_to_rts(snapshot: dict, dep: str, arr: str, out_date: date) -> list
         if out_it is None or in_it is None:
             continue
         out_segs = out_it.get("segments") or []
+        in_segs = in_it.get("segments") or []
         if not _itinerary_ok(out_segs, dep, arr):
             continue
-        if not _itinerary_ok(in_it.get("segments") or [], arr, dep):
+        if not _itinerary_ok(in_segs, arr, dep):
+            continue
+        # "이 항공사 왕복" 조합만: 오는편 첫 구간 항공사가 가는편과 다르면 제외.
+        if in_segs[0]["marketingCarrier"]["airlineCode"] != out_segs[0]["marketingCarrier"]["airlineCode"]:
             continue
         price, cond_price, cond_label, _ = _fares(fares, fare_type_map)
         if price is None:

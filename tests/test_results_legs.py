@@ -300,3 +300,21 @@ def test_best_cond_ignores_stale():
     assert m.best_cond is None
     assert m.best_price == 171_700
     assert m.best_provider == "google_flights"
+
+
+def test_transitive_bridge_merges_three_quotes_into_one_group():
+    a = fleg("2026-12-01|RS433|0720|0900", 171_700, "09:00", numbers=["RS 433"])
+    b = fleg("2026-12-01|RS433|0720|0902", 170_000, "09:02", numbers=["RS 433"])
+    c = fleg("2026-12-01|RS433|0720|0905", 168_000, "09:05", numbers=["RS 433"])
+    out = two_provider([a, b], [c])
+    assert len(out) == 1
+    assert len(out[0].prices) == 2
+
+
+def test_all_naver_group_representative_is_cheapest_naver_quote():
+    n1 = fleg("2026-12-01|RS433|0720|0900", 171_700, "09:00")
+    n2 = fleg("2026-12-01|RS433|0720|0902", 170_000, "09:02")
+    out = current_legs([snap("naver", [n1, n2])], NOW, W)["out"]
+    assert len(out) == 1
+    assert out[0].leg.flight_key == n2.flight_key
+    assert out[0].best_provider == "naver"

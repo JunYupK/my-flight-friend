@@ -351,3 +351,10 @@
 - 검증(명령): `npm run build` 통과, `pytest tests/ -q` 182 passed, ruff 통과. 시드 데이터는 V2 테이블 truncate로 정리.
 - 코드로만 확인(브라우저 미확인): `best_cond`가 best_price보다 비싼 경우 `min()` 처리, `cond_booking_url`이 null일 때 링크 생략, 한 편만 조건부일 때의 합계.
 - 다음 작업자에게: 선택 바 왕복 참고 문구에 기존 "편도 합보다 …" 설명을 유지했다(브리프 문구에 덧붙임).
+
+## 2026-09-30 — Claude Code — M2 최종 리뷰 수정 wave
+- 브랜치 / 커밋: claude/dazzling-shannon-4x04v7 / fix(m2): alert links follow the cheapest provider; naver deadlines, mixed-airline RT, malformed itineraries
+- 한 일: 알림 예약 링크를 최저가 제공자(best_provider의 fresh 항목) 링크로 변경. Naver `_post_search`에 asyncio.wait_for 전체 상한 추가(timeout → error "timeout"). `run_with_timeout` 반환값을 "google_flights 호출 시간 초과"로 한정해 Naver만 멈춘 경우 크롤러를 재생성하지 않음(run은 여전히 error). Naver 왕복 조합에서 가는편/오는편 첫 구간 항공사가 다르면 제외. 필수 필드가 없는 itinerary는 후보만 건너뜀. 테스트 추가(전이적 브릿지, 전부 Naver 대표 견적, 중복 flight_key 최저가, A01 없는 후보 제외 등).
+- 검증: `python -m pytest tests/ -q -W error::RuntimeWarning` 192 passed, ruff, import, npm build.
+- 결정 / 발견: 배포 직후 Naver의 낮은 A01 가격 때문에 Trip당 "추적 시작 이후 최저" 알림이 한 번 갈 수 있음(TODOS.md 배포 메모).
+- 다음 작업자에게: 없음.

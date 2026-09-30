@@ -233,7 +233,7 @@ def test_roundtrip_parses_pairs():
     r = _rt_result()
     assert r.status == "ok"
     assert r.legs == []
-    assert len(r.rts) == 5
+    assert len(r.rts) == 4
     prices = [x.total_price for x in r.rts]
     assert prices == sorted(prices)
 
@@ -241,12 +241,11 @@ def test_roundtrip_parses_pairs():
 def test_roundtrip_fields():
     r = _rt_result()
     first = r.rts[0]
-    assert first.airline_iata == "TW"
-    assert first.out_flight_key == "2026-11-12|ICN|FUK|17:50|19:20|0|TW"
-    assert first.total_price == 303485
-    assert first.cond_total_price is None
-    assert first.cond_label is None
-    rs = next(x for x in r.rts if x.airline_iata == "RS")
+    assert first.airline_iata == "RS"
+    assert first.total_price == 311165
+    assert first.cond_total_price == 299000
+    assert first.cond_label == "하나카드(이용실적 충족시)"
+    rs = first
     assert rs.total_price == 311165
     assert rs.cond_total_price == 299000
     assert rs.cond_label == "하나카드(이용실적 충족시)"
@@ -272,3 +271,80 @@ def test_roundtrip_request_body():
         "departureDate": "20261116",
     }
     assert seen[0].extensions["timeout"]["read"] == NAVER_ROUNDTRIP_TIMEOUT
+
+
+def test_roundtrip_excludes_mixed_airline_pair_and_codeshare():
+    r = _rt_result()
+    assert all(x.airline_iata != "TW" or x.total_price != 303485 for x in r.rts)
+    keys = [x.out_flight_key for x in r.rts]
+    assert "2026-11-12|ICN|FUK|17:50|19:20|0|TW" not in keys
+
+
+def _snapshot(body: str) -> tuple[list[str], int, dict]:
+    lines = body.splitlines()
+    idx = max(i for i, ln in enumerate(lines) if ln.startswith("data:"))
+    return lines, idx, json.loads(lines[idx][5:])
+
+
+def _body_with(mutate) -> str:
+    lines, idx, snap = _snapshot(_body())
+    mutate(snap)
+    lines[idx] = "data: " + json.dumps(snap)
+    return "\n".join(lines)
+
+
+def test_malformed_itinerary_skipped_not_fatal():
+    def mutate(snap):
+        itin = next(i for i in snap["itineraries"] if i["itineraryId"].endswith("RS0433"))
+        del itin["segments"][0]["marketingCarrier"]
+
+    r = _run(lambda req: _sse_response(_body_with(mutate)))
+    assert r.status == "ok"
+    assert len(r.legs) == 7
+    assert all(not leg.flight_numbers[0].startswith("RS 433") for leg in r.legs)
+
+
+def test_malformed_flight_number_skipped():
+    def mutate(snap):
+        itin = next(i for i in snap["itineraries"] if i["itineraryId"].endswith("RS0433"))
+        del itin["segments"][0]["marketingCarrier"]["flightNumber"]
+
+    r = _run(lambda req: _sse_response(_body_with(mutate)))
+    assert r.status == "ok" and len(r.legs) == 7
+
+
+def test_same_flight_key_keeps_lowest_price():
+    def mutate(snap):
+        fm = snap["fareMappings"][0]
+        dup = json.loads(json.dumps(fm))
+        for fare in dup["fares"]:
+            fare["adult"]["totalFare"] = int(fare["adult"]["totalFare"]) + 50_000
+        dup["sameFareMappings"] = []
+        snap["fareMappings"].append(dup)
+
+    base = _fixture_result()
+    r = _run(lambda req: _sse_response(_body_with(mutate)))
+    assert len(r.legs) == len(base.legs)
+    assert [leg.price for leg in r.legs] == [leg.price for leg in base.legs]
+
+
+def test_candidate_without_a01_fare_dropped():
+    def mutate(snap):
+        for fm in snap["fareMappings"]:
+            fm["fares"] = [f for f in fm["fares"] if f.get("fareType") != "A01"]
+            fm["sameFareMappings"] = []
+
+    r = _run(lambda req: _sse_response(_body_with(mutate)))
+    assert r.status == "empty" and r.legs == []
+
+
+def test_total_timeout_covers_stalled_body(monkeypatch):
+    monkeypatch.setattr(naver, "NAVER_ONEWAY_TIMEOUT", 0.05)
+
+    async def stall(req: httpx.Request) -> httpx.Response:
+        await asyncio.sleep(5)
+        return _sse_response(_body())
+
+    r = _run(stall)
+    assert r.status == "error"
+    assert r.error == "timeout"

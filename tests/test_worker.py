@@ -1,6 +1,7 @@
 # tests/test_worker.py
 
 import asyncio
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
@@ -461,3 +462,42 @@ def test_run_with_timeout_passes_through_when_fast() -> None:
     assert timed_out is False
     finished = repo.get_run(run.id)
     assert finished is not None and finished.status == "done"
+
+
+def test_alert_link_follows_cheapest_provider() -> None:
+    trip = make_trip(target=500_000)
+    at = NOW - timedelta(hours=1)
+    for direction, day in (("out", trip.out_date), ("in", trip.ret_date)):
+        run = claim(trip)
+        for provider, price in (("google_flights", 200_000), ("naver", 180_000)):
+            q = replace(leg("RS 433", price), booking_url=f"https://{provider}/{direction}")
+            result = ProviderResult(status="ok", legs=[q], rts=[], error=None, seconds=0.1)
+            repo.save_snapshot(run.id, trip.id, provider, "oneway", direction, day, result, at)
+        repo.finish_run(run.id, "done")
+    sent: list[str] = []
+    evaluate_alerts(trip, NOW, lambda m: sent.append(m) or "telegram")
+    assert sent
+    for m in sent:
+        assert "https://naver/out" in m and "https://naver/in" in m
+        assert "https://google_flights/" not in m
+
+
+def _naver_hang_spec() -> ProviderSpec:
+    base = fake_spec("naver")
+
+    async def hang(dep: str, arr: str, date_: date) -> ProviderResult:
+        await asyncio.Event().wait()
+        return ok(1)
+
+    return ProviderSpec("naver", hang, base.roundtrip)
+
+
+def test_naver_only_timeout_keeps_crawler() -> None:
+    trip = make_trip()
+    run = claim(trip)
+    result = asyncio.run(
+        run_with_timeout(run, trip, [fake_spec("google_flights"), _naver_hang_spec()], timedelta(milliseconds=50))
+    )
+    assert result is False
+    finished = repo.get_run(run.id)
+    assert finished is not None and finished.status == "error"

@@ -14,6 +14,7 @@ from typing import Literal
 from flight_friend import db, repo
 from flight_friend.config import ORIGIN, RUN_TIMEOUT, STUCK_RUN_AFTER
 from flight_friend.domain.results import (
+    MergedLeg,
     cheapest_combo,
     current_legs,
     in_condition,
@@ -56,7 +57,10 @@ async def _guarded(name: str, factory: Callable[[], Awaitable[ProviderResult]]) 
 
 
 async def _execute(run: Run, trip: Trip, providers: list[ProviderSpec], timeout: float | None) -> bool:
-    """제공자 호출을 각각 태스크로 돌리고 모든 스냅샷을 저장한다. 시간 초과가 있었으면 True."""
+    """제공자 호출을 각각 태스크로 돌리고 모든 스냅샷을 저장한다. google_flights 호출이 시간 초과되면 True.
+
+    어떤 제공자든 시간 초과면 run은 error로 닫지만, 브라우저 재생성 신호(True)는 GF 시간 초과만 낸다."""
+    gf_timed_out = False
     timed_out = False
     try:
         if repo.get_trip(trip.id) is None:
@@ -86,6 +90,7 @@ async def _execute(run: Run, trip: Trip, providers: list[ProviderSpec], timeout:
         for (name, kind, direction, day), task in zip(plan, tasks, strict=True):
             if task in pending:
                 logger.error("run %s: provider %s %s timed out", run.id, name, kind)
+                gf_timed_out = gf_timed_out or name == "google_flights"
                 result = ProviderResult(status="error", legs=[], rts=[], error="timeout", seconds=elapsed)
             else:
                 result = task.result()
@@ -93,9 +98,9 @@ async def _execute(run: Run, trip: Trip, providers: list[ProviderSpec], timeout:
     except Exception:
         logger.exception("run %s failed", run.id)
         repo.finish_run(run.id, "error")
-        return timed_out
+        return gf_timed_out
     repo.finish_run(run.id, "error" if timed_out else "done")
-    return timed_out
+    return gf_timed_out
 
 
 async def execute_run(run: Run, trip: Trip, providers: list[ProviderSpec]) -> None:
@@ -105,7 +110,7 @@ async def execute_run(run: Run, trip: Trip, providers: list[ProviderSpec]) -> No
 async def run_with_timeout(
     run: Run, trip: Trip, providers: list[ProviderSpec], timeout: timedelta = RUN_TIMEOUT
 ) -> bool:
-    """execute_run에 시간 상한을 둔다. 시간 초과면 끝난 결과는 저장하고 run을 error로 닫고 True를 반환한다."""
+    """execute_run에 시간 상한을 둔다. 시간 초과면 끝난 결과는 저장하고 run을 error로 닫는다. google_flights가 시간 초과됐을 때만 True."""
     return await _execute(run, trip, providers, timeout.total_seconds())
 
 
@@ -133,6 +138,14 @@ def _stay_text(minutes: int) -> str:
     return f"{minutes // 60}시간 {minutes % 60}분"
 
 
+def _alert_url(merged: MergedLeg) -> str | None:
+    """알림 링크는 최저가 제공자의 예약 링크 (웹 SelectionBar.cheapestUrl 과 같은 선택)."""
+    for p in merged.prices:
+        if not p.stale and p.provider == merged.best_provider and p.booking_url:
+            return p.booking_url
+    return merged.leg.booking_url
+
+
 def evaluate_alerts(trip: Trip, now: datetime, send: Sender = send_alert) -> list[AlertKind]:
     today = now.astimezone(KST).date()
     if not trip.tracking or trip.archived_at is not None or trip.out_date < today:
@@ -155,7 +168,7 @@ def evaluate_alerts(trip: Trip, now: datetime, send: Sender = send_alert) -> lis
         )
         extras.append(f"카드 조건 시 {total:,}원 ({conds[0].label} 등)")
     for label, merged in (("가는편", out_leg), ("오는편", in_leg)):
-        url = merged.leg.booking_url
+        url = _alert_url(merged)
         if url:
             extras.append(f"{label} {url}")
     tail = " · ".join([_trip_url(trip.id), *extras])
