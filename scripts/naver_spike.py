@@ -1,3 +1,4 @@
+# ruff: noqa: ASYNC230, SIM115, BLE001, S112 — 일회성 spike 스크립트 (M2 계획 후 삭제)
 """Naver 항공권 spike — 페이지가 무엇을 그리고, 어떤 내부 API를 부르는지 기록한다.
 
 사용 (OCI worker 컨테이너 — Playwright + Chromium 포함):
@@ -156,7 +157,7 @@ async def main() -> None:
         await browser.close()
 
     log.close()
-    blocked = bool(re.search(r"captcha|비정상적인|자동화된|접근이 제한", text, re.I))
+    blocked = bool(re.search(r"captcha|비정상적인|자동화된|접근이 제한", text, re.IGNORECASE))
     lines = [
         f"url: {url}",
         f"nav_error: {nav_err or '-'}",

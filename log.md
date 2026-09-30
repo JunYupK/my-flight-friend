@@ -286,3 +286,9 @@
 - 결정 / 발견: `readme.md`와 CLAUDE.md 포트폴리오는 V1 기준 서술이 남아 있음 — 갱신 여부는 사용자 결정.
 - 다음 작업자에게: 서버에서 freeze SQL 실행 전 백업 필수. M2 Naver spike.
 - Task 17 추가 (사용자 요청): `tests/v2/*` → `tests/`로 평탄화(`tests/fixtures/` 포함), 파일마다 있던 `sys.path.insert`를 `tests/conftest.py` 한 곳으로. autouse fixture 이름 `v2_db` → `clean_db`, `pytest.mark.no_db` 모듈은 DB 초기화를 건너뜀(`test_architecture.py`는 DB 없이 4 passed 확인). pytest 147 passed, ruff 0.16.9 clean. CI lint 실패(`notifier.py` import 순서 I001)는 로컬 ruff가 0.15.8이었던 탓 — 로컬 검증은 `python -m ruff`(0.16.9)로.
+
+## 2026-09-30 — Claude Code — Naver spike 시작
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` (master `2705921`에서 재시작) / `chore(spike): naver page and API capture script`
+- 한 일: `scripts/naver_spike.py` — 편도 검색 페이지를 열어 최종 DOM·스크린샷·naver 도메인 XHR/fetch 요청과 JSON 응답을 저장하고, V1 셀렉터 적중 수·가격 텍스트 수·차단 문구·큰 JSON 응답을 요약한다. 목적: DOM 셀렉터 재작성 vs 내부 API 중 복구 경로 결정, 편명·예약 링크 확보 가능성 확인 (스펙 §11). 일회성이라 M2 계획 후 삭제.
+- 검증: 이 세션에서는 네트워크 정책이 `flight.naver.com`을 막아(`ERR_TUNNEL_CONNECTION_FAILED`) 산출물 생성 경로까지만 확인. 실측은 OCI에서.
+- 다음 작업자에게: 사용자의 OCI 실행 결과(`summary.txt`, `requests.jsonl`)로 경로 결정 → M2 계획.
