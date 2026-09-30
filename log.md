@@ -19,7 +19,7 @@
 - 구현 계획: `docs/superpowers/plans/2026-09-28-flight-friend-v2-m1.md` (M1, 17 tasks)
 - M1 완료: PR #62 머지·배포 (2026-09-29), OCI에서 자동 추적 정상 확인. Task 17(V1 은퇴) 코드 작업 완료 — V1 코드는 커밋 `d8e0422` (태그는 생략 — 필요하면 `git tag v1-final d8e0422`로 나중에).
 - **사용자 서버 작업 (Task 17 머지 후):** `pg_dump` 백업 → `scripts/v1_freeze.sql` 실행, 1회 `docker compose --profile full up -d --remove-orphans`로 mcp/redis 컨테이너 정리.
-- 다음: M2 — 설계 `docs/superpowers/specs/2026-09-30-flight-friend-m2-naver-design.md` (승인), 계획 `docs/superpowers/plans/2026-09-30-flight-friend-m2-naver.md` (9 tasks, 사용자 검토 대기). Task 1은 OCI에서 Naver API 확인 게이트(사용자 작업).
+- M2(Naver 제공자) 코드 완료 (계획 Task 2–9, 브랜치 `claude/dazzling-shannon-4x04v7`). **OCI 한국 IP 확인(Task 1)은 보류** — 배포 후 `/admin`에서 Naver 스냅샷 상태가 ok인지 확인 (TODOS 참고). 다음: 브랜치 전체 리뷰 / PR.
 - 작업 브랜치: `claude/dazzling-shannon-4x04v7`
 
 ---
