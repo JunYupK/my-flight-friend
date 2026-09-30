@@ -1,11 +1,6 @@
-# tests/v2/test_airlines.py
+# tests/test_airlines.py
 
-import os
-import sys
 from datetime import date
-
-# 프로젝트 루트를 sys.path에 추가
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from flight_friend.providers.airlines import airline_iata, flight_key, normalize_airline
 

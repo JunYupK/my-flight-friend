@@ -1,11 +1,6 @@
-# tests/v2/test_repo_trips_runs.py
+# tests/test_repo_trips_runs.py
 
-import os
-import sys
 from datetime import date, timedelta
-
-# 프로젝트 루트를 sys.path에 추가
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from flight_friend import db, repo
 from flight_friend.types import Preferences

@@ -8,6 +8,10 @@
 import ast
 import pathlib
 
+import pytest
+
+pytestmark = pytest.mark.no_db
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 

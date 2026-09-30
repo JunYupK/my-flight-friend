@@ -1,11 +1,7 @@
-# tests/v2/test_worker.py
+# tests/test_worker.py
 
 import asyncio
-import os
-import sys
 from datetime import UTC, date, datetime, timedelta
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 import pytest
 

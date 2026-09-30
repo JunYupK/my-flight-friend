@@ -285,3 +285,4 @@
 - 검증: pytest 147 passed (V1 테스트 85개 삭제분 제외), `ruff check .` 통과, `npm run build` 통과. freeze SQL은 V1 `init_db()` + V2 `init_schema()`로 만든 임시 DB에서 실행: public에 V2 6개만 남음, v1에 9개, 재실행 오류 없음, 이동 후 `v1.flight_legs` UPDATE 시 트리거가 `v1.price_events`에 기록됨.
 - 결정 / 발견: `readme.md`와 CLAUDE.md 포트폴리오는 V1 기준 서술이 남아 있음 — 갱신 여부는 사용자 결정.
 - 다음 작업자에게: 서버에서 freeze SQL 실행 전 백업 필수. M2 Naver spike.
+- Task 17 추가 (사용자 요청): `tests/v2/*` → `tests/`로 평탄화(`tests/fixtures/` 포함), 파일마다 있던 `sys.path.insert`를 `tests/conftest.py` 한 곳으로. autouse fixture 이름 `v2_db` → `clean_db`, `pytest.mark.no_db` 모듈은 DB 초기화를 건너뜀(`test_architecture.py`는 DB 없이 4 passed 확인). pytest 147 passed, ruff 0.16.9 clean. CI lint 실패(`notifier.py` import 순서 I001)는 로컬 ruff가 0.15.8이었던 탓 — 로컬 검증은 `python -m ruff`(0.16.9)로.

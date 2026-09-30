@@ -1,4 +1,4 @@
-# tests/v2/test_notifier.py — 외부 HTTP 호출은 monkeypatch로 mock.
+# tests/test_notifier.py — 외부 HTTP 호출은 monkeypatch로 mock.
 
 import pytest
 

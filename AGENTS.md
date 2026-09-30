@@ -59,7 +59,7 @@ types/config → db/repo → providers → domain → worker / api views → api
 | 잠정 상수 | `flight_friend/config.py`, `domain/schedule.py` |
 | React 컴포넌트 / 페이지 | `flight_front/web/src/components/`, `pages/` |
 | API 클라이언트 / 공유 타입 | `flight_front/web/src/api.ts` / `types.ts` |
-| V2 테스트 | `tests/v2/` |
+| 테스트 | `tests/test_<모듈>.py` (fixture 파일은 `tests/fixtures/`) |
 | 아키텍처 규칙 | `tests/test_architecture.py` |
 
 ---
@@ -108,7 +108,7 @@ class ProviderResult:
 - `snapshots`/`leg_quotes`/`rt_quotes`는 UPDATE·DELETE 금지 (이력 = 가격 추이의 원천).
 - 스키마 진입점은 `flight_friend/db.py`의 `init_schema()` (V1의 `init_db()` 아님). **API 기동(lifespan)과 worker 시작(`main_loop` 최상단)이 호출**하며, advisory lock으로 동시 실행에 안전하다. 변경은 `IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS`로 추가, 멱등 필수.
 - `/healthz`는 `db.schema_ready()`로 스키마·DB 연결을 확인해 실패 시 503을 돌려준다.
-- 모든 DB 접근은 `repo.py` 경유. 테스트는 `clean_db` 류 fixture로 격리.
+- 모든 DB 접근은 `repo.py` 경유. 테스트는 `tests/conftest.py`의 `clean_db` fixture로 격리.
 - **V1 테이블(`raw_legs`, `flight_legs`, `deals`, `price_events`, `price_history`, `alert_state`, `collection_runs` 등)은 동결.**
   `scripts/v1_freeze.sql`이 `v1` 스키마로 옮긴다 (분석용 읽기만). V2는 읽지도 쓰지도 않는다.
 
@@ -126,7 +126,8 @@ class ProviderResult:
 
 ## 8. 테스트 규칙
 
-- V2 테스트는 `tests/v2/`, 아키텍처 테스트는 `tests/test_architecture.py`. DB 테스트는 PostgreSQL 필요(`DATABASE_URL`).
+- 테스트는 `tests/` 한 곳. `conftest.py`의 autouse `clean_db`가 매 테스트 스키마 보장 + TRUNCATE 하므로 PostgreSQL 필요(`DATABASE_URL`).
+  DB가 필요 없는 정적 분석 모듈은 `pytestmark = pytest.mark.no_db`로 빠진다 (`tests/test_architecture.py`).
 - 새 `repo.py` 함수 → 테스트 동반. 외부 호출(크롤링/알림)은 fake·mock 필수.
 - 실행:
 
