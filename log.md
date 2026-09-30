@@ -412,3 +412,4 @@
 - 검증(브라우저): 시드 4종 + `ui_snap.py /` 1200/390 라이트·다크 — 카드 a(7개 영역, `GF보다 4,000원 쌈`, 목표 달성), b(`GF보다` 줄 없음), c(`확인 중…` 스피너 — 시드에 열린 run 있음), 보관 d는 접힌 `지난 여행 (1)` 안, 가로 스크롤 없음. `전체 다시 확인` 클릭 시 토스트 `2개 확인 요청 · 1개 진행 중` 확인.
 - 검증(코드만): `npm run build`, ruff, pytest 201 passed. `아직 확인 전`/`첫 확인 중…` 문구, `지금이 최저` 배지, CondPriceTag 긴 라벨 말줄임은 시드에 해당 상태가 없어 렌더 미확인(Task 7–8에서 실제 라벨로 확인).
 - 다음 작업자에게: 390px에서 상단 바 `Flight Friend`가 두 줄로 접힘(AppShell, Task 4 소관). 상세·새 Trip 페이지는 아직 기존 스타일.
+- (Task 5 fix round 1) 카드·스켈레톤 `rounded-2xl`, 추이 차트 카드 폭 전체·h-16(Sparkline에 `className` 옵션), 정렬(추적 중 먼저 → 미추적, 각 출발일순; 보관은 접힘), best_combo 없으면 `가격 확인 중`/`아직 확인 전` 텍스트, AppShell 제목 `whitespace-nowrap` + 390px에서 액션 아이콘만 표시, 문구 `새 Trip` 통일. 검증(브라우저): `ui_snap.py /` 라이트·다크 exit 0, OVERFLOW 출력 없음(390 포함), 스크린샷 확인. 검증(코드만): build, pytest 201, ruff.

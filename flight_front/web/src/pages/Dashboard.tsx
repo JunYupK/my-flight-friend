@@ -18,6 +18,10 @@ function byDeparture(a: TripSummary, b: TripSummary): number {
   return a.out_date.localeCompare(b.out_date);
 }
 
+function byTrackingThenDeparture(a: TripSummary, b: TripSummary): number {
+  return Number(b.tracking) - Number(a.tracking) || byDeparture(a, b);
+}
+
 function refreshMessage(queued: number, cooldown: number, running: number): string {
   const parts: string[] = [];
   if (queued > 0) parts.push(`${queued}개 확인 요청`);
@@ -68,14 +72,22 @@ export default function Dashboard() {
 
   const actions = (
     <>
-      <Button asChild variant="ghost" size="sm">
+      <Button asChild variant="ghost" size="sm" aria-label="새 Trip" title="새 Trip">
         <Link to="/trips/new">
-          <Plus />새 Trip
+          <Plus />
+          <span className="hidden sm:inline">새 Trip</span>
         </Link>
       </Button>
-      <Button variant="ghost" size="sm" onClick={() => void onRefreshAll()} disabled={refreshing}>
+      <Button
+        variant="ghost"
+        size="sm"
+        aria-label="전체 다시 확인"
+        title="전체 다시 확인"
+        onClick={() => void onRefreshAll()}
+        disabled={refreshing}
+      >
         <RefreshCw className={refreshing ? "animate-spin" : undefined} />
-        전체 다시 확인
+        <span className="hidden sm:inline">전체 다시 확인</span>
       </Button>
     </>
   );
@@ -86,8 +98,8 @@ export default function Dashboard() {
   } else if (!trips) {
     body = (
       <div className={grid}>
-        <Skeleton className="h-72 rounded-xl" />
-        <Skeleton className="h-72 rounded-xl" />
+        <Skeleton className="h-72 rounded-2xl" />
+        <Skeleton className="h-72 rounded-2xl" />
       </div>
     );
   } else if (trips.length === 0) {
@@ -106,7 +118,7 @@ export default function Dashboard() {
       />
     );
   } else {
-    const active = trips.filter((t) => !t.archived).sort(byDeparture);
+    const active = trips.filter((t) => !t.archived).sort(byTrackingThenDeparture);
     const archived = trips.filter((t) => t.archived).sort(byDeparture);
     body = (
       <div className="space-y-8">

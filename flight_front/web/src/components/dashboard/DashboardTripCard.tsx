@@ -69,7 +69,7 @@ export default function DashboardTripCard({ trip }: { trip: TripSummary }) {
   return (
     <Link
       to={`/trips/${trip.id}`}
-      className="block rounded-xl border bg-card p-4 text-card-foreground shadow-sm transition-colors hover:bg-accent/40 focus-visible:outline-2 focus-visible:outline-ring"
+      className="block rounded-2xl border bg-card p-4 text-card-foreground shadow-sm transition-colors hover:bg-accent/40 focus-visible:outline-2 focus-visible:outline-ring"
     >
       <div className="space-y-3">
         {/* 1. 머리 */}
@@ -113,14 +113,14 @@ export default function DashboardTripCard({ trip }: { trip: TripSummary }) {
               )}
             </>
           ) : (
-            <div className="text-2xl font-bold text-muted-foreground">-</div>
+            <div className="text-sm text-muted-foreground">{running ? "가격 확인 중" : "아직 확인 전"}</div>
           )}
         </div>
 
         {/* 3. 추이 */}
-        <div className="flex h-8 items-center">
+        <div className="flex h-16 items-center">
           {hasSeries ? (
-            <Sparkline points={trip.series} low={trip.low} />
+            <Sparkline points={trip.series} low={trip.low} className="h-16 w-full" />
           ) : (
             <span className="text-xs text-muted-foreground">데이터 쌓는 중</span>
           )}

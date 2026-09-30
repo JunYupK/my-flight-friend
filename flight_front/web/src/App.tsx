@@ -12,7 +12,7 @@ function Shell({ children }: { children: ReactNode }) {
     <AppShell
       actions={
         <Button asChild variant="ghost" size="sm">
-          <Link to="/trips/new">새 여행</Link>
+          <Link to="/trips/new">새 Trip</Link>
         </Button>
       }
     >
