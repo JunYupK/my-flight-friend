@@ -1,8 +1,9 @@
 # tests/test_results_legs.py
 
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 
-from flight_friend.domain.results import current_legs, near_miss, violations
+from flight_friend.domain.results import CondPrice, current_legs, near_miss, violations
 from flight_friend.types import LegQuote, Preferences, Snapshot
 
 NOW = datetime(2026, 9, 29, 12, 0, tzinfo=UTC)
@@ -219,3 +220,83 @@ def test_near_miss_when_no_in_condition_leg():
 
 def test_near_miss_none_without_candidates():
     assert near_miss({"out": [], "in": []}, PREFS) is None
+
+
+def fleg(key: str, price: int, arr: str, numbers: list[str] | None = None, **kw) -> LegQuote:
+    return replace(
+        leg(key, price),
+        flight_numbers=["RS 433"] if numbers is None else numbers,
+        dep_time="07:20",
+        arr_time=arr,
+        **kw,
+    )
+
+
+def two_provider(gf_legs: list[LegQuote], naver_legs: list[LegQuote], naver_at: datetime | None = None):
+    snaps = [snap("google_flights", gf_legs), snap("naver", naver_legs, observed_at=naver_at)]
+    return current_legs(snaps, NOW, W)["out"]
+
+
+def test_merge_by_flight_number_when_times_differ():
+    gf = fleg("2026-12-01|RS433|0720|0900", 171_700, "09:00")
+    nv = fleg("2026-12-01|RS433|0720|0901", 171_000, "09:01")
+    out = two_provider([gf], [nv])
+    assert len(out) == 1
+    m = out[0]
+    assert m.leg.arr_time == "09:00"
+    assert m.flight_key == gf.flight_key
+    assert m.best_price == 171_000
+    assert m.best_provider == "naver"
+    assert len(m.prices) == 2
+
+
+def test_no_number_match_when_flight_numbers_empty():
+    gf = fleg("2026-12-01|X|0720|0900", 171_700, "09:00", numbers=[])
+    nv = fleg("2026-12-01|Y|0720|0901", 171_000, "09:01", numbers=[])
+    assert len(two_provider([gf], [nv])) == 2
+
+
+def test_same_provider_deduped_in_group():
+    g1 = fleg("2026-12-01|RS433|0720|0900", 171_700, "09:00")
+    g2 = fleg("2026-12-01|RS433|0720|0902", 170_000, "09:02")
+    nv = fleg("2026-12-01|RS433|0720|0901", 172_000, "09:01")
+    out = two_provider([g1, g2], [nv])
+    assert len(out) == 1
+    m = out[0]
+    gf_prices = [p for p in m.prices if p.provider == "google_flights"]
+    assert len(gf_prices) == 1 and gf_prices[0].price == 170_000
+    assert m.leg.arr_time == "09:02"
+    assert m.flight_key == g2.flight_key
+
+
+def test_best_cond_only_when_cheaper():
+    label = "하나카드(이용실적 충족시)"
+    nv = fleg(
+        "2026-12-01|RS433|0720|0901",
+        171_000,
+        "09:01",
+        cond_price=161_700,
+        cond_label=label,
+        cond_booking_url="https://n/cond",
+    )
+    gf = fleg("2026-12-01|RS433|0720|0900", 171_700, "09:00")
+    m = two_provider([gf], [nv])[0]
+    assert m.best_cond == CondPrice(161_700, label, "naver", "https://n/cond")
+    cheap_gf = fleg("2026-12-01|RS433|0720|0900", 160_000, "09:00")
+    assert two_provider([cheap_gf], [nv])[0].best_cond is None
+
+
+def test_best_cond_ignores_stale():
+    nv = fleg(
+        "2026-12-01|RS433|0720|0901",
+        171_000,
+        "09:01",
+        cond_price=150_000,
+        cond_label="카드",
+        cond_booking_url="u",
+    )
+    gf = fleg("2026-12-01|RS433|0720|0900", 171_700, "09:00")
+    m = two_provider([gf], [nv], naver_at=NOW - timedelta(hours=10))[0]
+    assert m.best_cond is None
+    assert m.best_price == 171_700
+    assert m.best_provider == "google_flights"

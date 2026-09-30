@@ -320,3 +320,9 @@
 - 한 일: `naver.py`에 `search_roundtrip`(RT body, `itineraryIds` "가는편-오는편" 분리, 양쪽 `_itinerary_ok`, 조건부 가격은 `_fares` 재사용) 추가. 같은 가는편을 공유하는 조합은 dedupe하지 않고 total_price 오름차순 정렬. 테스트 3개 추가.
 - 검증: `pytest tests/ -q` 통과, `python -m ruff check .` 통과.
 - 다음 작업자에게: Task 5(병합)에서 RtQuote는 `out_flight_key` 중복 가능함에 유의.
+
+## 2026-09-30 — Claude Code — M2 Task 5: 병합 (편명 보조 매칭 + 조건부 최저가)
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` / `feat(m2): flight-number secondary matching and conditional best price`
+- 한 일: `domain/results.py` — `_group`(flight_key 1차 + (date, 공항, 편명) 2차 union-find, 편명 빈 견적 제외), 대표 leg=GF 최저(없으면 전체 최저), 제공자별 최저 1건으로 `prices`, `CondPrice`/`MergedLeg.best_cond`/`ProviderPrice.cond_*` 추가(신선 가격 중 cond 최저 < best_price일 때만). 테스트 5개 추가.
+- 검증: `pytest tests/ -q` 174 passed, `python -m ruff check .` 통과.
+- 다음 작업자에게: 대표 leg의 flight_key가 GF 키이므로 tracking 키는 GF 기준으로 안정. 표시 계층(Task 6+)에서 `best_cond` 사용.
