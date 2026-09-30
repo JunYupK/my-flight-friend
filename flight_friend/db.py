@@ -109,6 +109,9 @@ def init_schema() -> None:
             CREATE INDEX IF NOT EXISTS idx_leg_quotes_snapshot_id
                 ON leg_quotes (snapshot_id)
         """)
+        cur.execute("ALTER TABLE leg_quotes ADD COLUMN IF NOT EXISTS cond_price INT")
+        cur.execute("ALTER TABLE leg_quotes ADD COLUMN IF NOT EXISTS cond_label TEXT")
+        cur.execute("ALTER TABLE leg_quotes ADD COLUMN IF NOT EXISTS cond_booking_url TEXT")
 
         cur.execute("""
             CREATE TABLE IF NOT EXISTS rt_quotes (
@@ -123,6 +126,8 @@ def init_schema() -> None:
             CREATE INDEX IF NOT EXISTS idx_rt_quotes_snapshot_id
                 ON rt_quotes (snapshot_id)
         """)
+        cur.execute("ALTER TABLE rt_quotes ADD COLUMN IF NOT EXISTS cond_total_price INT")
+        cur.execute("ALTER TABLE rt_quotes ADD COLUMN IF NOT EXISTS cond_label TEXT")
 
         cur.execute("""
             CREATE TABLE IF NOT EXISTS alerts (

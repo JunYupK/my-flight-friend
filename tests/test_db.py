@@ -65,3 +65,24 @@ def test_leg_quotes_cascade_on_snapshot():
         remaining = cur.fetchone()[0]
 
     assert remaining == 0
+
+
+def test_cond_columns_exist():
+    db.init_schema()
+    with db.get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT table_name, column_name FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name IN ('leg_quotes', 'rt_quotes')
+              AND column_name LIKE 'cond\\_%'
+        """)
+        cols = {(r[0], r[1]) for r in cur.fetchall()}
+
+    assert cols == {
+        ("leg_quotes", "cond_price"),
+        ("leg_quotes", "cond_label"),
+        ("leg_quotes", "cond_booking_url"),
+        ("rt_quotes", "cond_total_price"),
+        ("rt_quotes", "cond_label"),
+    }

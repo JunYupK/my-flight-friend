@@ -84,9 +84,20 @@ def _leg_view(m: MergedLeg, direction: str, trip: Trip) -> JsonDict:
                 "observed_at": p.observed_at.isoformat(),
                 "booking_url": p.booking_url,
                 "stale": p.stale,
+                "cond_price": p.cond_price,
+                "cond_label": p.cond_label,
+                "cond_booking_url": p.cond_booking_url,
             }
             for p in m.prices
         ],
+        "best_cond": None
+        if m.best_cond is None
+        else {
+            "price": m.best_cond.price,
+            "label": m.best_cond.label,
+            "provider": m.best_cond.provider,
+            "booking_url": m.best_cond.booking_url,
+        },
     }
 
 
@@ -112,7 +123,15 @@ def _near_miss_view(n: NearMiss | None) -> JsonDict | None:
 
 
 def _rt_view(r: RtReference) -> JsonDict:
-    return {"airline_iata": r.airline_iata, "rt_min": r.rt_min, "ow_sum": r.ow_sum, "diff": r.diff}
+    return {
+        "airline_iata": r.airline_iata,
+        "rt_min": r.rt_min,
+        "ow_sum": r.ow_sum,
+        "diff": r.diff,
+        "rt_provider": r.rt_provider,
+        "cond_rt_min": r.cond_rt_min,
+        "cond_label": r.cond_label,
+    }
 
 
 def _trip_dict(trip: Trip, now: datetime) -> JsonDict:

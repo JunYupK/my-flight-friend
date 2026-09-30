@@ -1,4 +1,5 @@
 import type { MergedLegView, RtReference } from "../../types";
+import { providerLabel } from "./providers";
 import { formatStay, formatWon, stayMinutes } from "../../utils";
 
 interface Props {
@@ -41,6 +42,11 @@ export default function SelectionBar({ out, inn, outDate, retDate, rtReference }
       : null;
   const rt = rtReference.find((r) => r.airline_iata === out.airline_iata && r.diff != null);
   const diff = rt?.diff ?? null;
+  const hasCond = out.best_cond != null || inn.best_cond != null;
+  const condTotal = hasCond
+    ? Math.min(out.best_cond?.price ?? out.best_price, out.best_price) +
+      Math.min(inn.best_cond?.price ?? inn.best_price, inn.best_price)
+    : null;
   return (
     <div className="fixed inset-x-0 bottom-0 z-20 border-t border-apple-text/10 bg-apple-surface/95 backdrop-blur-xl">
       <div className="mx-auto max-w-5xl px-4 py-2 sm:px-6">
@@ -59,10 +65,17 @@ export default function SelectionBar({ out, inn, outDate, retDate, rtReference }
             <BookLink href={cheapestUrl(inn)} label="귀국편 예약" />
           </div>
         </div>
+        {condTotal != null && (
+          <p className="mt-1 text-xs text-apple-blue">
+            카드 조건 적용 시 최저 합계 {formatWon(condTotal)}
+            <span className="ml-1 text-apple-secondary">편마다 카드 조건이 다를 수 있어요</span>
+          </p>
+        )}
         {rt && diff != null && (
           <p className="mt-1 text-xs text-apple-secondary">
-            이 항공사 왕복으로 사면 총 {formatWon(rt.rt_min)}부터 (편도 합보다 {formatWon(Math.abs(diff))}{" "}
-            {diff >= 0 ? "저렴" : "비쌈"})
+            이 항공사 왕복으로 사면 총 {formatWon(rt.rt_min)}부터 ({providerLabel(rt.rt_provider)}
+            {rt.cond_rt_min != null && ` · 카드 조건 시 ${formatWon(rt.cond_rt_min)}`}
+            {" · "}편도 합보다 {formatWon(Math.abs(diff))} {diff >= 0 ? "저렴" : "비쌈"})
           </p>
         )}
       </div>

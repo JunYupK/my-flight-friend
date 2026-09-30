@@ -21,7 +21,7 @@ export function legDomId(direction: "out" | "in", key: string): string {
 }
 
 export default function LegCard({ leg, direction, selected, highlighted, onSelect }: Props) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
   const selectable = leg.best_price != null;
   const overnight = leg.dep_time != null && leg.arr_time != null && leg.arr_time < leg.dep_time;
   const fresh = leg.prices.filter((p) => !p.stale);
@@ -60,6 +60,9 @@ export default function LegCard({ leg, direction, selected, highlighted, onSelec
                   {others > 0 && ` 외 ${others}곳`}
                 </span>
               )}
+              {leg.best_cond && (
+                <span className="block text-xs text-apple-blue">카드 조건 시 {formatWon(leg.best_cond.price)}</span>
+              )}
             </>
           ) : (
             <span className="text-sm text-apple-secondary">확인가 없음</span>
@@ -89,36 +92,52 @@ export default function LegCard({ leg, direction, selected, highlighted, onSelec
             e.stopPropagation();
             setOpen(!open);
           }}
-          className="px-2 text-sm text-apple-secondary hover:text-apple-text"
+          className="h-8 px-3 text-base text-apple-secondary hover:text-apple-text"
         >
-          {open ? "▴" : "▾"}
+          {open ? "상세 ▴" : "상세 ▾"}
         </button>
       </div>
       {open && (
         <div className="mt-1 space-y-1 border-t border-apple-text/5 pt-2 text-xs">
           <p className="text-apple-secondary">편명 {leg.flight_numbers.join(", ") || "-"}</p>
           {leg.prices.map((p) => (
-            <div
-              key={p.provider}
-              className={`flex flex-wrap items-center justify-between gap-x-2 ${p.stale ? "opacity-50" : ""}`}
-            >
-              <span className="text-apple-text">
-                {providerLabel(p.provider)} {p.price != null ? formatWon(p.price) : "-"}
-                {p.stale && <span className="ml-1 text-apple-orange">오래됨</span>}
-              </span>
-              <span className="text-apple-secondary">
-                {timeAgo(p.observed_at)}
-                {p.booking_url && (
-                  <a
-                    href={p.booking_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="ml-2 text-apple-blue hover:underline"
-                  >
-                    예약 ↗
-                  </a>
-                )}
-              </span>
+            <div key={p.provider} className={p.stale ? "opacity-50" : ""}>
+              <div className="flex flex-wrap items-center justify-between gap-x-2">
+                <span className="text-apple-text">
+                  {providerLabel(p.provider)} {p.price != null ? formatWon(p.price) : "-"}
+                  {p.stale && <span className="ml-1 text-apple-orange">오래됨</span>}
+                </span>
+                <span className="text-apple-secondary">
+                  {timeAgo(p.observed_at)}
+                  {p.booking_url && (
+                    <a
+                      href={p.booking_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="ml-2 text-apple-blue hover:underline"
+                    >
+                      {p.provider === "naver" ? "판매사 선택" : "예약"} ↗
+                    </a>
+                  )}
+                </span>
+              </div>
+              {p.cond_price != null && (
+                <div className="ml-3 flex flex-wrap items-center justify-between gap-x-2">
+                  <span className="text-apple-text">
+                    └ {p.cond_label} {formatWon(p.cond_price)}
+                  </span>
+                  {p.cond_booking_url && (
+                    <a
+                      href={p.cond_booking_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-apple-blue hover:underline"
+                    >
+                      판매사 선택 ↗
+                    </a>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>

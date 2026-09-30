@@ -19,7 +19,7 @@
 - 구현 계획: `docs/superpowers/plans/2026-09-28-flight-friend-v2-m1.md` (M1, 17 tasks)
 - M1 완료: PR #62 머지·배포 (2026-09-29), OCI에서 자동 추적 정상 확인. Task 17(V1 은퇴) 코드 작업 완료 — V1 코드는 커밋 `d8e0422` (태그는 생략 — 필요하면 `git tag v1-final d8e0422`로 나중에).
 - **사용자 서버 작업 (Task 17 머지 후):** `pg_dump` 백업 → `scripts/v1_freeze.sql` 실행, 1회 `docker compose --profile full up -d --remove-orphans`로 mcp/redis 컨테이너 정리.
-- 다음: M2 Naver spike (`TODOS.md`)
+- M2(Naver 제공자) 코드 완료 (계획 Task 2–9, 브랜치 `claude/dazzling-shannon-4x04v7`). 최종 리뷰·수정 완료. **Task 1(OCI 한국 IP 사전 확인)은 사용자 결정으로 생략** — V1 Naver 수집이 OCI에서 동작했으므로 된다고 가정하고, 배포 후 `/admin`의 Naver 스냅샷 상태로 사후 확인 (TODOS 참고). 다음: PR·머지·배포.
 - 작업 브랜치: `claude/dazzling-shannon-4x04v7`
 
 ---
@@ -286,3 +286,82 @@
 - 결정 / 발견: `readme.md`와 CLAUDE.md 포트폴리오는 V1 기준 서술이 남아 있음 — 갱신 여부는 사용자 결정.
 - 다음 작업자에게: 서버에서 freeze SQL 실행 전 백업 필수. M2 Naver spike.
 - Task 17 추가 (사용자 요청): `tests/v2/*` → `tests/`로 평탄화(`tests/fixtures/` 포함), 파일마다 있던 `sys.path.insert`를 `tests/conftest.py` 한 곳으로. autouse fixture 이름 `v2_db` → `clean_db`, `pytest.mark.no_db` 모듈은 DB 초기화를 건너뜀(`test_architecture.py`는 DB 없이 4 passed 확인). pytest 147 passed, ruff 0.16.9 clean. CI lint 실패(`notifier.py` import 순서 I001)는 로컬 ruff가 0.15.8이었던 탓 — 로컬 검증은 `python -m ruff`(0.16.9)로.
+
+## 2026-09-30 — Claude Code — Naver spike 시작
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` (master `2705921`에서 재시작) / `chore(spike): naver page and API capture script`
+- 한 일: `scripts/naver_spike.py` — 편도 검색 페이지를 열어 최종 DOM·스크린샷·naver 도메인 XHR/fetch 요청과 JSON 응답을 저장하고, V1 셀렉터 적중 수·가격 텍스트 수·차단 문구·큰 JSON 응답을 요약한다. 목적: DOM 셀렉터 재작성 vs 내부 API 중 복구 경로 결정, 편명·예약 링크 확보 가능성 확인 (스펙 §11). 일회성이라 M2 계획 후 삭제.
+- 검증: 이 세션에서는 네트워크 정책이 `flight.naver.com`을 막아(`ERR_TUNNEL_CONNECTION_FAILED`) 산출물 생성 경로까지만 확인. 실측은 OCI에서.
+- 다음 작업자에게: 사용자의 OCI 실행 결과(`summary.txt`, `requests.jsonl`)로 경로 결정 → M2 계획.
+- Naver spike 결과 (같은 날, 사용자가 세션 네트워크를 열어 줌): 내부 API `searchFlights`(SSE)를 브라우저 없이 직접 호출해 편명·시각·파트너별 요금 수신. V2 GF 파서 결과와 flight_key 40/40 일치. 예약 딥링크 없음, 조건부(카드) 요금과 코드셰어 중복 존재, 도착 시각 1분 흔들림 1건. 상세는 스펙 §13.1. `scripts/naver_spike.py`를 직접 API 프로브로 교체 (OCI 한국 IP 확인용). 세션 Chromium이 에이전트 프록시 CA를 신뢰하도록 NSS DB(`~/.pki/nssdb`)에 `/root/.ccr/agent-proxy-ca.crt` 등록함 — 새 컨테이너에서는 다시 필요.
+- 다음 작업자에게: M2 설계 결정 필요 — (1) 표시 가격 기준 A01 vs 조건부 포함, (2) 코드셰어 처리, (3) 시각 흔들림 대응, (4) OCI에서 API 동작 확인.
+- Naver 예약 딥링크 확인: `/detail/...&selectedFlight=1:{itineraryId}:{fareType}:HK:{항공사}:` 로 판매사 선택 페이지가 열림 (fareType 필수). 헤드리스 기본 UA에서는 Naver가 결과를 안 그림 — 데스크톱 UA 필요. 사용자 M2 결정 4건을 스펙 §13.1 끝에 기록. 다음: M2 설계.
+
+## 2026-09-30 — Claude Code — M2 설계 (brainstorming)
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` / `docs: M2 Naver provider design`
+- 한 일: spike 결과로 M2 설계 문서 작성. 결정: 조건 없는(A01)·조건부 가격 이중 보관, 계산은 조건 없는 가격 기준, 코드셰어 제외, 편명 보조 매칭(시각 차이는 GF 우선으로 조용히 합침), Naver 왕복 수집, API만 사용(막히면 실패로 드러냄), 견적 행에 cond_* 칸 추가, 판매사 선택 딥링크, 상세 기본 펼침 + 큰 토글(FE 대개편 예정이라 최소 변경).
+- 다음 작업자에게: 사용자 설계 검토 후 writing-plans로 M2 구현 계획. 첫 task는 OCI 확인 게이트.
+- M2 구현 계획 작성: 9 tasks (1 OCI 게이트 → 2 cond 칸 → 3·4 Naver 편도·왕복 → 5 병합 → 6 왕복 참고가·API → 7 worker·ops → 8 화면 → 9 마무리). 테스트 fixture `tests/fixtures/naver_oneway_icn_fuk.sse`(부분·최종 2줄, 매핑 8: 코드셰어 1·경유+sameFare 1 포함), `naver_roundtrip_icn_fuk.sse`(조합 6: 코드셰어 1)는 spike 실응답을 잘라 만듦 — 계획의 기대값이 이 파일 기준.
+
+
+## 2026-09-30 — Claude Code — M2 Task 2: 조건부 가격 칸
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` / `feat(m2): conditional price columns on quotes`
+- 한 일: `LegQuote.cond_price/cond_label/cond_booking_url`, `RtQuote.cond_total_price/cond_label`(기본 None) 추가, `init_schema`에 `ADD COLUMN IF NOT EXISTS` 5개, `save_snapshot`/`_row_to_leg`/`_row_to_rt` 매핑, `record_alert` kind 타입 `str`로 확대. 아직 아무도 쓰지 않아 M1 동작 불변.
+- 검증: `pytest tests/ -q` 150 passed, `python -m ruff check .` 통과.
+- 다음 작업자에게: Task 3(Naver 편도 provider)에서 cond_* 채우기.
+
+## 2026-09-30 — Claude Code — M2 Task 3: Naver provider (편도)
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` / `feat(m2): naver provider oneway`
+- 한 일: `providers/naver.py`(`search_oneway`, `build_booking_url`, `build_search_url`, 내부 `_post_search`/`_itinerary_ok`/`_fares`), `config.py`에 `NAVER_ONEWAY_TIMEOUT`(45)/`NAVER_ROUNDTRIP_TIMEOUT`(60), `tests/test_naver.py`(fixture 기반, MockTransport).
+- 검증: `pytest tests/ -q` 통과, `python -m ruff check .` 통과.
+- 다음 작업자에게: Task 4(왕복)는 `_post_search`/`_itinerary_ok`/`_fares` 재사용. 부분 완료 스트림은 status ok + error `"partners 3/20"`.
+
+## 2026-09-30 — Claude Code — M2 Task 4: Naver provider (왕복)
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` / `feat(m2): naver provider roundtrip`
+- 한 일: `naver.py`에 `search_roundtrip`(RT body, `itineraryIds` "가는편-오는편" 분리, 양쪽 `_itinerary_ok`, 조건부 가격은 `_fares` 재사용) 추가. 같은 가는편을 공유하는 조합은 dedupe하지 않고 total_price 오름차순 정렬. 테스트 3개 추가.
+- 검증: `pytest tests/ -q` 통과, `python -m ruff check .` 통과.
+- 다음 작업자에게: Task 5(병합)에서 RtQuote는 `out_flight_key` 중복 가능함에 유의.
+
+## 2026-09-30 — Claude Code — M2 Task 5: 병합 (편명 보조 매칭 + 조건부 최저가)
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` / `feat(m2): flight-number secondary matching and conditional best price`
+- 한 일: `domain/results.py` — `_group`(flight_key 1차 + (date, 공항, 편명) 2차 union-find, 편명 빈 견적 제외), 대표 leg=GF 최저(없으면 전체 최저), 제공자별 최저 1건으로 `prices`, `CondPrice`/`MergedLeg.best_cond`/`ProviderPrice.cond_*` 추가(신선 가격 중 cond 최저 < best_price일 때만). 테스트 5개 추가.
+- 검증: `pytest tests/ -q` 174 passed, `python -m ruff check .` 통과.
+- 다음 작업자에게: 대표 leg의 flight_key가 GF 키이므로 tracking 키는 GF 기준으로 안정. 표시 계층(Task 6+)에서 `best_cond` 사용.
+
+## 2026-09-30 — Claude Code — M2 Task 6: 왕복 참고가 조건부·제공자 + API 뷰
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` / `feat(m2): roundtrip reference per provider and conditional fields in API`
+- 한 일: `RtReference`에 `rt_provider`/`cond_rt_min`/`cond_label` 추가(rt_min 낸 제공자, 동가면 이름 오름차순 첫째; cond는 신선 스냅샷 중 최저 cond_total_price가 rt_min보다 엄격히 낮을 때만). `api/views.py`에 `best_cond`, `prices[].cond_*`, `rt_reference[].rt_provider/cond_rt_min/cond_label` 추가(기존 키 유지). 테스트 4개 추가·test_trip_view_shape 키 갱신.
+- 검증: `pytest tests/ -q` 178 passed, `python -m ruff check .` 통과.
+- 다음 작업자에게: 프론트엔드가 새 키를 아직 사용하지 않음.
+
+## 2026-09-30 — Claude Code — M2 Task 7: worker 다중 제공자 실행 + 제공자별 운영 알림
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` / `feat(m2): run google flights and naver together, per-provider ops alerts`
+- 한 일: `worker.py` — `ProviderSpec`, `execute_run/run_with_timeout(providers)`(제공자 호출 예외는 error 스냅샷으로 변환, run은 done), `main_loop`에 `httpx.AsyncClient` 추가·매 run마다 GF/Naver spec 구성, `evaluate_ops`를 제공자별(`ops:{name}` 쿨다운)·`list[str]` 반환으로 변경, 알림에 "카드 조건 시 N원 (라벨 등)" 추가. 테스트 갱신·추가.
+- 검증: `pytest tests/ -q` 181 passed, `python -m ruff check .` 통과, `import flight_friend.worker` 성공.
+- 다음 작업자에게: 기존 `ops` 알림 kind는 더 이상 쓰이지 않음(`ops:google_flights`로 대체 — 배포 직후 쿨다운이 새로 시작됨).
+
+## 2026-09-30 — Claude Code — M2 Task 7 수정: 타임아웃 시 끝난 제공자 결과 보존
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` / `fix(m2): keep finished provider results when a run times out`
+- 한 일: 제공자 호출을 개별 태스크로 실행, RUN_TIMEOUT 시 끝난 결과는 저장하고 미완료 호출은 취소 후 `error/"timeout"` 스냅샷으로 저장, run은 error·`run_with_timeout`은 True 유지. 호출 팩토리를 `_guarded` 내부에서 호출, main_loop finally에서 crawler/client close 독립 처리.
+- 검증: `pytest tests/ -q` 182 passed, ruff 통과.
+
+## 2026-09-30 — Claude Code — M2 Task 8: 화면 조건부 가격 표시, 상세 기본 펼침
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` / `feat(m2-web): conditional prices, naver seller links, details open by default`
+- 한 일: `types.ts`에 `CondPriceView`·`best_cond`·`cond_*`·`rt_provider/cond_rt_min/cond_label` 추가. `LegCard` 상세 기본 펼침 + 큰 토글(`상세 ▴/▾`), 가격 아래 `카드 조건 시 N원`, naver 링크 `판매사 선택 ↗`, 들여쓴 조건 줄. `SelectionBar` 카드 조건 합계 줄 + 왕복 참고에 제공자/조건가. (`providers.ts`는 이미 `naver` 표시명 있어 변경 없음)
+- 검증(브라우저 확인, 헤드리스 Chromium 1200px/390px, 로컬 API + GF·Naver 시드): 상세 기본 펼침, 토글 높이 32px, 조건부 줄, GF `예약 ↗`/Naver `판매사 선택 ↗`/들여쓴 조건 행 링크, 선택 바 합계 줄(160,000원)과 왕복 참고(Naver · 카드 조건 시 300,000원), 두 폭 모두 가로 스크롤 없음. 조건 없는 편(B)은 조건 줄 없음.
+- 검증(명령): `npm run build` 통과, `pytest tests/ -q` 182 passed, ruff 통과. 시드 데이터는 V2 테이블 truncate로 정리.
+- 코드로만 확인(브라우저 미확인): `best_cond`가 best_price보다 비싼 경우 `min()` 처리, `cond_booking_url`이 null일 때 링크 생략, 한 편만 조건부일 때의 합계.
+- 다음 작업자에게: 선택 바 왕복 참고 문구에 기존 "편도 합보다 …" 설명을 유지했다(브리프 문구에 덧붙임).
+
+## 2026-09-30 — Claude Code — M2 최종 리뷰 수정 wave
+- 브랜치 / 커밋: claude/dazzling-shannon-4x04v7 / fix(m2): alert links follow the cheapest provider; naver deadlines, mixed-airline RT, malformed itineraries
+- 한 일: 알림 예약 링크를 최저가 제공자(best_provider의 fresh 항목) 링크로 변경. Naver `_post_search`에 asyncio.wait_for 전체 상한 추가(timeout → error "timeout"). `run_with_timeout` 반환값을 "google_flights 호출 시간 초과"로 한정해 Naver만 멈춘 경우 크롤러를 재생성하지 않음(run은 여전히 error). Naver 왕복 조합에서 가는편/오는편 첫 구간 항공사가 다르면 제외. 필수 필드가 없는 itinerary는 후보만 건너뜀. 테스트 추가(전이적 브릿지, 전부 Naver 대표 견적, 중복 flight_key 최저가, A01 없는 후보 제외 등).
+- 검증: `python -m pytest tests/ -q -W error::RuntimeWarning` 192 passed, ruff, import, npm build.
+- 결정 / 발견: 배포 직후 Naver의 낮은 A01 가격 때문에 Trip당 "추적 시작 이후 최저" 알림이 한 번 갈 수 있음(TODOS.md 배포 메모).
+- 다음 작업자에게: 없음.
+
+## 2026-09-30 — Claude Code — M2 Task 1: OCI 게이트 (사용자 결정으로 사후 확인으로 전환)
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` / `docs(m2): close OCI gate as post-deploy check`
+- 한 일: 사용자 결정 — "이전 V1에서도 잘 됐으니 된다고 가정". 사전 확인(spike 스크립트 실행) 없이 게이트를 닫고, 확인을 배포 후 관측으로 옮김.
+- 검증: 없음 (가정). 세션(미국 IP)에서는 새 provider로 실제 API 호출 성공 (ICN→FUK 74편).
+- 다음 작업자에게: 배포 후 `/admin`에서 Naver 스냅샷이 `ok`인지 확인. `blocked`/`error`가 3회 이어지면 `ops:naver` 알림이 오고, 그때 브라우저 재시도(설계 D7)를 진행한다. 참고로 V1 Naver 수집은 2026-08-31부터 OCI에서 0건이었다(당시 원인 후보: 헤드리스 기본 UA — 새 provider는 데스크톱 UA로 직접 API 호출).
+

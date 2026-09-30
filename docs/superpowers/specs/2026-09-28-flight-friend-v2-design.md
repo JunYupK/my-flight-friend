@@ -360,3 +360,27 @@ alerts(id, trip_id, kind 'new_low'|'target'|'ops', price, sent_at)
 | Naver vs GF (시각 일치 81,608쌍, 관측시점 상이) | Naver 저렴 69%, GF 저렴 31%, 평균 GF−Naver +8,959원, p90 절대차 78,050원 |
 | 항공사 표기 불일치 (시각 일치) | 표기 차이형(스쿳/스쿠트, Trinity/티웨이 …)과 다른 항공사형(대한/아시아나 1,382, 대한/일본항공 414 …) 공존 |
 | 반복 측정 (차단) | 진행 중 |
+
+### 13.1 Naver spike (클라우드 세션, 미국 IP, 2026-09-30)
+
+| 항목 | 결과 |
+|---|---|
+| 페이지 DOM | V1 카드 셀렉터(`combination_ConcurrentItemContainer` 등) 아직 유효 — FUK 편도 카드 84개, 첫 가격 8초 |
+| 결과 출처 | `POST flight-api.naver.com/flight/international/searchFlights`, 응답은 SSE `data:` 줄. 마지막 줄이 누적 스냅샷(`status.isCompleted`, 파트너 20/20) |
+| 직접 호출 | 브라우저·쿠키·토큰 없이 httpx 한 번으로 수신. 첫 호출 6–10초, 같은 조건 재호출은 서버 캐시로 1청크 3초 |
+| 공항 지정 | `departureLocationType/arrivalLocationType: "airport"`로 ICN·FUK만 (V1의 `SEL:city`는 GMP 포함) |
+| 데이터 | `itineraries`(구간: 공항·날짜·HHMM 시각·marketing/operating 편명·hiddenStops) + `fareMappings`(항공편 1개당 파트너별 요금 90–130건, `sameFareMappings`에 묶인 동일가 항공편 추가) |
+| 요금 종류 | `fareType` `A01` = 조건 없는 요금, `A01/Bxx` = 카드 실적 등 조건부 요금. 화면 표시가는 조건부 포함 최저가 (예: RS433 161,700 = 조건부, A01은 171,000) |
+| 예약 링크 | `reservationUrl`은 전부 빈 문자열. 대신 판매사 선택 페이지로 직접 이동 가능: `flight.naver.com/flights/international/detail/{DEP}:airport-{ARR}:airport-{YYYYMMDD}?adult=1&isDirect=false&fareType=Y&selectType=concurrent&selectedFlight=1:{itineraryId}:{fareType}:HK:{항공사}:` (URL 인코딩). `A01`이면 조건 없는 판매사 목록(첫 판매사 = API A01 최저가), `A01/Bxx`면 해당 카드 조건 목록. fareType을 빼면 "판매사 정보를 불러올 수 없습니다" |
+| 브라우저 UA | 헤드리스 기본 UA에서는 검색·상세 페이지가 결과를 그리지 않음 (데스크톱 UA에서는 정상) — V1 OCI 0건의 원인 후보 |
+| 식별키 병합 | V2 GF 파서 결과와 같은 날짜 비교: ICN→FUK 20/20, FUK→ICN 20/20 flight_key 정확 일치 |
+| 가격 비교 (일치 40쌍) | GF − Naver(A01) 중앙값 +7,862 / +6,589원, Naver A01이 38/40에서 더 쌈. 조건부 포함 시 차이 +18,400 / +15,251원 |
+| 코드셰어 | 같은 실제 항공편이 판매 항공사별로 별도 옵션 (OZ132 = KE5481, KE787 = OZ9867 = JL5220). 직항 31개 중 8개가 `operatingCarrier`≠`marketingCarrier` |
+| 시각 흔들림 | 30분 간격 두 호출에서 RS433 도착 09:01 → 09:00 — strict 키가 갈라질 수 있음 (빈도 미측정) |
+| OCI(한국 IP) | 미검증. V1 DOM 방식이 2026-08-31부터 OCI에서 0건이었으므로 M2 착수 전 `scripts/naver_spike.py`로 확인 필요 |
+
+**M2 결정 (2026-09-30, 사용자):**
+1. 가격은 두 가지 모두 보관·표시한다 — 조건 없는 최저가(`A01`)와 조건부 포함 최저가. 조건부가 최저가 계산에 쓰일 때는 "실적 충족 시" 같은 조건을 함께 표시한다.
+2. 코드셰어는 실제 운항사 편만 남긴다 (`operatingCarrier`가 있고 `marketingCarrier`와 다르면 버림).
+3. flight_key 불일치(시각 흔들림 등)에 대비해 편명 기반 보조 매칭을 둔다 — 데이터 정합성 우선.
+4. Naver 예약 링크는 위 판매사 선택 페이지 딥링크.

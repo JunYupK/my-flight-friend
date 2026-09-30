@@ -17,6 +17,17 @@ class ProviderPrice:
     observed_at: datetime
     booking_url: str | None
     stale: bool
+    cond_price: int | None = None
+    cond_label: str | None = None
+    cond_booking_url: str | None = None
+
+
+@dataclass
+class CondPrice:
+    price: int
+    label: str
+    provider: str
+    booking_url: str | None
 
 
 @dataclass
@@ -27,6 +38,7 @@ class MergedLeg:
     prices: list[ProviderPrice]
     best_price: int | None
     best_provider: str | None
+    best_cond: CondPrice | None = None
 
 
 @dataclass
@@ -49,26 +61,77 @@ def _latest_ok(snapshots: list[Snapshot]) -> dict[tuple[str, str], Snapshot]:
     return latest
 
 
+def _group(entries: list[tuple[Snapshot, LegQuote]]) -> list[list[tuple[Snapshot, LegQuote]]]:
+    """flight_key가 같거나 (날짜, 공항, 편명)이 같은 견적을 (전이적으로) 한 묶음으로."""
+    parent = list(range(len(entries)))
+
+    def find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    def union(i: int, j: int) -> None:
+        parent[find(i)] = find(j)
+
+    first_by_key: dict[object, int] = {}
+    for i, (_, q) in enumerate(entries):
+        keys: list[object] = [("key", q.flight_key)]
+        if q.flight_numbers:
+            keys.append(
+                (q.flight_key.split("|")[0], q.dep_airport, q.arr_airport, tuple(q.flight_numbers))
+            )
+        for k in keys:
+            if k in first_by_key:
+                union(i, first_by_key[k])
+            else:
+                first_by_key[k] = i
+    groups: dict[int, list[tuple[Snapshot, LegQuote]]] = {}
+    for i, e in enumerate(entries):
+        groups.setdefault(find(i), []).append(e)
+    return list(groups.values())
+
+
 def _merge(direction: str, entries: list[tuple[Snapshot, LegQuote]], cutoff: datetime) -> list[MergedLeg]:
-    by_key: dict[str, list[tuple[Snapshot, LegQuote]]] = {}
-    for s, q in entries:
-        by_key.setdefault(q.flight_key, []).append((s, q))
     merged: list[MergedLeg] = []
-    for key, items in by_key.items():
-        items.sort(key=lambda sq: (sq[1].price, sq[0].provider))
+    for items in _group(entries):
+        gf = [sq for sq in items if sq[0].provider == "google_flights"]
+        rep = min(gf or items, key=lambda sq: (sq[1].price, sq[1].flight_key))[1]
+        cheapest: dict[str, tuple[Snapshot, LegQuote]] = {}
+        for s, q in items:
+            cur = cheapest.get(s.provider)
+            if cur is None or q.price < cur[1].price:
+                cheapest[s.provider] = (s, q)
         prices = [
-            ProviderPrice(s.provider, q.price, s.observed_at, q.booking_url, s.observed_at < cutoff)
-            for s, q in items
+            ProviderPrice(
+                s.provider,
+                q.price,
+                s.observed_at,
+                q.booking_url,
+                s.observed_at < cutoff,
+                q.cond_price,
+                q.cond_label,
+                q.cond_booking_url,
+            )
+            for s, q in cheapest.values()
         ]
+        prices.sort(key=lambda p: (p.price, p.provider))
         fresh = [p for p in prices if not p.stale]
+        best_cond: CondPrice | None = None
+        conds = [p for p in fresh if p.cond_price is not None]
+        if fresh and conds:
+            c = min(conds, key=lambda p: (p.cond_price or 0, p.provider))
+            if c.cond_price is not None and c.cond_price < fresh[0].price:
+                best_cond = CondPrice(c.cond_price, c.cond_label or "", c.provider, c.cond_booking_url)
         merged.append(
             MergedLeg(
-                flight_key=key,
+                flight_key=rep.flight_key,
                 direction=direction,
-                leg=items[0][1],
+                leg=rep,
                 prices=prices,
                 best_price=fresh[0].price if fresh else None,
                 best_provider=fresh[0].provider if fresh else None,
+                best_cond=best_cond,
             )
         )
     merged.sort(key=lambda m: (m.best_price is None, m.best_price or 0, m.flight_key))
@@ -164,6 +227,9 @@ class RtReference:
     rt_min: int
     ow_sum: int | None
     diff: int | None  # ow_sum - rt_min (양수 = 왕복이 쌈)
+    rt_provider: str
+    cond_rt_min: int | None = None
+    cond_label: str | None = None
 
 
 def stay_minutes(out: LegQuote, out_date: date, inn: LegQuote, ret_date: date) -> int:
@@ -267,22 +333,32 @@ def rt_reference(
             continue
         if s.provider not in latest or s.observed_at > latest[s.provider].observed_at:
             latest[s.provider] = s
-    rt_min: dict[str, int] = {}
-    for s in latest.values():
+    rt_min: dict[str, tuple[int, str]] = {}
+    cond_min: dict[str, tuple[int, str | None]] = {}
+    for s in sorted(latest.values(), key=lambda x: x.provider):
         if s.observed_at < cutoff:
             continue
         for q in s.rts:
-            if q.total_price < rt_min.get(q.airline_iata, q.total_price + 1):
-                rt_min[q.airline_iata] = q.total_price
+            if q.total_price < rt_min.get(q.airline_iata, (q.total_price + 1, ""))[0]:
+                rt_min[q.airline_iata] = (q.total_price, s.provider)
+            if q.cond_total_price is not None and q.cond_total_price < cond_min.get(
+                q.airline_iata, (q.cond_total_price + 1, None)
+            )[0]:
+                cond_min[q.airline_iata] = (q.cond_total_price, q.cond_label)
     out_min = _cheapest_by_airline(legs.get("out", []))
     in_min = _cheapest_by_airline(legs.get("in", []))
     refs: list[RtReference] = []
-    for airline, total in rt_min.items():
+    for airline, (total, provider) in rt_min.items():
         if airline in out_min and airline in in_min:
             ow_sum: int | None = out_min[airline] + in_min[airline]
             diff = ow_sum - total
         else:
             ow_sum, diff = None, None
-        refs.append(RtReference(airline, total, ow_sum, diff))
+        cond = cond_min.get(airline)
+        if cond is not None and cond[0] >= total:
+            cond = None
+        refs.append(
+            RtReference(airline, total, ow_sum, diff, provider, cond[0] if cond else None, cond[1] if cond else None)
+        )
     refs.sort(key=lambda r: (r.rt_min, r.airline_iata))
     return refs

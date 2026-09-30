@@ -15,7 +15,8 @@
 - **스냅샷 관측:** 한 번의 재확인 = 한 `search_run`, 제공자별 결과 = `snapshot`. 관측값은 append-only로 쌓고 덮어쓰지 않는다.
 - **사용자 트리거 재확인:** 웹에서 사용자가 "다시 확인"을 누르면 run이 큐잉되고, 상주 worker가 처리한다 (수동 쿨다운 있음).
   추적 중(`tracking`) Trip은 worker가 출발까지 남은 일수 티어에 따라 자동 갱신한다.
-- 데이터 소스는 현재 Google Flights 하나(편도 leg + 왕복 rt). 제공자는 어댑터 인터페이스로 추가한다 (§5).
+- 데이터 소스는 Google Flights(크롤링, 편도 leg + 왕복 rt)와 Naver(내부 API `searchFlights` 직접 호출, SSE, 쿠키 불필요, 데스크톱 UA)다.
+  Naver는 카드 조건부 요금을 `cond_*`로 함께 보관한다. 제공자는 어댑터 인터페이스로 추가한다 (§5).
 
 **배포:** OCI 한국 리전 단일 `docker-compose.yml`. `app`(FastAPI + SPA), `worker`(상주, Chromium), `db`, `caddy`.
 
@@ -33,7 +34,7 @@ types/config → db/repo → providers → domain → worker / api views → api
 |--------|------|------|------|
 | **Types/Config** | `flight_friend/types.py`, `config.py` | 데이터클래스, 잠정 상수 | 로직, I/O |
 | **DB/Repo** | `flight_friend/db.py`, `repo.py` | 스키마(`init_schema()`), CRUD, 트랜잭션 | 비즈니스 로직, HTTP 의존 |
-| **Providers** | `flight_friend/providers/` | 외부 수집(크롤링), 결과를 `ProviderResult`로 정규화 | DB 접근, 웹 프레임워크 |
+| **Providers** | `flight_friend/providers/` (`google_flights.py`, `naver.py`) | 외부 수집(크롤링·API), 결과를 `ProviderResult`로 정규화 | DB 접근, 웹 프레임워크 |
 | **Domain** | `flight_friend/domain/` (`results`, `schedule`, `tracking`) | 순수 로직: 결과 조합·후보·near-miss, 갱신 주기, 알림 판정 | `fastapi`/`starlette`, `db`/`repo` import |
 | **Worker** | `flight_friend/worker.py`, `notifier.py` | run 소비, provider 호출, snapshot 저장, 알림 판정·발송 | 웹 프레임워크 |
 | **Views** | `flight_friend/api/views.py` | repo + domain → JSON 직렬화 dict | `fastapi`/`starlette` import |
@@ -76,7 +77,7 @@ types/config → db/repo → providers → domain → worker / api views → api
 ## 5. Provider 어댑터 인터페이스
 
 provider 모듈은 크롤러(`Crawler` Protocol)를 주입받는 async 함수로 노출하고 항상 `ProviderResult`를 돌려준다.
-(현재: `providers/google_flights.py` — `search_oneway(crawler, dep, arr, date)`, `search_roundtrip(...)`)
+(현재: `providers/google_flights.py` — `search_oneway(crawler, dep, arr, date)`, `search_roundtrip(...)`; `providers/naver.py`는 HTTP 직접 호출이라 crawler 없이 같은 형태)
 
 ```python
 @dataclass
@@ -147,6 +148,7 @@ ruff check .            # CI는 ruff==0.16.9 고정
 - `app` 헬스체크와 배포 readiness probe는 `/healthz` (`{"ok": true}`).
 - CI(`ci.yml`): `pytest tests/` + `ruff check .` + React build. 실패 시 배포(`deploy.yml`) 미트리거. master push + CI 성공 → SSH 자동 배포.
 - 알림 채널은 Telegram 1순위 → Discord 2순위 fallback, 첫 성공 채널만 발송 (`flight_friend/notifier.py`).
+- 운영 알림(수집 실패·차단)은 제공자별로 `alerts.kind = ops:{provider}`, 제공자마다 6시간 쿨다운.
 - 호스트 crontab의 **V1 수집 cron과 spike cron은 제거**해야 한다 (worker가 대체).
 
 ### 환경 변수

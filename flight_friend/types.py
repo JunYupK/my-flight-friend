@@ -93,6 +93,9 @@ class LegQuote:
     price: int
     booking_url: str | None
     search_url: str | None
+    cond_price: int | None = None
+    cond_label: str | None = None
+    cond_booking_url: str | None = None
 
 
 @dataclass
@@ -100,6 +103,8 @@ class RtQuote:
     airline_iata: str
     out_flight_key: str
     total_price: int
+    cond_total_price: int | None = None
+    cond_label: str | None = None
 
 
 @dataclass

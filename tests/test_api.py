@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from flight_friend import db, repo
 from flight_friend.api import main as api_main
 from flight_friend.api.main import app
-from flight_friend.types import LegQuote, Preferences, ProviderResult
+from flight_friend.types import LegQuote, Preferences, ProviderResult, RtQuote
 
 client = TestClient(app)
 
@@ -117,11 +117,13 @@ def test_trip_view_shape() -> None:
     assert set(by_key["A"]) == {
         "flight_key", "dep_time", "arr_time", "airline_name", "airline_iata", "flight_numbers", "stops",
         "duration_min", "dep_airport", "arr_airport", "best_price", "best_provider", "in_condition",
-        "violations", "prices",
+        "violations", "prices", "best_cond",
     }
     assert by_key["A"]["in_condition"] is True and by_key["A"]["violations"] == []
     assert by_key["B"]["in_condition"] is False and by_key["B"]["violations"] == ["nonstop"]
-    assert set(by_key["A"]["prices"][0]) == {"provider", "price", "observed_at", "booking_url", "stale"}
+    assert set(by_key["A"]["prices"][0]) == {
+        "provider", "price", "observed_at", "booking_url", "stale", "cond_price", "cond_label", "cond_booking_url",
+    }
     assert len(d["candidates"]) == 1
     assert {k: d["candidates"][0][k] for k in ("out_flight_key", "in_flight_key", "price")} == {
         "out_flight_key": "A", "in_flight_key": "C", "price": 170000,
@@ -132,6 +134,30 @@ def test_trip_view_shape() -> None:
     assert d["providers"][0]["provider"] == "google_flights" and d["providers"][0]["status"] == "ok"
     assert d["providers"][0]["last_ok_at"] is not None
     assert d["rt_reference"] == []
+
+
+def test_trip_view_exposes_cond_fields() -> None:
+    trip_id = make_trip()
+    now = datetime.now(UTC)
+    add_run(trip_id, [quote("A", 80000)], [quote("C", 90000)], now)
+    naver_out = quote("A", 82000)
+    naver_out.cond_price = 75000
+    naver_out.cond_label = "카드할인"
+    add_run(trip_id, [naver_out], [quote("C", 91000)], now, provider="naver")
+    run_id = repo.enqueue_run(trip_id, "manual")
+    rts = [RtQuote("KE", "A", 320000), RtQuote("KE", "A", 330000, cond_total_price=300000, cond_label="카드할인")]
+    repo.save_snapshot(
+        run_id, trip_id, "naver", "roundtrip", None, OUT,
+        ProviderResult(status="ok", legs=[], rts=rts, error=None, seconds=0.1), now,
+    )
+    d = client.get(f"/api/trips/{trip_id}").json()
+    a = next(m for m in d["legs"]["out"] if m["flight_key"] == "A")
+    assert a["best_cond"] is None or set(a["best_cond"]) == {"price", "label", "provider", "booking_url"}
+    assert a["best_cond"] is not None and a["best_cond"]["price"] == 75000
+    assert all({"cond_price", "cond_label", "cond_booking_url"} <= set(p) for p in a["prices"])
+    ref = d["rt_reference"][0]
+    assert ref["rt_provider"] == "naver" and ref["rt_min"] == 320000
+    assert ref["cond_rt_min"] == 300000 and ref["cond_label"] == "카드할인"
 
 
 def test_trip_view_all_stale() -> None:
