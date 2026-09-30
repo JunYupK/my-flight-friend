@@ -45,6 +45,16 @@ export interface ProviderPriceView {
   observed_at: string;
   booking_url: string | null;
   stale: boolean;
+  cond_price: number | null;
+  cond_label: string | null;
+  cond_booking_url: string | null;
+}
+
+export interface CondPriceView {
+  price: number;
+  label: string;
+  provider: string;
+  booking_url: string | null;
 }
 
 export interface MergedLegView {
@@ -60,6 +70,7 @@ export interface MergedLegView {
   arr_airport: string | null;
   best_price: number | null;
   best_provider: string | null;
+  best_cond: CondPriceView | null;
   in_condition: boolean;
   violations: string[];
   prices: ProviderPriceView[];
@@ -83,6 +94,9 @@ export interface NearMissView {
 export interface RtReference {
   airline_iata: string;
   rt_min: number;
+  rt_provider: string;
+  cond_rt_min: number | null;
+  cond_label: string | null;
   ow_sum: number | null;
   diff: number | null;
 }

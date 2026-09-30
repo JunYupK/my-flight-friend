@@ -343,3 +343,11 @@
 - 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` / `fix(m2): keep finished provider results when a run times out`
 - 한 일: 제공자 호출을 개별 태스크로 실행, RUN_TIMEOUT 시 끝난 결과는 저장하고 미완료 호출은 취소 후 `error/"timeout"` 스냅샷으로 저장, run은 error·`run_with_timeout`은 True 유지. 호출 팩토리를 `_guarded` 내부에서 호출, main_loop finally에서 crawler/client close 독립 처리.
 - 검증: `pytest tests/ -q` 182 passed, ruff 통과.
+
+## 2026-09-30 — Claude Code — M2 Task 8: 화면 조건부 가격 표시, 상세 기본 펼침
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` / `feat(m2-web): conditional prices, naver seller links, details open by default`
+- 한 일: `types.ts`에 `CondPriceView`·`best_cond`·`cond_*`·`rt_provider/cond_rt_min/cond_label` 추가. `LegCard` 상세 기본 펼침 + 큰 토글(`상세 ▴/▾`), 가격 아래 `카드 조건 시 N원`, naver 링크 `판매사 선택 ↗`, 들여쓴 조건 줄. `SelectionBar` 카드 조건 합계 줄 + 왕복 참고에 제공자/조건가. (`providers.ts`는 이미 `naver` 표시명 있어 변경 없음)
+- 검증(브라우저 확인, 헤드리스 Chromium 1200px/390px, 로컬 API + GF·Naver 시드): 상세 기본 펼침, 토글 높이 32px, 조건부 줄, GF `예약 ↗`/Naver `판매사 선택 ↗`/들여쓴 조건 행 링크, 선택 바 합계 줄(160,000원)과 왕복 참고(Naver · 카드 조건 시 300,000원), 두 폭 모두 가로 스크롤 없음. 조건 없는 편(B)은 조건 줄 없음.
+- 검증(명령): `npm run build` 통과, `pytest tests/ -q` 182 passed, ruff 통과. 시드 데이터는 V2 테이블 truncate로 정리.
+- 코드로만 확인(브라우저 미확인): `best_cond`가 best_price보다 비싼 경우 `min()` 처리, `cond_booking_url`이 null일 때 링크 생략, 한 편만 조건부일 때의 합계.
+- 다음 작업자에게: 선택 바 왕복 참고 문구에 기존 "편도 합보다 …" 설명을 유지했다(브리프 문구에 덧붙임).
