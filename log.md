@@ -314,3 +314,9 @@
 - 한 일: `providers/naver.py`(`search_oneway`, `build_booking_url`, `build_search_url`, 내부 `_post_search`/`_itinerary_ok`/`_fares`), `config.py`에 `NAVER_ONEWAY_TIMEOUT`(45)/`NAVER_ROUNDTRIP_TIMEOUT`(60), `tests/test_naver.py`(fixture 기반, MockTransport).
 - 검증: `pytest tests/ -q` 통과, `python -m ruff check .` 통과.
 - 다음 작업자에게: Task 4(왕복)는 `_post_search`/`_itinerary_ok`/`_fares` 재사용. 부분 완료 스트림은 status ok + error `"partners 3/20"`.
+
+## 2026-09-30 — Claude Code — M2 Task 4: Naver provider (왕복)
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` / `feat(m2): naver provider roundtrip`
+- 한 일: `naver.py`에 `search_roundtrip`(RT body, `itineraryIds` "가는편-오는편" 분리, 양쪽 `_itinerary_ok`, 조건부 가격은 `_fares` 재사용) 추가. 같은 가는편을 공유하는 조합은 dedupe하지 않고 total_price 오름차순 정렬. 테스트 3개 추가.
+- 검증: `pytest tests/ -q` 통과, `python -m ruff check .` 통과.
+- 다음 작업자에게: Task 5(병합)에서 RtQuote는 `out_flight_key` 중복 가능함에 유의.

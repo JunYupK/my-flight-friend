@@ -9,11 +9,13 @@ from urllib.parse import unquote
 import httpx
 import pytest
 
+from flight_friend.config import NAVER_ROUNDTRIP_TIMEOUT
 from flight_friend.providers import naver
 from flight_friend.providers.naver import (
     API_URL,
     build_search_url,
     search_oneway,
+    search_roundtrip,
 )
 
 _FIXTURE = os.path.join(
@@ -200,3 +202,73 @@ def test_flight_number_not_numeric():
 
 def test_module_constants():
     assert naver.PROVIDER == "naver"
+
+
+# --- 왕복 ------------------------------------------------------------------
+
+_RT_FIXTURE = os.path.join(
+    os.path.dirname(__file__), "fixtures", "naver_roundtrip_icn_fuk.sse"
+)
+_RET = date(2026, 11, 16)
+
+
+def _rt_body() -> str:
+    with open(_RT_FIXTURE, encoding="utf-8") as f:
+        return f.read()
+
+
+def _run_rt(handler):
+    async def go():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
+            return await search_roundtrip(c, "ICN", "FUK", _DATE, _RET)
+
+    return asyncio.run(go())
+
+
+def _rt_result():
+    return _run_rt(lambda req: _sse_response(_rt_body()))
+
+
+def test_roundtrip_parses_pairs():
+    r = _rt_result()
+    assert r.status == "ok"
+    assert r.legs == []
+    assert len(r.rts) == 5
+    prices = [x.total_price for x in r.rts]
+    assert prices == sorted(prices)
+
+
+def test_roundtrip_fields():
+    r = _rt_result()
+    first = r.rts[0]
+    assert first.airline_iata == "TW"
+    assert first.out_flight_key == "2026-11-12|ICN|FUK|17:50|19:20|0|TW"
+    assert first.total_price == 303485
+    assert first.cond_total_price is None
+    assert first.cond_label is None
+    rs = next(x for x in r.rts if x.airline_iata == "RS")
+    assert rs.total_price == 311165
+    assert rs.cond_total_price == 299000
+    assert rs.cond_label == "하나카드(이용실적 충족시)"
+
+
+def test_roundtrip_request_body():
+    seen = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen.append(req)
+        return _sse_response(_rt_body())
+
+    _run_rt(handler)
+    body = json.loads(seen[0].content)
+    assert body["tripType"] == "RT"
+    assert len(body["itineraries"]) == 2
+    assert body["itineraries"][0]["departureDate"] == "20261112"
+    assert body["itineraries"][1] == {
+        "departureLocationCode": "FUK",
+        "arrivalLocationCode": "ICN",
+        "departureLocationType": "airport",
+        "arrivalLocationType": "airport",
+        "departureDate": "20261116",
+    }
+    assert seen[0].extensions["timeout"]["read"] == NAVER_ROUNDTRIP_TIMEOUT

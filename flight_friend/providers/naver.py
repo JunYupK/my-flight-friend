@@ -1,7 +1,7 @@
 # flight_friend/providers/naver.py
 #
 # Naver 항공권 어댑터: SSE 검색 API(POST) → LegQuote 변환 (편도).
-# 스펙 §3.1·3.2·3.4. 왕복(Task 4)은 _post_search/_itinerary_ok/_fares 를 재사용한다.
+# 스펙 §3.1·3.2·3.3·3.4. 왕복(search_roundtrip)은 _post_search/_itinerary_ok/_fares 를 재사용한다.
 
 from __future__ import annotations
 
@@ -13,9 +13,9 @@ from urllib.parse import quote
 
 import httpx
 
-from flight_friend.config import NAVER_ONEWAY_TIMEOUT
+from flight_friend.config import NAVER_ONEWAY_TIMEOUT, NAVER_ROUNDTRIP_TIMEOUT
 from flight_friend.providers.airlines import flight_key
-from flight_friend.types import LegQuote, ProviderResult
+from flight_friend.types import LegQuote, ProviderResult, RtQuote
 
 PROVIDER = "naver"
 API_URL = "https://flight-api.naver.com/flight/international/searchFlights"
@@ -90,6 +90,21 @@ def _oneway_body(dep: str, arr: str, date_: date) -> dict:
             "sort": {"adultMinFare": 1},
         },
     }
+
+
+def _roundtrip_body(dep: str, arr: str, out_date: date, ret_date: date) -> dict:
+    body = _oneway_body(dep, arr, out_date)
+    body["tripType"] = "RT"
+    body["itineraries"].append(
+        {
+            "departureLocationCode": arr,
+            "arrivalLocationCode": dep,
+            "departureLocationType": "airport",
+            "arrivalLocationType": "airport",
+            "departureDate": _compact(ret_date),
+        }
+    )
+    return body
 
 
 # --- 호출 + 상태 판정 (스펙 §3.4) ------------------------------------------
@@ -259,3 +274,55 @@ async def search_oneway(
     if not legs:
         return ProviderResult("empty", [], [], None, seconds)
     return ProviderResult("ok", legs, [], _partner_note(snapshot), seconds)
+
+
+def _snapshot_to_rts(snapshot: dict, dep: str, arr: str, out_date: date) -> list[RtQuote]:
+    status = snapshot.get("status") or {}
+    fare_type_map = status.get("fareTypesCodeMap") or {}
+    itineraries = {
+        it["itineraryId"]: it
+        for it in snapshot.get("itineraries") or []
+        if isinstance(it, dict) and "itineraryId" in it
+    }
+    rts: list[RtQuote] = []
+    for pair_id, fares in _candidates(snapshot):
+        parts = pair_id.split("-") if isinstance(pair_id, str) else []
+        if len(parts) != 2:
+            continue
+        out_it, in_it = itineraries.get(parts[0]), itineraries.get(parts[1])
+        if out_it is None or in_it is None:
+            continue
+        out_segs = out_it.get("segments") or []
+        if not _itinerary_ok(out_segs, dep, arr):
+            continue
+        if not _itinerary_ok(in_it.get("segments") or [], arr, dep):
+            continue
+        price, cond_price, cond_label, _ = _fares(fares, fare_type_map)
+        if price is None:
+            continue
+        airline = out_segs[0]["marketingCarrier"]["airlineCode"]
+        stops = len(out_segs) - 1 + sum(len(s.get("hiddenStops") or []) for s in out_segs)
+        key = flight_key(
+            out_date, dep, arr,
+            _hhmm(out_segs[0]["departure"]["time"]),
+            _hhmm(out_segs[-1]["arrival"]["time"]),
+            stops, airline,
+        )
+        rts.append(RtQuote(airline, key, price, cond_price, cond_label))
+    return sorted(rts, key=lambda rt: rt.total_price)
+
+
+async def search_roundtrip(
+    client: httpx.AsyncClient, dep: str, arr: str, out_date: date, ret_date: date,
+) -> ProviderResult:
+    t0 = time.perf_counter()
+    status, snapshot, error = await _post_search(
+        client, _roundtrip_body(dep, arr, out_date, ret_date), NAVER_ROUNDTRIP_TIMEOUT,
+    )
+    if snapshot is None:
+        return ProviderResult(status, [], [], error, time.perf_counter() - t0)  # type: ignore[arg-type]
+    rts = _snapshot_to_rts(snapshot, dep, arr, out_date)
+    seconds = time.perf_counter() - t0
+    if not rts:
+        return ProviderResult("empty", [], [], None, seconds)
+    return ProviderResult("ok", [], rts, _partner_note(snapshot), seconds)
