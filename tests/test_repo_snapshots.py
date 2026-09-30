@@ -338,3 +338,50 @@ def test_recent_runs_includes_snapshot_summaries():
     assert snap_row["kind"] == "oneway"
     assert snap_row["direction"] == "out"
     assert snap_row["status"] == "ok"
+
+
+def _save_one(leg: LegQuote, rt: RtQuote):
+    trip_id = _make_trip()
+    run_id = repo.enqueue_run(trip_id, "manual")
+    repo.save_snapshot(
+        run_id=run_id,
+        trip_id=trip_id,
+        provider="naver",
+        kind="oneway",
+        direction="out",
+        date_=date(2026, 10, 1),
+        result=ProviderResult(status="ok", legs=[leg], rts=[rt], error=None, seconds=0.1),
+        observed_at=datetime(2026, 9, 30, 12, 0, tzinfo=UTC),
+    )
+    snap = repo.load_snapshots(trip_id)[0]
+    return snap.legs[0], snap.rts[0]
+
+
+def test_cond_fields_roundtrip():
+    label = "하나카드(이용실적 충족시)"
+    leg = _leg(cond_price=161_700, cond_label=label, cond_booking_url="https://x")
+    rt = RtQuote(
+        airline_iata="TW",
+        out_flight_key="TW123-2026-10-01",
+        total_price=310_000,
+        cond_total_price=299_000,
+        cond_label=label,
+    )
+    got_leg, got_rt = _save_one(leg, rt)
+
+    assert got_leg.cond_price == 161_700
+    assert got_leg.cond_label == label
+    assert got_leg.cond_booking_url == "https://x"
+    assert got_rt.cond_total_price == 299_000
+    assert got_rt.cond_label == label
+
+
+def test_cond_fields_default_none():
+    rt = RtQuote(airline_iata="TW", out_flight_key="TW123-2026-10-01", total_price=300_000)
+    got_leg, got_rt = _save_one(_leg(), rt)
+
+    assert got_leg.cond_price is None
+    assert got_leg.cond_label is None
+    assert got_leg.cond_booking_url is None
+    assert got_rt.cond_total_price is None
+    assert got_rt.cond_label is None

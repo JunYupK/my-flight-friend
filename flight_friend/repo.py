@@ -234,6 +234,9 @@ def _row_to_leg(row: RealDictRow) -> LegQuote:
         price=row["price"],
         booking_url=row["booking_url"],
         search_url=row["search_url"],
+        cond_price=row["cond_price"],
+        cond_label=row["cond_label"],
+        cond_booking_url=row["cond_booking_url"],
     )
 
 
@@ -242,6 +245,8 @@ def _row_to_rt(row: RealDictRow) -> RtQuote:
         airline_iata=row["airline_iata"],
         out_flight_key=row["out_flight_key"],
         total_price=row["total_price"],
+        cond_total_price=row["cond_total_price"],
+        cond_label=row["cond_label"],
     )
 
 
@@ -287,7 +292,8 @@ def save_snapshot(
                 INSERT INTO leg_quotes
                     (snapshot_id, flight_key, airline_iata, airline_name, flight_numbers,
                      dep_airport, arr_airport, dep_time, arr_time, duration_min, stops,
-                     price, booking_url, search_url)
+                     price, booking_url, search_url,
+                     cond_price, cond_label, cond_booking_url)
                 VALUES %s
                 """,
                 [
@@ -306,6 +312,9 @@ def save_snapshot(
                         leg.price,
                         leg.booking_url,
                         leg.search_url,
+                        leg.cond_price,
+                        leg.cond_label,
+                        leg.cond_booking_url,
                     )
                     for leg in result.legs
                 ],
@@ -315,11 +324,20 @@ def save_snapshot(
             execute_values(
                 cur,
                 """
-                INSERT INTO rt_quotes (snapshot_id, airline_iata, out_flight_key, total_price)
+                INSERT INTO rt_quotes
+                    (snapshot_id, airline_iata, out_flight_key, total_price,
+                     cond_total_price, cond_label)
                 VALUES %s
                 """,
                 [
-                    (snapshot_id, rt.airline_iata, rt.out_flight_key, rt.total_price)
+                    (
+                        snapshot_id,
+                        rt.airline_iata,
+                        rt.out_flight_key,
+                        rt.total_price,
+                        rt.cond_total_price,
+                        rt.cond_label,
+                    )
                     for rt in result.rts
                 ],
             )
@@ -391,7 +409,7 @@ def load_snapshots(trip_id: int, since: datetime | None = None) -> list[Snapshot
         return snapshots
 
 
-def record_alert(trip_id: int | None, kind: Literal["new_low", "target", "ops"], price: int | None) -> None:
+def record_alert(trip_id: int | None, kind: str, price: int | None) -> None:
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute(

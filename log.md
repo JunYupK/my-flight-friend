@@ -302,3 +302,9 @@
 - 다음 작업자에게: 사용자 설계 검토 후 writing-plans로 M2 구현 계획. 첫 task는 OCI 확인 게이트.
 - M2 구현 계획 작성: 9 tasks (1 OCI 게이트 → 2 cond 칸 → 3·4 Naver 편도·왕복 → 5 병합 → 6 왕복 참고가·API → 7 worker·ops → 8 화면 → 9 마무리). 테스트 fixture `tests/fixtures/naver_oneway_icn_fuk.sse`(부분·최종 2줄, 매핑 8: 코드셰어 1·경유+sameFare 1 포함), `naver_roundtrip_icn_fuk.sse`(조합 6: 코드셰어 1)는 spike 실응답을 잘라 만듦 — 계획의 기대값이 이 파일 기준.
 
+
+## 2026-09-30 — Claude Code — M2 Task 2: 조건부 가격 칸
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` / `feat(m2): conditional price columns on quotes`
+- 한 일: `LegQuote.cond_price/cond_label/cond_booking_url`, `RtQuote.cond_total_price/cond_label`(기본 None) 추가, `init_schema`에 `ADD COLUMN IF NOT EXISTS` 5개, `save_snapshot`/`_row_to_leg`/`_row_to_rt` 매핑, `record_alert` kind 타입 `str`로 확대. 아직 아무도 쓰지 않아 M1 동작 불변.
+- 검증: `pytest tests/ -q` 150 passed, `python -m ruff check .` 통과.
+- 다음 작업자에게: Task 3(Naver 편도 provider)에서 cond_* 채우기.
