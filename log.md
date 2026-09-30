@@ -413,3 +413,12 @@
 - 검증(코드만): `npm run build`, ruff, pytest 201 passed. `아직 확인 전`/`첫 확인 중…` 문구, `지금이 최저` 배지, CondPriceTag 긴 라벨 말줄임은 시드에 해당 상태가 없어 렌더 미확인(Task 7–8에서 실제 라벨로 확인).
 - 다음 작업자에게: 390px에서 상단 바 `Flight Friend`가 두 줄로 접힘(AppShell, Task 4 소관). 상세·새 Trip 페이지는 아직 기존 스타일.
 - (Task 5 fix round 1) 카드·스켈레톤 `rounded-2xl`, 추이 차트 카드 폭 전체·h-16(Sparkline에 `className` 옵션), 정렬(추적 중 먼저 → 미추적, 각 출발일순; 보관은 접힘), best_combo 없으면 `가격 확인 중`/`아직 확인 전` 텍스트, AppShell 제목 `whitespace-nowrap` + 390px에서 액션 아이콘만 표시, 문구 `새 Trip` 통일. 검증(브라우저): `ui_snap.py /` 라이트·다크 exit 0, OVERFLOW 출력 없음(390 포함), 스크린샷 확인. 검증(코드만): build, pytest 201, ruff.
+
+## 2026-09-30 — Claude Code — FE 대개편 Task 6: 새 Trip과 공용 조건 입력
+
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7`, `feat(fe): new trip with range calendar, destination search, time sliders`
+- 한 일: `components/inputs/{DateRangePicker,DestinationCombobox,TimeWindowSlider,AirlineChips}.tsx`, `components/trip/ConditionFields.tsx`(순수 props, Task 8 시트 재사용), `pages/NewTrip.tsx` 재작성(spec §5 순서, 640px 카드, 추적 Switch 기본 on, 만들기 → `/trips/{id}` + 토스트), `utils.ts`에 `minutesToHHMM/hhmmToMinutes/windowToSlider/sliderToWindow`(0–1440 ↔ null, 끝 1440 ↔ "23:59"). 추적 off로 만들면 생성 후 `patchTrip({tracking:false})`(POST에 tracking 필드 없음). 서버 422는 날짜 옆 문구로.
+- 검증(브라우저): 시드 후 `ui_snap.py /trips/new` 1200/390 라이트·다크 확인, 390 콤보박스 목록("후쿠" → 후쿠오카 FUK)·캘린더 열림 스크린샷. Playwright: FUK 검색 선택 → 10.20·10.24 클릭(요약 `10.20(화) – 10.24(토) · 4박 5일`) → 가는 편 슬라이더 06:00–12:00 → 만들기 → `/trips/5`, `GET /api/trips/5`의 `prefs.out_dep_window == ["06:00","12:00"]`, `in_dep_window == null` 확인 후 Trip 5 삭제(DB).
+- 검증(코드만): `npm run build`, ruff, pytest 201 passed. `직접 입력`(표에 없는 3글자 코드), AirlineChips, 상세 조건 Collapsible 펼침, 422 필드 문구, 추적 off 경로, 슬라이더 끝 1440 → "23:59"는 화면에서 확인하지 않음.
+- 결정 / 발견: React 18에서 shadcn `Button`이 ref를 전달하지 않아 `PopoverTrigger asChild`(앵커 미설정)로 팝오버가 화면 밖(`translate(0,-200%)`)에 고정됨 → `ui/button.tsx`를 `forwardRef`로 수정. 번들 587→910kB(경고만).
+- 다음 작업자에게: 다른 shadcn ui 컴포넌트를 `asChild` 트리거에 쓸 때도 React 18 ref 전달 확인. Trip 상세 시트(Task 8)는 `ConditionFields`를 그대로 사용.

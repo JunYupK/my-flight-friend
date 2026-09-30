@@ -79,3 +79,23 @@ export const WINDOW_ORDER_MESSAGE = "시간대의 시작이 끝보다 늦을 수
 export function isInvertedWindow(from: string, to: string): boolean {
   return from !== "" && to !== "" && from > to;
 }
+
+export function minutesToHHMM(m: number): string {
+  return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+}
+
+export function hhmmToMinutes(s: string): number {
+  return hhmmToMin(s);
+}
+
+/** 백엔드 시간대(["HH:MM","HH:MM"] | null) → 슬라이더 분 값. null·"23:59"는 전체/끝(1440). */
+export function windowToSlider(v: [string, string] | null): [number, number] {
+  if (!v) return [0, 1440];
+  return [hhmmToMinutes(v[0]), v[1] === "23:59" ? 1440 : hhmmToMinutes(v[1])];
+}
+
+/** 슬라이더 분 값 → 백엔드 시간대. [0,1440]은 제한 없음(null), 끝 1440은 "23:59". */
+export function sliderToWindow([a, b]: [number, number]): [string, string] | null {
+  if (a === 0 && b === 1440) return null;
+  return [minutesToHHMM(a), b === 1440 ? "23:59" : minutesToHHMM(b)];
+}
