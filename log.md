@@ -404,3 +404,11 @@
 - 검증(브라우저): 시드 후 `ui_snap.py`로 `/ /trips/1 /trips/new /admin` 1200/390 라이트·다크 캡처 — 새 상단 바(제목, 새 여행, 관리, 테마 토글)와 다크 전환, 기존 페이지 동작 확인(홈 390, 상세 1200 다크, 관리 1200 열람).
 - 검증(코드만): `npm run build` 통과, ruff 통과, pytest 201 passed. 신규 공용 컴포넌트(ProviderPriceRow 등)는 아직 어느 화면에서도 쓰이지 않아 렌더 미확인. `--reset` 원격 호스트 거부는 명령으로 확인.
 - 다음 작업자에게: 공용 컴포넌트는 Task 5 이후 화면에서 사용. 기존 페이지는 아직 apple-* 스타일.
+
+## 2026-09-30 — Claude Code — FE 대개편 Task 5: 메인 대시보드
+
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7`, `feat(fe): dashboard home with trip cards and refresh-all`
+- 한 일: `pages/Dashboard.tsx`(자체 AppShell + `새 Trip`·`전체 다시 확인`, 3초 폴링, 지난 여행 Collapsible, Skeleton/Empty/Error), `components/dashboard/DashboardTripCard.tsx`(spec §4.2 1–7), `data/airports.ts`(`AIRPORTS`, `cityName`), `types.ts`/`api.ts`(`refreshAll`), `TripList.tsx` 삭제, App은 `/`만 Dashboard, 나머지 라우트는 로컬 Shell로 기존 유지. 다른 제공자 비교 줄은 `GF보다 N원 쌈`/`Naver보다`(짧은 라벨), CondPriceTag는 label=null(목록 API에 cond 라벨 없음).
+- 검증(브라우저): 시드 4종 + `ui_snap.py /` 1200/390 라이트·다크 — 카드 a(7개 영역, `GF보다 4,000원 쌈`, 목표 달성), b(`GF보다` 줄 없음), c(`확인 중…` 스피너 — 시드에 열린 run 있음), 보관 d는 접힌 `지난 여행 (1)` 안, 가로 스크롤 없음. `전체 다시 확인` 클릭 시 토스트 `2개 확인 요청 · 1개 진행 중` 확인.
+- 검증(코드만): `npm run build`, ruff, pytest 201 passed. `아직 확인 전`/`첫 확인 중…` 문구, `지금이 최저` 배지, CondPriceTag 긴 라벨 말줄임은 시드에 해당 상태가 없어 렌더 미확인(Task 7–8에서 실제 라벨로 확인).
+- 다음 작업자에게: 390px에서 상단 바 `Flight Friend`가 두 줄로 접힘(AppShell, Task 4 소관). 상세·새 Trip 페이지는 아직 기존 스타일.

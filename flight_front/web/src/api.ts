@@ -2,6 +2,7 @@ import type {
   AdminRun,
   DayPoint,
   ProviderDay,
+  RefreshResult,
   RunStatus,
   StartRunResult,
   TripCreateInput,
@@ -47,6 +48,10 @@ function jsonInit(method: string, body: unknown): RequestInit {
 
 export function listTrips(): Promise<TripSummary[]> {
   return request<TripSummary[]>("/api/trips");
+}
+
+export function refreshAll(): Promise<RefreshResult> {
+  return request<RefreshResult>("/api/trips/refresh", { method: "POST" });
 }
 
 export function createTrip(input: TripCreateInput): Promise<{ id: number; run_id: number }> {
