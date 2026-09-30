@@ -292,3 +292,5 @@
 - 한 일: `scripts/naver_spike.py` — 편도 검색 페이지를 열어 최종 DOM·스크린샷·naver 도메인 XHR/fetch 요청과 JSON 응답을 저장하고, V1 셀렉터 적중 수·가격 텍스트 수·차단 문구·큰 JSON 응답을 요약한다. 목적: DOM 셀렉터 재작성 vs 내부 API 중 복구 경로 결정, 편명·예약 링크 확보 가능성 확인 (스펙 §11). 일회성이라 M2 계획 후 삭제.
 - 검증: 이 세션에서는 네트워크 정책이 `flight.naver.com`을 막아(`ERR_TUNNEL_CONNECTION_FAILED`) 산출물 생성 경로까지만 확인. 실측은 OCI에서.
 - 다음 작업자에게: 사용자의 OCI 실행 결과(`summary.txt`, `requests.jsonl`)로 경로 결정 → M2 계획.
+- Naver spike 결과 (같은 날, 사용자가 세션 네트워크를 열어 줌): 내부 API `searchFlights`(SSE)를 브라우저 없이 직접 호출해 편명·시각·파트너별 요금 수신. V2 GF 파서 결과와 flight_key 40/40 일치. 예약 딥링크 없음, 조건부(카드) 요금과 코드셰어 중복 존재, 도착 시각 1분 흔들림 1건. 상세는 스펙 §13.1. `scripts/naver_spike.py`를 직접 API 프로브로 교체 (OCI 한국 IP 확인용). 세션 Chromium이 에이전트 프록시 CA를 신뢰하도록 NSS DB(`~/.pki/nssdb`)에 `/root/.ccr/agent-proxy-ca.crt` 등록함 — 새 컨테이너에서는 다시 필요.
+- 다음 작업자에게: M2 설계 결정 필요 — (1) 표시 가격 기준 A01 vs 조건부 포함, (2) 코드셰어 처리, (3) 시각 흔들림 대응, (4) OCI에서 API 동작 확인.
