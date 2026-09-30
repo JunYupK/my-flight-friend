@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ChevronDown, Plane, Plus, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
@@ -35,13 +35,21 @@ export default function Dashboard() {
   const [error, setError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
 
+  // 폴링과 전체 새로고침의 load()가 순서 없이 끝날 수 있으므로, 이미 반영된 요청보다 오래된 응답은 버린다
+  const seq = useRef(0);
+  const applied = useRef(0);
   const load = useCallback(() => {
+    const mine = ++seq.current;
     return listTrips()
       .then((t) => {
+        if (mine < applied.current) return;
+        applied.current = mine;
         setTrips(t);
         setError("");
       })
-      .catch((e: Error) => setError(e.message));
+      .catch((e: Error) => {
+        if (mine >= applied.current) setError(e.message);
+      });
   }, []);
 
   useEffect(() => {

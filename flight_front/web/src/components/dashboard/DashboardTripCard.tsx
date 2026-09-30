@@ -7,10 +7,10 @@ import Money from "@/components/common/Money";
 import ProviderBadge from "@/components/common/ProviderBadge";
 import Sparkline from "@/components/common/Sparkline";
 import { cityName } from "@/data/airports";
-import { providerLabel } from "@/lib/providers";
+import { providerLabel, STATUS_REASON } from "@/lib/providers";
 import { cn } from "@/lib/utils";
 import type { LegSummary, TripSummary } from "@/types";
-import { dday, formatDate, formatWon, shortMd, timeAgo } from "@/utils";
+import { dday, formatDate, formatWon, nextAutoLabel, shortMd, timeAgo } from "@/utils";
 
 const DAY_MS = 86_400_000;
 
@@ -21,12 +21,6 @@ function shortLabel(id: string): string {
 function nightsOf(out: string, ret: string): number {
   const t = (d: string) => Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10));
   return Math.round((t(ret) - t(out)) / DAY_MS);
-}
-
-/** ISO 시각 → 브라우저 로컬 "HH:MM" */
-function hhmm(iso: string): string {
-  const d = new Date(iso);
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
 function LegLine({ label, leg }: { label: string; leg: LegSummary }) {
@@ -63,10 +57,16 @@ export default function DashboardTripCard({ trip }: { trip: TripSummary }) {
   const cur = trip.current;
   const running = trip.open_run_id != null;
 
+  // 확인한 적은 있지만 신선한 가격이 없음(모두 freshness window 밖) → best_combo null
+  const checkedBefore = trip.series.length > 0 || Object.keys(trip.provider_status).length > 0;
+  const lastChecked = trip.current_observed_at ?? trip.last_checked_at;
   let footer: string;
-  if (trip.current_observed_at) footer = `${timeAgo(trip.current_observed_at)} 확인`;
+  if (lastChecked) footer = `${timeAgo(lastChecked)} 확인`;
   else footer = running ? "첫 확인 중…" : "아직 확인 전";
-  if (trip.next_auto_at && trip.tracking && !trip.archived) footer += ` · 다음 자동 ${hhmm(trip.next_auto_at)}`;
+  if (trip.next_auto_at && trip.tracking && !trip.archived) footer += ` · 다음 자동 ${nextAutoLabel(trip.next_auto_at)}`;
+  const failed = Object.entries(trip.provider_status)
+    .filter(([, st]) => st !== "ok")
+    .map(([p, st]) => `${shortLabel(p)} ${STATUS_REASON[st] ?? st}`);
 
   return (
     <Link
@@ -115,7 +115,9 @@ export default function DashboardTripCard({ trip }: { trip: TripSummary }) {
               )}
             </>
           ) : (
-            <div className="text-sm text-muted-foreground">{running ? "가격 확인 중" : "아직 확인 전"}</div>
+            <div className="text-sm text-muted-foreground">
+              {running ? "가격 확인 중" : checkedBefore ? "최신 가격 없음 · 다시 확인 필요" : "아직 확인 전"}
+            </div>
           )}
         </div>
 
@@ -179,7 +181,7 @@ export default function DashboardTripCard({ trip }: { trip: TripSummary }) {
             {Object.entries(trip.provider_status).map(([p, st]) => (
               <span
                 key={p}
-                title={`${providerLabel(p)} ${st === "ok" ? "정상" : st}`}
+                title={`${providerLabel(p)} ${st === "ok" ? "정상" : (STATUS_REASON[st] ?? st)}`}
                 className="inline-flex items-center gap-0.5"
               >
                 <ProviderBadge provider={p} />
@@ -192,6 +194,11 @@ export default function DashboardTripCard({ trip }: { trip: TripSummary }) {
             ))}
           </span>
         </div>
+        {failed.length > 0 && (
+          <div className="-mt-2 truncate text-right text-[11px] text-destructive" title={failed.join(" · ")}>
+            {failed.join(" · ")}
+          </div>
+        )}
       </div>
     </Link>
   );

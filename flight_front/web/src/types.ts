@@ -31,6 +31,7 @@ export interface TripSummary {
   next_auto_at: string | null;
   provider_status: Record<string, string>;
   open_run_id: number | null;
+  last_checked_at: string | null;
 }
 
 export interface LegSummary {

@@ -36,6 +36,9 @@ function prefsSummary(p: Preferences): string {
   return parts.length > 0 ? parts.join(" · ") : "조건 없음";
 }
 
+/** 다른 컴포넌트(BestComboHero 빈 상태)가 props 변경 없이 시트를 열 때 쓰는 window 이벤트. */
+export const OPEN_CONDITION_SHEET = "ff:open-condition-sheet";
+
 interface Props {
   view: TripView;
   onSaved: (view: TripView) => void;
@@ -66,6 +69,17 @@ export default function ConditionSheet({ view, onSaved }: Props) {
     }
     setOpen(v);
   }
+
+  const prefs = view.trip.prefs;
+  useEffect(() => {
+    const onOpen = () => {
+      setDraft(prefs);
+      setError("");
+      setOpen(true);
+    };
+    window.addEventListener(OPEN_CONDITION_SHEET, onOpen);
+    return () => window.removeEventListener(OPEN_CONDITION_SHEET, onOpen);
+  }, [prefs]);
 
   function save() {
     const mine = ++seq.current;

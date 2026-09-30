@@ -5,7 +5,7 @@ import ProviderBadge from "@/components/common/ProviderBadge";
 import { cityName } from "@/data/airports";
 import { STATUS_REASON } from "@/lib/providers";
 import type { TripView } from "@/types";
-import { dday, timeAgo } from "@/utils";
+import { dday, nextAutoLabel, timeAgo } from "@/utils";
 
 const DAY_MS = 86_400_000;
 
@@ -16,12 +16,6 @@ function nightsOf(out: string, ret: string): number {
 
 function md(d: string): string {
   return `${d.slice(5, 7)}.${d.slice(8, 10)}`;
-}
-
-/** ISO 시각 → 브라우저 로컬 "HH:MM" */
-function hhmm(iso: string): string {
-  const d = new Date(iso);
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
 interface Props {
@@ -62,7 +56,7 @@ export default function TripHeader({ view, onRun, running, cooldownSeconds, onOp
             {showNext && (
               <>
                 <span className="text-muted-foreground">·</span>
-                <span className="text-muted-foreground">다음 자동 {hhmm(trip.next_auto_at as string)}</span>
+                <span className="text-muted-foreground">다음 자동 {nextAutoLabel(trip.next_auto_at as string)}</span>
               </>
             )}
             {providers.map((p) => (

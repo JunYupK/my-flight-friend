@@ -303,7 +303,7 @@ def test_trip_list_items() -> None:
         "id", "destination", "out_date", "ret_date", "days_to_departure", "tracking", "current",
         "current_observed_at", "change_vs_start_pct", "archived",
         "best_combo", "provider_totals", "series", "low", "low_day", "is_low_now", "target_price",
-        "next_auto_at", "provider_status", "open_run_id",
+        "next_auto_at", "provider_status", "open_run_id", "last_checked_at",
     }
     assert item["current"] == 170000 and item["current_observed_at"] is not None
     assert item["change_vs_start_pct"] is None and item["archived"] is False
@@ -318,6 +318,17 @@ def test_list_item_new_trip_nulls() -> None:
     assert item["is_low_now"] is False and item["low"] is None and item["low_day"] is None
     assert item["target_price"] is None and item["open_run_id"] is None
     assert isinstance(item["next_auto_at"], str)
+
+
+def test_list_item_last_checked_at() -> None:
+    trip_id = make_trip()
+    item = next(i for i in client.get("/api/trips").json() if i["id"] == trip_id)
+    assert item["last_checked_at"] is None
+    old = datetime.now(UTC) - timedelta(days=3)
+    add_run(trip_id, [quote("A", 80000)], [quote("C", 90000)], old)
+    item = next(i for i in client.get("/api/trips").json() if i["id"] == trip_id)
+    assert item["best_combo"] is None and item["current_observed_at"] is None
+    assert datetime.fromisoformat(item["last_checked_at"]) == old
 
 
 def test_list_item_best_combo_and_provider_totals() -> None:

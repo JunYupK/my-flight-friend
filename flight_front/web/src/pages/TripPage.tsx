@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { Hourglass } from "lucide-react";
 import { toast } from "sonner";
 import { getHistory, getRun, getTrip, startRun } from "../api";
 import type { DayPoint, RunStatus, TripView } from "../types";
 import EmptyState from "@/components/common/EmptyState";
+import { StaleWindowContext } from "@/components/common/StaleWindowContext";
 import ErrorState from "@/components/common/ErrorState";
 import { Skeleton } from "@/components/ui/skeleton";
 import BestComboHero from "../components/trip/BestComboHero";
@@ -42,6 +43,15 @@ export default function TripPage() {
   const [points, setPoints] = useState<DayPoint[]>([]);
   const [selOut, setSelOut] = useState<string | null>(null);
   const [selIn, setSelIn] = useState<string | null>(null);
+  // TripView를 세팅하는 모든 경로(로드·run 완료 재조회·시트 저장)가 번호를 받고, 이미 반영된 번호보다 오래된 응답은 버린다
+  const viewSeq = useRef(0);
+  const appliedSeq = useRef(0);
+  const setTripIfLatest = useCallback((mine: number, v: TripView) => {
+    if (mine < appliedSeq.current) return false;
+    appliedSeq.current = mine;
+    setTrip(v);
+    return true;
+  }, []);
 
   // 선택 유지: TripView가 교체돼도 각 쪽의 키가 남아 있고 가격이 있으면 유지, 사라진 쪽만 첫 후보로 대체
   useEffect(() => {
@@ -73,10 +83,10 @@ export default function TripPage() {
     setPoints([]);
     setSelOut(null);
     setSelIn(null);
+    const mine = ++viewSeq.current;
     getTrip(id)
       .then((v) => {
-        if (cancelled) return;
-        setTrip(v);
+        if (cancelled || !setTripIfLatest(mine, v)) return;
         if (v.run && (v.run.status === "queued" || v.run.status === "running")) setRunId(v.run.id);
       })
       .catch((e: unknown) => {
@@ -88,7 +98,7 @@ export default function TripPage() {
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [id, setTripIfLatest]);
 
   // 폴링
   useEffect(() => {
@@ -101,9 +111,10 @@ export default function TripPage() {
         if (cancelled) return;
         setRun(r);
         if (r.status === "done" || r.status === "error") {
+          const mine = ++viewSeq.current;
           const v = await getTrip(id);
           if (cancelled) return;
-          setTrip(v);
+          setTripIfLatest(mine, v);
           setRunId(null);
           setRun(null);
           return;
@@ -119,7 +130,7 @@ export default function TripPage() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [runId, id]);
+  }, [runId, id, setTripIfLatest]);
 
   // 가격 추이: 조건·현재가·run 상태가 바뀌면 다시 불러온다 (Hero의 동시 요청과는 api에서 합쳐짐)
   const historyKey = trip
@@ -192,8 +203,9 @@ export default function TripPage() {
     setSelIn(inKey);
   };
   const jumpTo = (dir: "out" | "in", key: string) => setJump((j) => ({ dir, key, n: (j?.n ?? 0) + 1 }));
+  // 시트 저장 결과는 응답 시점에 번호를 받는다 → 저장 전에 보낸 getTrip이 늦게 와도 새 prefs를 덮지 못한다
   const applyView = (v: TripView) => {
-    if (v.trip.id === id) setTrip(v);
+    if (v.trip.id === id) setTripIfLatest(++viewSeq.current, v);
   };
   const noLegs = trip.legs.out.length === 0 && trip.legs.in.length === 0;
   const providerIds = Array.from(
@@ -203,55 +215,57 @@ export default function TripPage() {
   const chart = <PriceHistoryChart points={points} target={trip.trip.target_price} />;
 
   return (
-    <div className="space-y-5">
-      <TripHeader
-        view={trip}
-        onRun={onCheck}
-        running={running || starting}
-        cooldownSeconds={cooldown > 0 ? cooldown : null}
-        onOpenSettings={() => setSettingsOpen(true)}
-      />
-      {running && <RunProgress snapshots={run?.snapshots ?? []} providers={providerIds} />}
-      {noLegs ? (
-        <>
-          {!running && (
-            <EmptyState
-              icon={Hourglass}
-              title={trip.providers.length > 0 ? "확인에 실패했어요" : "아직 확인 전이에요"}
-              description={
-                trip.providers.length > 0 ? "다시 확인해 주세요." : "‘지금 확인’을 누르면 가격을 가져와요."
-              }
-            />
-          )}
-          {points.some((p) => p.combo != null) && chart}
-        </>
-      ) : (
-        <>
-          <BestComboHero view={trip} onSelect={pick} onJump={jumpTo} />
-          <CandidateChips candidates={trip.candidates} legs={trip.legs} onSelect={pick} />
-          <NearMissLine nearMiss={trip.near_miss} legs={trip.legs} onJump={jumpTo} />
-          <div className="grid gap-5 lg:grid-cols-[1fr_360px] lg:items-start">
-            <div className="min-w-0 space-y-4">
-              <ConditionSheet view={trip} onSaved={applyView} />
-              <LegTabs
-                view={trip}
-                selected={{ out: selOut ?? undefined, in: selIn ?? undefined }}
-                highlighted={jump?.key ?? null}
-                onSelect={(dir, key) => (dir === "out" ? setSelOut(key) : setSelIn(key))}
+    <StaleWindowContext.Provider value={trip.window_minutes}>
+      <div className="space-y-5">
+        <TripHeader
+          view={trip}
+          onRun={onCheck}
+          running={running || starting}
+          cooldownSeconds={cooldown > 0 ? cooldown : null}
+          onOpenSettings={() => setSettingsOpen(true)}
+        />
+        {running && <RunProgress snapshots={run?.snapshots ?? []} providers={providerIds} />}
+        {noLegs ? (
+          <>
+            {!running && (
+              <EmptyState
+                icon={Hourglass}
+                title={trip.providers.length > 0 ? "확인에 실패했어요" : "아직 확인 전이에요"}
+                description={
+                  trip.providers.length > 0 ? "다시 확인해 주세요." : "‘지금 확인’을 누르면 가격을 가져와요."
+                }
               />
-              {chart}
+            )}
+            {points.some((p) => p.combo != null) && chart}
+          </>
+        ) : (
+          <>
+            <BestComboHero view={trip} onSelect={pick} onJump={jumpTo} />
+            <CandidateChips candidates={trip.candidates} legs={trip.legs} onSelect={pick} />
+            <NearMissLine nearMiss={trip.near_miss} legs={trip.legs} onJump={jumpTo} />
+            <div className="grid gap-5 lg:grid-cols-[1fr_360px] lg:items-start">
+              <div className="min-w-0 space-y-4">
+                <ConditionSheet view={trip} onSaved={applyView} />
+                <LegTabs
+                  view={trip}
+                  selected={{ out: selOut ?? undefined, in: selIn ?? undefined }}
+                  highlighted={jump?.key ?? null}
+                  onSelect={(dir, key) => (dir === "out" ? setSelOut(key) : setSelIn(key))}
+                />
+                {chart}
+              </div>
+              <SelectionPanel
+                out={selOutLeg}
+                inn={selInLeg}
+                outDate={trip.trip.out_date}
+                retDate={trip.trip.ret_date}
+                rtReference={trip.rt_reference}
+              />
             </div>
-            <SelectionPanel
-              out={selOutLeg}
-              inn={selInLeg}
-              outDate={trip.trip.out_date}
-              retDate={trip.trip.ret_date}
-              rtReference={trip.rt_reference}
-            />
-          </div>
-        </>
-      )}
-      <TripSettingsSheet view={trip} open={settingsOpen} onOpenChange={setSettingsOpen} onSaved={applyView} />
-    </div>
+          </>
+        )}
+        <TripSettingsSheet view={trip} open={settingsOpen} onOpenChange={setSettingsOpen} onSaved={applyView} />
+      </div>
+    </StaleWindowContext.Provider>
   );
 }

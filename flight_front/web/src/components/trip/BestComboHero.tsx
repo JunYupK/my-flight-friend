@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ArrowDown, ExternalLink, SearchX } from "lucide-react";
+import { ArrowDown, Clock, ExternalLink, SearchX, SlidersHorizontal } from "lucide-react";
 import { getHistory } from "@/api";
 import CondPriceTag from "@/components/common/CondPriceTag";
 import EmptyState from "@/components/common/EmptyState";
@@ -8,6 +8,7 @@ import ProviderBadge from "@/components/common/ProviderBadge";
 import Sparkline from "@/components/common/Sparkline";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { OPEN_CONDITION_SHEET } from "./ConditionSheet";
 import type { DayPoint, MergedLegView, Stats, TripView } from "@/types";
 import { shortMd } from "@/utils";
 
@@ -142,9 +143,24 @@ export default function BestComboHero({ view, onSelect, onJump }: Props) {
   const inn = best ? view.legs.in.find((l) => l.flight_key === best.in_flight_key) : undefined;
 
   if (!best || !out || !inn) {
+    // 확인은 했지만 모든 가격이 신선도 기준을 넘김 → 조건 문제가 아니라 새로 가져와야 함
+    const noFresh = [...view.legs.out, ...view.legs.in].every((l) => l.best_price == null);
     return (
       <section className="rounded-2xl border bg-card text-card-foreground shadow-sm">
-        <EmptyState icon={SearchX} title="조건에 맞는 조합이 없어요" />
+        {noFresh ? (
+          <EmptyState icon={Clock} title="최신 가격이 없어요" description="지금 확인을 눌러 가격을 새로 가져오세요" />
+        ) : (
+          <EmptyState
+            icon={SearchX}
+            title="조건에 맞는 조합이 없어요"
+            action={
+              <Button variant="outline" size="sm" onClick={() => window.dispatchEvent(new Event(OPEN_CONDITION_SHEET))}>
+                <SlidersHorizontal />
+                조건 시트 열기
+              </Button>
+            }
+          />
+        )}
       </section>
     );
   }

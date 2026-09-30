@@ -322,6 +322,7 @@ def trip_list_item(trip: Trip, now: datetime) -> JsonDict:
         "next_auto_at": _next_auto_at(trip, now),
         "provider_status": _provider_status(snaps),
         "open_run_id": run.id if run is not None and run.status in ("queued", "running") else None,
+        "last_checked_at": _iso(max(s.observed_at for s in snaps) if snaps else None),
     }
 
 

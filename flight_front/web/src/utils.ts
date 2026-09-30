@@ -24,6 +24,16 @@ export function timeAgo(iso: string): string {
   return `${Math.floor(h / 24)}일 전`;
 }
 
+/** 다음 자동 확인 시각 → "HH:MM" (지났으면 "곧", 오늘 이후 날짜면 "내일 HH:MM"). 브라우저 로컬 시각 기준. */
+export function nextAutoLabel(iso: string, now: Date = new Date()): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "-";
+  if (d.getTime() <= now.getTime()) return "곧";
+  const hm = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  const day = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  return day(d) > day(now) ? `내일 ${hm}` : hm;
+}
+
 /** 12345 → "12,345원" */
 export function formatWon(n: number): string {
   return `${n.toLocaleString("ko-KR")}원`;
