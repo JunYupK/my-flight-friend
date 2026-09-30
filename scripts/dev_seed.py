@@ -13,6 +13,7 @@ import os
 import random
 import sys
 from datetime import UTC, datetime, timedelta
+from urllib.parse import urlparse
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -154,6 +155,11 @@ def main() -> None:
     args = ap.parse_args()
     if not os.environ.get("DATABASE_URL"):
         sys.exit("DATABASE_URL 이 필요합니다")
+    if args.reset:
+        host = urlparse(os.environ["DATABASE_URL"]).hostname
+        if host not in ("localhost", "127.0.0.1"):
+            print(f"--reset 은 로컬 DB(localhost/127.0.0.1)에서만 허용됩니다 (host={host})")
+            sys.exit(1)
     db.init_schema()
     if args.reset:
         reset()

@@ -8,8 +8,8 @@ import TrackingSummary from "../components/trip/TrackingSummary";
 import HistoryChart from "../components/trip/HistoryChart";
 import Results from "../components/trip/Results";
 import SelectionBar from "../components/trip/SelectionBar";
-import { marksFromRun, marksFromStatuses, providerLabel } from "../components/trip/providers";
-import type { ProviderMark } from "../components/trip/providers";
+import { marksFromRun, marksFromStatuses, providerLabel } from "@/lib/providers";
+import type { ProviderMark } from "@/lib/providers";
 
 const POLL_MS = 2500;
 

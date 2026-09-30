@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { getAdminProviders, getAdminRuns } from "../api";
-import { providerLabel, STATUS_REASON } from "../components/trip/providers";
+import { providerLabel, STATUS_REASON } from "@/lib/providers";
 import type { AdminRun, ProviderDay, RunSnapshotStatus } from "../types";
 import { timeAgo } from "../utils";
 

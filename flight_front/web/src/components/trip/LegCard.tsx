@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { MergedLegView } from "../../types";
 import { formatWon, timeAgo } from "../../utils";
-import { providerLabel } from "./providers";
+import { providerLabel } from "@/lib/providers";
 
 interface Props {
   leg: MergedLegView;

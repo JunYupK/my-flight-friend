@@ -1,7 +1,7 @@
 import type { TripView } from "../../types";
 import { dday, timeAgo } from "../../utils";
-import { providerLabel } from "./providers";
-import type { ProviderMark } from "./providers";
+import { providerLabel } from "@/lib/providers";
+import type { ProviderMark } from "@/lib/providers";
 
 interface Props {
   view: TripView;

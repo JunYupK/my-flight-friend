@@ -1,5 +1,5 @@
 import type { MergedLegView, RtReference } from "../../types";
-import { providerLabel } from "./providers";
+import { providerLabel } from "@/lib/providers";
 import { formatStay, formatWon, stayMinutes } from "../../utils";
 
 interface Props {

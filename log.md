@@ -397,3 +397,10 @@
 - 검증: 브라우저 확인 — `npm run build` 통과, uvicorn+시드 후 `/ /trips/1 /trips/new /admin` 라이트·다크 1200/390 스크린샷으로 옛 화면 유지 확인, 390px 오버플로 없음. 코드만 — Pretendard 적용(샌드박스에서 CDN 미로드, 화면은 Roboto 폴백), sonner 테마 연동. pytest 201 passed, ruff 통과.
 - 결정 / 발견: `sonner.tsx`는 next-themes `useTheme`를 쓰지만 Provider가 없어 항상 "system" — Toaster 사용 시 `.dark` 클래스 기준으로 고쳐야 함. `TooltipProvider`는 앱 루트에 감싸야 함. 번들 587kB(경고만).
 - 다음 작업자에게: 개발 DB는 `python scripts/dev_seed.py --reset`로 재시드(a/b/c/d = trip 1~4). 스크린샷은 `.superpowers/`(gitignore).
+
+## 2026-09-30 — Claude Code — FE 대개편 Task 4: 공용 컴포넌트와 앱 골격
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7`, `feat(fe): shared provider/price components and app shell`
+- 한 일: `src/components/common/*`(ProviderBadge/PriceRow, CondPriceTag, StaleBadge, Money, Sparkline, EmptyState, ErrorState), `layout/AppShell`(상단 바 + TooltipProvider + Toaster), `providers.ts`→`src/lib/providers.ts`(PROVIDERS/providerMeta), ThemeToggle을 shadcn Button으로, App.tsx를 AppShell로 감쌈. Task 3 리뷰 반영: ui/*의 `cn`을 `@/lib/utils`로 통일, `cn`/`next-themes`/`autoprefixer`/`postcss` 제거, Toaster가 `.dark` 클래스 관찰, `dev_seed.py --reset`은 localhost/127.0.0.1 외 거부.
+- 검증(브라우저): 시드 후 `ui_snap.py`로 `/ /trips/1 /trips/new /admin` 1200/390 라이트·다크 캡처 — 새 상단 바(제목, 새 여행, 관리, 테마 토글)와 다크 전환, 기존 페이지 동작 확인(홈 390, 상세 1200 다크, 관리 1200 열람).
+- 검증(코드만): `npm run build` 통과, ruff 통과, pytest 201 passed. 신규 공용 컴포넌트(ProviderPriceRow 등)는 아직 어느 화면에서도 쓰이지 않아 렌더 미확인. `--reset` 원격 호스트 거부는 명령으로 확인.
+- 다음 작업자에게: 공용 컴포넌트는 Task 5 이후 화면에서 사용. 기존 페이지는 아직 apple-* 스타일.
