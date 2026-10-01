@@ -73,7 +73,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 ## Project: my-flight-friend
 
-ICN 출발 일본 항공권 추적 서비스(V2). 사용자가 만든 Trip(목적지·날짜·선호)마다 Google Flights·Naver 가격을 스냅샷으로 쌓아 최저 조합과 가격 추이를 보여주고, 새 최저가·목표가 도달 시 알림을 보낸다.
+ICN 출발 해외 항공권 추적 서비스(V2). 사용자가 만든 Trip(목적지·날짜·선호)마다 Google Flights·Naver 가격을 스냅샷으로 쌓아 최저 조합과 가격 추이를 보여주고, 새 최저가·목표가 도달 시 알림을 보낸다.
 
 상세 명세(레이어, 인터페이스, DB 규칙, 환경변수, 명령어 등)는 `AGENTS.md` 참고.
 

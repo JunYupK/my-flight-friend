@@ -481,3 +481,10 @@
 - 결정 / 발견: 루트 설정 파일(.dockerignore, .env.example, .gitignore, Caddyfile, Dockerfile, Dockerfile.collector(+.dockerignore), docker-compose.yml, requirements.txt, ruff.toml)은 모두 빌드·배포·CI에서 사용 중이라 유지. AGENTS.md·CLAUDE.md는 에이전트가 루트에서 읽으므로 유지. 과거 plan/spec 속 `log.md` 경로 표기는 기록이라 고치지 않음.
 - 검증: pytest 204 passed, `ruff check .` 통과.
 - 다음 작업자에게: `docs/PORTFOLIO.md`는 V1 기준 서술 — V2 기준 갱신 필요.
+
+## 2026-10-01 — Claude Code — 공항 검색 전 세계 확장
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` / `feat(fe): worldwide airport search with korean names`
+- 한 일: `scripts/gen_airports.py` 추가 — OurAirports(퍼블릭 도메인) 정기편·IATA 공항 4,133곳 → Naver `locationDetails` GraphQL(300개씩)로 한국어 도시·공항·국가명 → 매칭 2,392곳을 `flight_front/web/src/data/airports.json`(`[코드, 도시, 공항명, 국가, 도시 영문]`, 166KB/gzip 56KB)으로 생성·커밋. `data/airports.ts`는 수동 49개 목록 대신 JSON을 읽고 `POPULAR`(기존 목록 + CXR·PQC·DPS·CNX, ICN 제외)·`findAirport`·`searchAirports`(코드 일치 → 도시 시작 → 영문 도시 시작 → 포함, 상위 50) 제공. `DestinationCombobox`는 cmdk 자체 필터를 끄고 `searchAirports` 결과만 렌더, 빈 검색어면 「인기 여행지」. 서비스 설명 "일본 항공권" → "해외 항공권"(README·AGENTS·CLAUDE).
+- 검증: 생성 스크립트 실제 실행(23초). 브라우저(1200/390): 빈 검색 인기 50개, "나트랑"·"nha"·"CXR" → 나트랑 캠란공항 CXR, "발리" → DPS, "로마"/"rome" → CIA·FCO, "zzz" → 「ZZZ 직접 입력」, 선택 후 라벨 "나트랑 (CXR)". CXR Trip 생성 → 상세 제목 "나트랑 CXR". pytest·ruff·build 통과(크기 경고 없음, 공항 데이터는 페이지 공용 청크).
+- 결정 / 발견: 나트랑의 Naver 도시 코드는 `NHA`, 실제 공항은 `CXR`(캠란) — Trip은 공항 코드로 저장. Naver가 모르는 공항(약 1,700곳, 대부분 소규모 지방 공항)은 목록에서 제외(직접 입력은 가능). 별칭(호찌민/호치민)은 두지 않고 Naver 이름 + 영문 검색으로 대체.
+- 다음 작업자에게: CXR 등 비일본 노선의 실제 GF·Naver 수집은 배포 후 확인 필요.

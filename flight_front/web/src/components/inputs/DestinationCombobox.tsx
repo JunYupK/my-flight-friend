@@ -3,7 +3,7 @@ import { Check, ChevronsUpDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { AIRPORTS, cityName } from "@/data/airports";
+import { cityName, findAirport, searchAirports } from "@/data/airports";
 import { cn } from "@/lib/utils";
 
 const IATA = /^[A-Za-z]{3}$/;
@@ -19,7 +19,8 @@ export default function DestinationCombobox({
   const [query, setQuery] = useState("");
   const raw = query.trim();
   const custom = IATA.test(raw) ? raw.toUpperCase() : null;
-  const showCustom = custom !== null && !AIRPORTS.some((a) => a.code === custom);
+  const showCustom = custom !== null && findAirport(custom) === null;
+  const results = searchAirports(raw);
 
   const pick = (code: string) => {
     onChange(code);
@@ -44,23 +45,21 @@ export default function DestinationCombobox({
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-(--radix-popover-trigger-width) p-0">
-        <Command
-          filter={(itemValue, search) => (itemValue.toLowerCase().includes(search.trim().toLowerCase()) ? 1 : 0)}
-        >
-          <CommandInput placeholder="후쿠오카, 나리타, NRT…" value={query} onValueChange={setQuery} />
+        <Command shouldFilter={false}>
+          <CommandInput placeholder="나트랑, 후쿠오카, Rome, NRT…" value={query} onValueChange={setQuery} />
           <CommandList>
-            <CommandEmpty>일치하는 공항이 없어요</CommandEmpty>
-            <CommandGroup>
-              {AIRPORTS.map((a) => (
+            {results.length === 0 && !showCustom && <CommandEmpty>일치하는 공항이 없어요</CommandEmpty>}
+            <CommandGroup heading={raw ? undefined : "인기 여행지"}>
+              {results.map((a) => (
                 <CommandItem
                   key={a.code}
-                  value={`${a.code} ${a.city} ${a.name} ${a.country}`}
+                  value={a.code}
                   onSelect={() => pick(a.code)}
                 >
                   <Check className={cn("size-4", value === a.code ? "opacity-100" : "opacity-0")} />
                   <span className="font-medium">{a.city}</span>
-                  <span className="truncate text-muted-foreground" title={a.name}>
-                    {a.name}
+                  <span className="truncate text-muted-foreground" title={`${a.name} · ${a.country}`}>
+                    {a.name} · {a.country}
                   </span>
                   <span className="ml-auto text-xs tabular-nums text-muted-foreground">{a.code}</span>
                 </CommandItem>
