@@ -67,6 +67,9 @@ types/config → db/repo → providers → domain → worker / api views → api
 | API 클라이언트 / 공유 타입 | `flight_front/web/src/api.ts` / `types.ts` |
 | 테스트 | `tests/test_<모듈>.py` (fixture 파일은 `tests/fixtures/`) |
 | 아키텍처 규칙 | `tests/test_architecture.py` |
+| 작업 로그 (task마다 항목 추가) | `docs/log.md` |
+| 보류·후속 항목 / 알려진 이슈 | `docs/TODOS.md` / `docs/ISSUES.md` |
+| 설계(spec) / 구현 계획(plan) | `docs/superpowers/specs/` / `docs/superpowers/plans/` |
 
 ---
 
