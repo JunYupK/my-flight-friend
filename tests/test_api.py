@@ -392,6 +392,7 @@ def test_unknown_ids_404() -> None:
     assert client.patch("/api/trips/999", json={"tracking": False}).status_code == 404
     assert client.post("/api/trips/999/runs").status_code == 404
     assert client.get("/api/trips/999/history").status_code == 404
+    assert client.delete("/api/trips/999").status_code == 404
     assert client.get("/api/runs/999").status_code == 404
 
 
@@ -443,3 +444,29 @@ def test_inverted_time_window_is_422() -> None:
     assert client.patch(f"/api/trips/{trip_id}", json={"prefs": {"in_dep_window": ["23:00", "01:00"]}}).status_code == 422
     equal = {"out_dep_window": ["08:00", "08:00"]}
     assert client.patch(f"/api/trips/{trip_id}", json={"prefs": equal}).status_code == 200
+
+
+def test_delete_trip_removes_trip_and_children() -> None:
+    trip_id = make_trip()
+    other_id = make_trip()
+    now = datetime.now(UTC)
+    add_run(trip_id, [quote("A", 100_000)], [quote("B", 90_000)], now)
+    add_run(other_id, [quote("A", 100_000)], [quote("B", 90_000)], now)
+    repo.record_alert(trip_id, "new_low", 190_000)
+
+    resp = client.delete(f"/api/trips/{trip_id}")
+    assert resp.status_code == 204
+    assert client.get(f"/api/trips/{trip_id}").status_code == 404
+    with db.get_conn() as conn:
+        cur = conn.cursor()
+        for table in ("search_runs", "snapshots", "alerts"):
+            cur.execute(f"SELECT count(*) FROM {table} WHERE trip_id = %s", (trip_id,))
+            assert cur.fetchone()[0] == 0, table
+        cur.execute(
+            "SELECT count(*) FROM leg_quotes q JOIN snapshots s ON s.id = q.snapshot_id WHERE s.trip_id = %s",
+            (other_id,),
+        )
+        assert cur.fetchone()[0] == 2
+        cur.execute("SELECT count(*) FROM leg_quotes WHERE snapshot_id NOT IN (SELECT id FROM snapshots)")
+        assert cur.fetchone()[0] == 0
+    assert client.get(f"/api/trips/{other_id}").status_code == 200

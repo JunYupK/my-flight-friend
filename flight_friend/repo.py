@@ -83,6 +83,12 @@ def list_trips() -> list[Trip]:
         return [_row_to_trip(row) for row in cur.fetchall()]
 
 
+def delete_trip(trip_id: int) -> None:
+    """Trip과 그 run·snapshot·견적·알림을 함께 지운다 (FK ON DELETE CASCADE)."""
+    with get_conn() as conn:
+        conn.cursor().execute("DELETE FROM trips WHERE id = %s", (trip_id,))
+
+
 def update_trip(
     trip_id: int,
     *,

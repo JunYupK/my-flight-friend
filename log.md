@@ -459,3 +459,10 @@
 - 검증(브라우저): 재시드 후 ui_snap `/ /trips/1 /trips/4 /admin` 1200/390 exit 0, OVERFLOW 없음(shots/final-fix). `/trips/4`(보관·stale) Hero `최신 가격이 없어요`. 대시보드 `지난 여행` 펼침 → (d) 카드 `최신 가격 없음 · 다시 확인 필요`, 바닥줄 `12일 전 확인`. KIX 카드에 `GF 오류` 표시(390에서 넘침 없음), `다음 자동 곧`. `/trips/4` 조건 밖 StaleBadge title `신선도 기준 2시간`(window 120분 반영). trip 1에 max_price 1000 임시 PATCH → `조건에 맞는 조합이 없어요` + `조건 시트 열기` 클릭 시 시트 열림, 이후 prefs 원복 확인.
 - 검증(코드만): TripPage/Dashboard seq 가드(경합 재현 안 함), `내일 HH:MM` 분기(시드 next_auto_at이 같은 날), Suspense fallback 표시.
 - 다음 작업자에게: pytest 202 passed, ruff OK, build OK. 시트 저장은 응답 시점에 seq를 받으므로 저장 요청 뒤·응답 전에 보낸 getTrip 결과는 버려짐(다음 재조회에서 회복).
+
+## 2026-10-01 — Claude Code — Trip 삭제 기능
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` (PR #65 머지 후 master에서 재시작) / `feat: delete trip`
+- 한 일: `DELETE /api/trips/{id}` (204, 없으면 404) + `repo.delete_trip` (FK CASCADE로 run·snapshot·견적·알림 함께 삭제). 진행 중 run의 Trip이 지워지면 worker는 스택트레이스 대신 info 한 줄(`trip N deleted during run`)로 끝낸다. FE: 설정 시트 맨 아래 「Trip 삭제」 → 확인 Dialog(「이 여행을 삭제할까요?」) → 삭제 후 `/`로 이동 + 「삭제했어요」 토스트, 실패 시 오류 토스트·다이얼로그 유지. 보관된 Trip도 삭제 가능.
+- 검증: pytest 204 passed (신규: 삭제 후 404·하위 테이블 0건·다른 Trip 보존, 없는 id 404, 실행 중 삭제 시 ERROR 로그 없음), `ruff check .` 통과, `npm run build` 통과. 브라우저(Chromium, 1200/390): 설정 시트·확인 다이얼로그 표시, 취소 시 닫힘, 삭제 후 `/` 이동·토스트, 대상 Trip API 404 — queued run이 있는 Trip(3)도 삭제됨.
+- 결정 / 발견: 완전 삭제(보관 아님), 버튼은 설정 시트에만 (사용자 결정). shadcn alert-dialog 대신 기존 `Dialog` 사용(의존성 추가 없음).
+- 다음 작업자에게: 다음은 Skyscanner 소스 — 데이터 접근 경로(웹 내부 API spike vs RapidAPI) 결정부터.

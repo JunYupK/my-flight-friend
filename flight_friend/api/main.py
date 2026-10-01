@@ -135,6 +135,12 @@ def patch_trip(trip_id: int, body: TripPatch) -> views.JsonDict:
     return views.trip_view(_require_trip(trip_id), _now())
 
 
+@app.delete("/api/trips/{trip_id}", status_code=204)
+def delete_trip(trip_id: int) -> None:
+    _require_trip(trip_id)
+    repo.delete_trip(trip_id)
+
+
 @app.post("/api/trips/{trip_id}/runs", status_code=202, response_model=None)
 def create_run(trip_id: int) -> dict[str, int] | JSONResponse:
     _require_trip(trip_id)
