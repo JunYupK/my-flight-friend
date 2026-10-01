@@ -466,3 +466,10 @@
 - 검증: pytest 204 passed (신규: 삭제 후 404·하위 테이블 0건·다른 Trip 보존, 없는 id 404, 실행 중 삭제 시 ERROR 로그 없음), `ruff check .` 통과, `npm run build` 통과. 브라우저(Chromium, 1200/390): 설정 시트·확인 다이얼로그 표시, 취소 시 닫힘, 삭제 후 `/` 이동·토스트, 대상 Trip API 404 — queued run이 있는 Trip(3)도 삭제됨.
 - 결정 / 발견: 완전 삭제(보관 아님), 버튼은 설정 시트에만 (사용자 결정). shadcn alert-dialog 대신 기존 `Dialog` 사용(의존성 추가 없음).
 - 다음 작업자에게: 다음은 Skyscanner 소스 — 데이터 접근 경로(웹 내부 API spike vs RapidAPI) 결정부터.
+
+## 2026-10-01 — Claude Code — Skyscanner spike(보류) · V1 동결 리허설
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` (PR #66 머지 후 master에서 재시작) / `docs: skyscanner on hold, v1 freeze rehearsal`
+- 한 일: Skyscanner 웹 접근 spike(throwaway, 저장소 미포함) — curl·Playwright headless/xvfb headful·홈페이지 워밍업·crawl4ai(`magic` 유무) 모두 홈페이지부터 PerimeterX 캡차. 사용자 결정으로 보류(TODOS에 근거·재개 조건). V1 동결 스크립트를 임시 DB `freeze_rehearsal`에서 리허설(V1 `d8e0422` `init_db` + V2 `init_schema` → `v1_freeze.sql` 2회).
+- 검증: 리허설 결과 public에는 V2 6개(trips, search_runs, snapshots, leg_quotes, rt_quotes, alerts)만, v1에는 V1 테이블 9개 + `v_best_observed`. 2회차도 COMMIT(멱등). `v1.flight_legs` UPDATE → 트리거가 `v1.price_events`에 1행 기록(함수 `search_path=v1`). V2 `create_trip`·`enqueue_run`·`delete_trip` 정상. 코드·compose에 V1 테이블 참조 없음(grep). 임시 DB·worktree 삭제.
+- 결정 / 발견: 캡차 풀이·가정용 프록시 우회는 하지 않는다.
+- 다음 작업자에게: 서버에서 백업 → `v1_freeze.sql` 실행은 사용자가 한다(스크립트 머리말 명령). 그 다음 README·포트폴리오 재작성.

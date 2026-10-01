@@ -1,9 +1,9 @@
 # TODOS
 
-_최종 업데이트: 2026-09-30_
+_최종 업데이트: 2026-10-01_
 
 ## 진행 순서 (사용자 결정, 2026-09-30)
-1. ~~FE 대개편~~ (완료 2026-09-30, Task 1–9) → 2. Skyscanner 소스 추가 → 3. V1 테이블 동결(`scripts/v1_freeze.sql`) → 4. README·포트폴리오 V2 기준 재작성
+1. ~~FE 대개편~~ (완료 2026-09-30, Task 1–9) → 2. ~~Skyscanner 소스 추가~~ (보류 2026-10-01, 아래) → 3. V1 테이블 동결(`scripts/v1_freeze.sql`, 서버 실행 대기) → 4. README·포트폴리오 V2 기준 재작성
 
 ## 21st.dev·Mobbin 슬롯 교체
 **What:** FE 대개편 spec §8 슬롯(`DashboardTripCard`, `Sparkline`, `PriceHistoryChart`, `DateRangePicker`, `DestinationCombobox`, `BestComboHero`, `LegCard`, `SelectionPanel`, `EmptyState`)을 사용자가 고른 21st.dev 컴포넌트/Mobbin 화면으로 하나씩 교체.
@@ -18,6 +18,11 @@ _최종 업데이트: 2026-09-30_
 
 ## V1 테이블 정리
 **What:** 서버에서 `scripts/v1_freeze.sql` 실행 (pg_dump 백업 후) → 분석이 끝나면 `v1` 스키마 DROP 여부 결정.
+**Context:** 2026-10-01 로컬 리허설 통과 — V1(`d8e0422` `init_db`) + V2 스키마를 한 DB에 만든 뒤 실행: public에 V2 6개만 남음, 2회 실행 멱등, 이동한 트리거(`v1.flight_legs` → `v1.record_price_change`)가 `v1.price_events`에 기록, `v1.v_best_observed` 조회 가능, V2 Trip 생성·run 등록·삭제 정상. 현재 코드에 V1 테이블 참조 없음.
+
+## Skyscanner 소스 (보류)
+**What:** Skyscanner를 세 번째 제공자로 추가.
+**Context:** 2026-10-01 spike — skyscanner.co.kr/.net 모두 홈페이지부터 PerimeterX 캡차("Are you a person or a robot?")로 차단. curl, Playwright headless/headful(xvfb), crawl4ai(`magic` 유무) 전부 동일 → 접속 IP(데이터센터) 단계 차단으로 판단. 캡차 풀이·가정용 프록시 우회는 하지 않기로 함. 재개 조건: OCI에서 `curl -L https://www.skyscanner.co.kr/` 결과에 captcha가 없거나, RapidAPI 비공식 API(키·월 한도 확인)로 가기로 결정할 때.
 
 ## 이후 후보 (스펙 §11)
 - 왕복 2단계 확장, 관심 항공편 고정, 다중 목적지 Trip, V1 참고 이력, 하루 요약 알림
