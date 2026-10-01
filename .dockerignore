@@ -17,9 +17,8 @@ logs
 Caddyfile
 docker-compose*.yml
 Dockerfile*
-CLAUDE.md
-ISSUES.md
-readme.md
+*.md
+docs
 tests
 .claude
 .pytest_cache

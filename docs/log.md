@@ -22,6 +22,7 @@
 - M2(Naver 제공자) 완료: PR #64 머지·배포 (2026-09-30). OCI에서 Naver 편도·왕복 스냅샷 ok 확인.
 - 다음 순서(사용자 결정): FE 대개편 → Skyscanner 소스 → V1 테이블 동결 → README. FE 설계: `docs/superpowers/specs/2026-09-30-flight-friend-fe-redesign-design.md` (승인), 계획: `docs/superpowers/plans/2026-09-30-flight-friend-fe-redesign.md` (9 tasks, 사용자 검토 대기).
 - 작업 브랜치: `claude/dazzling-shannon-4x04v7`
+- 문서 위치(2026-10-01~): 이 로그·`TODOS.md`·`ISSUES.md`·`PORTFOLIO.md`는 `docs/`, README는 루트 `README.md`.
 
 ---
 
@@ -473,3 +474,10 @@
 - 검증: 리허설 결과 public에는 V2 6개(trips, search_runs, snapshots, leg_quotes, rt_quotes, alerts)만, v1에는 V1 테이블 9개 + `v_best_observed`. 2회차도 COMMIT(멱등). `v1.flight_legs` UPDATE → 트리거가 `v1.price_events`에 1행 기록(함수 `search_path=v1`). V2 `create_trip`·`enqueue_run`·`delete_trip` 정상. 코드·compose에 V1 테이블 참조 없음(grep). 임시 DB·worktree 삭제.
 - 결정 / 발견: 캡차 풀이·가정용 프록시 우회는 하지 않는다.
 - 다음 작업자에게: 서버에서 백업 → `v1_freeze.sql` 실행은 사용자가 한다(스크립트 머리말 명령). 그 다음 README·포트폴리오 재작성.
+
+## 2026-10-01 — Claude Code — 저장소 정리 · README 재작성
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` / `docs: move docs into docs/, rewrite README for V2`
+- 한 일: 루트 문서 `log.md`·`TODOS.md`·`ISSUES.md` → `docs/`, `readme.md` → `README.md`(V2 기준 전면 재작성, 스크린샷 3장 `docs/images/`), CLAUDE.md 포트폴리오 섹션 → `docs/PORTFOLIO.md`(V1 서술 그대로, 재작성 대기). AGENTS.md §3에 문서 위치 행 추가, 두 dockerignore를 `*.md`·`docs` 제외로 교체.
+- 결정 / 발견: 루트 설정 파일(.dockerignore, .env.example, .gitignore, Caddyfile, Dockerfile, Dockerfile.collector(+.dockerignore), docker-compose.yml, requirements.txt, ruff.toml)은 모두 빌드·배포·CI에서 사용 중이라 유지. AGENTS.md·CLAUDE.md는 에이전트가 루트에서 읽으므로 유지. 과거 plan/spec 속 `log.md` 경로 표기는 기록이라 고치지 않음.
+- 검증: pytest 204 passed, `ruff check .` 통과.
+- 다음 작업자에게: `docs/PORTFOLIO.md`는 V1 기준 서술 — V2 기준 갱신 필요.
