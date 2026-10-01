@@ -66,6 +66,15 @@ export function patchTrip(id: number, patch: TripPatchInput): Promise<TripView> 
   return request<TripView>(`/api/trips/${id}`, jsonInit("PATCH", patch)).then((v) => forgetHistory(id, v));
 }
 
+/** Trip과 그 가격 이력·알림 기록을 영구 삭제한다 (204). */
+export async function deleteTrip(id: number): Promise<void> {
+  const res = await fetch(`/api/trips/${id}`, { method: "DELETE" });
+  if (!res.ok) {
+    const body: unknown = await res.json().catch(() => null);
+    throw new Error(errorMessage(body, `삭제 실패 (${res.status})`));
+  }
+}
+
 /** 202 → started, 429 → cooldown. 그 외 오류는 throw. */
 export async function startRun(id: number): Promise<StartRunResult> {
   const res = await fetch(`/api/trips/${id}/runs`, { method: "POST" });

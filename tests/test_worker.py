@@ -151,6 +151,25 @@ def test_execute_run_missing_trip_marks_error() -> None:
     assert finished is not None and finished.status == "error"
 
 
+def test_trip_deleted_during_run_closes_quietly(caplog: pytest.LogCaptureFixture) -> None:
+    trip = make_trip()
+    run = claim(trip)
+
+    async def oneway(dep: str, arr: str, date_: date) -> ProviderResult:
+        repo.delete_trip(trip.id)
+        return ok(100_000)
+
+    async def roundtrip(dep: str, arr: str, out_date: date, ret_date: date) -> ProviderResult:
+        return ok(250_000)
+
+    with caplog.at_level("INFO", logger="flight_friend.worker"):
+        run_execute(run, trip, [ProviderSpec("google_flights", oneway, roundtrip)])
+    assert repo.get_trip(trip.id) is None
+    assert repo.get_run(run.id) is None
+    assert not [r for r in caplog.records if r.levelname == "ERROR"]
+    assert any("deleted" in r.getMessage() for r in caplog.records)
+
+
 def test_schedule_due_trips_skips_open_run_and_off_tracking() -> None:
     due = make_trip()
     open_run = make_trip()

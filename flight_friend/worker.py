@@ -107,7 +107,11 @@ async def _execute(run: Run, trip: Trip, providers: list[ProviderSpec], timeout:
             result = ProviderResult(status="error", legs=[], rts=[], error="timeout", seconds=elapsed)
             repo.save_snapshot(run.id, trip.id, name, kind, direction, day, result, observed_at)
     except Exception:
-        logger.exception("run %s failed", run.id)
+        if repo.get_trip(trip.id) is None:
+            # 진행 중에 Trip이 삭제됨: run도 CASCADE로 지워졌으므로 조용히 끝낸다
+            logger.info("run %s: trip %s deleted during run", run.id, trip.id)
+        else:
+            logger.exception("run %s failed", run.id)
         repo.finish_run(run.id, "error")
         return gf_timed_out
     repo.finish_run(run.id, "error" if timed_out else "done")
