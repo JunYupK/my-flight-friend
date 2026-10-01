@@ -1,6 +1,6 @@
 # My Flight Friend
 
-**인천(ICN) 출발 일본 항공권을 "내 여행" 단위로 추적하는 개인용 가격 모니터링 서비스**
+**인천(ICN) 출발 해외 항공권을 "내 여행" 단위로 추적하는 개인용 가격 모니터링 서비스**
 
 [![CI](https://github.com/JunYupK/my-flight-friend/actions/workflows/ci.yml/badge.svg)](https://github.com/JunYupK/my-flight-friend/actions/workflows/ci.yml)
 [![Deploy](https://github.com/JunYupK/my-flight-friend/actions/workflows/deploy.yml/badge.svg)](https://github.com/JunYupK/my-flight-friend/actions/workflows/deploy.yml)
@@ -24,6 +24,7 @@
 
 ## 주요 기능
 
+- **전 세계 공항 검색**: 정기편 공항 약 2,400곳을 한국어(나트랑, 발리)·영문(Rome)·코드(CXR)로 찾습니다. 목록은 OurAirports 데이터에 Naver 항공의 한국어 이름을 붙여 생성합니다.
 - **Trip 중심 추적**: 목적지·출발일·귀국일과 선호 조건(출발 시간대, 직항만, 항공사)을 담은 Trip이 화면·알림·조회의 단위입니다.
 - **복수 제공자 비교**: Google Flights와 Naver 가격을 같은 항공편끼리 묶어 나란히 보여주고, 어느 쪽이 얼마나 싼지 표시합니다. Naver의 카드사 조건부 요금은 별도로 표시하며, 최저가 계산에는 무조건 요금만 씁니다.
 - **지금 최선 + 후보**: 조건 안 최저 조합, 차액·현지 체류 시간이 다른 대안 후보, 조건을 조금 풀면 크게 싸지는 경우("near-miss")를 제안합니다.
@@ -80,7 +81,7 @@ flight_friend/
   api/                     main.py(엔드포인트), views.py(JSON 조립)
 flight_front/web/src/      React SPA — pages/, components/{ui,common,layout,dashboard,inputs,trip}/, api.ts
 tests/                     pytest (PostgreSQL 통합 테스트, fixture HTML/SSE)
-scripts/                   dev_seed.py(시드), ui_snap.py(스크린샷·가로 넘침 검사), v1_freeze.sql
+scripts/                   dev_seed.py(시드), ui_snap.py(스크린샷·가로 넘침 검사), gen_airports.py(공항 목록), v1_freeze.sql
 docs/                      설계·계획(superpowers/), 작업 로그, TODOS, ISSUES, 포트폴리오
 ```
 

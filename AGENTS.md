@@ -8,7 +8,7 @@
 
 ## 1. 프로젝트 개요 (V2)
 
-**ICN 출발 일본 항공권 추적 서비스.** 사용자가 **Trip**(목적지·출발일·귀국일·선호)을 만들면 그 Trip을 중심으로
+**ICN 출발 해외 항공권 추적 서비스.** 사용자가 **Trip**(목적지·출발일·귀국일·선호)을 만들면 그 Trip을 중심으로
 가격을 추적한다.
 
 - **Trip 중심:** 모든 화면/알림/조회의 단위는 Trip. 전역 "딜 목록"은 없다.
@@ -63,6 +63,7 @@ types/config → db/repo → providers → domain → worker / api views → api
 | 여러 화면 공용 (배지·가격·빈/오류 상태) | `flight_front/web/src/components/common/` |
 | 화면별 컴포넌트 | `flight_front/web/src/components/{layout,dashboard,inputs,trip}/` |
 | 제공자 이름·색·상태 문구 | `flight_front/web/src/lib/providers.ts` |
+| 공항 검색 목록 (생성물, 직접 수정 금지) | `flight_front/web/src/data/airports.json` ← `scripts/gen_airports.py`, 인기 목록·검색은 `data/airports.ts` |
 | 테마 토큰 (라이트·다크) | `flight_front/web/src/index.css` (`:root` / `.dark`) |
 | API 클라이언트 / 공유 타입 | `flight_front/web/src/api.ts` / `types.ts` |
 | 테스트 | `tests/test_<모듈>.py` (fixture 파일은 `tests/fixtures/`) |
@@ -212,6 +213,7 @@ DATABASE_URL=postgresql://flight_user:flight_pass@localhost:5432/flights pytest 
 cd flight_front/web && npm run dev                     # 프론트 개발 서버
 cd flight_front/web && npm run build                   # 프론트 빌드 (API가 dist 서빙)
 
+python scripts/gen_airports.py                         # 공항 검색 목록 재생성 (OurAirports + Naver 한국어 이름, 네트워크 필요)
 python scripts/dev_seed.py --reset                     # 화면 확인용 시드 Trip 4종 (localhost DB만, a= b= c= d= 출력)
 python scripts/ui_snap.py --out <dir> [--dark] [--chromium PATH] / /trips/1 /admin
                                                        # 1200/390px 전체 스크린샷, 390px 가로 스크롤이면 OVERFLOW·종료 1
