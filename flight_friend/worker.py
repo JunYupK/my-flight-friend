@@ -57,7 +57,7 @@ async def _guarded(name: str, factory: Callable[[], Awaitable[ProviderResult]]) 
 
 
 async def _execute(run: Run, trip: Trip, providers: list[ProviderSpec], timeout: float | None) -> bool:
-    """제공자 호출을 각각 태스크로 돌리고 모든 스냅샷을 저장한다. google_flights 호출이 시간 초과되면 True.
+    """제공자 호출을 각각 태스크로 돌리고 각 호출이 끝나는 즉시 그 스냅샷을 저장한다. google_flights 호출이 시간 초과되면 True.
 
     어떤 제공자든 시간 초과면 run은 error로 닫지만, 브라우저 재생성 신호(True)는 GF 시간 초과만 낸다."""
     gf_timed_out = False
@@ -66,7 +66,15 @@ async def _execute(run: Run, trip: Trip, providers: list[ProviderSpec], timeout:
         if repo.get_trip(trip.id) is None:
             raise LookupError(f"trip {trip.id} not found")
         plan: list[tuple[str, Literal["oneway", "roundtrip"], Literal["out", "in"] | None, date]] = []
-        tasks: list[asyncio.Task[ProviderResult]] = []
+        saved: set[int] = set()
+
+        async def call_and_save(index: int, factory: Callable[[], Awaitable[ProviderResult]]) -> None:
+            name, kind, direction, day = plan[index]
+            result = await _guarded(name, factory)
+            repo.save_snapshot(run.id, trip.id, name, kind, direction, day, result, datetime.now(UTC))
+            saved.add(index)
+
+        tasks: list[asyncio.Task[None]] = []
         for spec in providers:
             plan += [
                 (spec.name, "oneway", "out", trip.out_date),
@@ -78,22 +86,25 @@ async def _execute(run: Run, trip: Trip, providers: list[ProviderSpec], timeout:
                 partial(spec.oneway, trip.destination, ORIGIN, trip.ret_date),
                 partial(spec.roundtrip, ORIGIN, trip.destination, trip.out_date, trip.ret_date),
             ]
-            tasks += [asyncio.ensure_future(_guarded(spec.name, f)) for f in factories]
+            for f in factories:
+                tasks.append(asyncio.ensure_future(call_and_save(len(tasks), f)))
         started = time.monotonic()
         _, pending = await asyncio.wait(tasks, timeout=timeout)
         for task in pending:
             task.cancel()
         await asyncio.gather(*pending, return_exceptions=True)
+        for task in tasks:
+            if task not in pending and (error := task.exception()) is not None:
+                raise error  # 저장 실패 등: 바깥 except에서 run을 error로 닫는다
         elapsed = time.monotonic() - started
         timed_out = bool(pending)
         observed_at = datetime.now(UTC)
-        for (name, kind, direction, day), task in zip(plan, tasks, strict=True):
-            if task in pending:
-                logger.error("run %s: provider %s %s timed out", run.id, name, kind)
-                gf_timed_out = gf_timed_out or name == "google_flights"
-                result = ProviderResult(status="error", legs=[], rts=[], error="timeout", seconds=elapsed)
-            else:
-                result = task.result()
+        for index, (name, kind, direction, day) in enumerate(plan):
+            if index in saved:
+                continue
+            logger.error("run %s: provider %s %s timed out", run.id, name, kind)
+            gf_timed_out = gf_timed_out or name == "google_flights"
+            result = ProviderResult(status="error", legs=[], rts=[], error="timeout", seconds=elapsed)
             repo.save_snapshot(run.id, trip.id, name, kind, direction, day, result, observed_at)
     except Exception:
         logger.exception("run %s failed", run.id)

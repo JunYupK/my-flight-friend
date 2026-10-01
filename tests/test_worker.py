@@ -109,7 +109,6 @@ def test_execute_run_saves_six_snapshots() -> None:
         + [(p, "oneway", "in", RET) for p in ("google_flights", "naver")]
         + [(p, "roundtrip", None, OUT) for p in ("google_flights", "naver")]
     )
-    assert len({s.observed_at for s in snaps}) == 1
     finished = repo.get_run(run.id)
     assert finished is not None and finished.status == "done"
 
@@ -453,6 +452,36 @@ def test_timeout_keeps_finished_provider_results() -> None:
     assert gf[("oneway", "in")].error == "timeout" and gf[("roundtrip", None)].status == "ok"
     assert evaluate_ops(NOW, send) == ["google_flights"]
     assert sent == [GF_MESSAGE]
+
+
+def test_snapshot_saved_before_slow_provider_finishes() -> None:
+    trip = make_trip()
+    run = claim(trip)
+    release = asyncio.Event()
+    fast = fake_spec("naver")
+
+    async def slow_out(dep: str, arr: str, date_: date) -> ProviderResult:
+        await release.wait()
+        return ok(1)
+
+    async def slow_rt(dep: str, arr: str, out_date: date, ret_date: date) -> ProviderResult:
+        await release.wait()
+        return ok(1)
+
+    slow = ProviderSpec("google_flights", slow_out, slow_rt)
+
+    async def scenario() -> tuple[int, int]:
+        task = asyncio.ensure_future(execute_run(run, trip, [fast, slow]))
+        for _ in range(200):
+            await asyncio.sleep(0.01)
+            if len(repo.load_snapshots(trip.id)) >= 3:
+                break
+        before = len(repo.load_snapshots(trip.id))
+        release.set()
+        await task
+        return before, len(repo.load_snapshots(trip.id))
+
+    assert asyncio.run(scenario()) == (3, 6)
 
 
 def test_run_with_timeout_passes_through_when_fast() -> None:

@@ -385,3 +385,20 @@ def test_cond_fields_default_none():
     assert got_leg.cond_booking_url is None
     assert got_rt.cond_total_price is None
     assert got_rt.cond_label is None
+
+
+def test_recent_runs_includes_snapshot_error():
+    trip_id = _make_trip()
+    run_id = repo.enqueue_run(trip_id, "manual")
+    result = ProviderResult(status="error", legs=[], rts=[], error="http 403", seconds=1.0)
+    repo.save_snapshot(
+        run_id=run_id,
+        trip_id=trip_id,
+        provider="naver",
+        kind="oneway",
+        direction="out",
+        date_=date(2026, 10, 1),
+        result=result,
+        observed_at=datetime.now(UTC),
+    )
+    assert repo.recent_runs()[0]["snapshots"][0]["error"] == "http 403"

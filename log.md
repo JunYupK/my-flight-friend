@@ -19,7 +19,8 @@
 - 구현 계획: `docs/superpowers/plans/2026-09-28-flight-friend-v2-m1.md` (M1, 17 tasks)
 - M1 완료: PR #62 머지·배포 (2026-09-29), OCI에서 자동 추적 정상 확인. Task 17(V1 은퇴) 코드 작업 완료 — V1 코드는 커밋 `d8e0422` (태그는 생략 — 필요하면 `git tag v1-final d8e0422`로 나중에).
 - **사용자 서버 작업 (Task 17 머지 후):** `pg_dump` 백업 → `scripts/v1_freeze.sql` 실행, 1회 `docker compose --profile full up -d --remove-orphans`로 mcp/redis 컨테이너 정리.
-- M2(Naver 제공자) 코드 완료 (계획 Task 2–9, 브랜치 `claude/dazzling-shannon-4x04v7`). 최종 리뷰·수정 완료. **Task 1(OCI 한국 IP 사전 확인)은 사용자 결정으로 생략** — V1 Naver 수집이 OCI에서 동작했으므로 된다고 가정하고, 배포 후 `/admin`의 Naver 스냅샷 상태로 사후 확인 (TODOS 참고). 다음: PR·머지·배포.
+- M2(Naver 제공자) 완료: PR #64 머지·배포 (2026-09-30). OCI에서 Naver 편도·왕복 스냅샷 ok 확인.
+- 다음 순서(사용자 결정): FE 대개편 → Skyscanner 소스 → V1 테이블 동결 → README. FE 설계: `docs/superpowers/specs/2026-09-30-flight-friend-fe-redesign-design.md` (승인), 계획: `docs/superpowers/plans/2026-09-30-flight-friend-fe-redesign.md` (9 tasks, 사용자 검토 대기).
 - 작업 브랜치: `claude/dazzling-shannon-4x04v7`
 
 ---
@@ -365,3 +366,96 @@
 - 검증: 없음 (가정). 세션(미국 IP)에서는 새 provider로 실제 API 호출 성공 (ICN→FUK 74편).
 - 다음 작업자에게: 배포 후 `/admin`에서 Naver 스냅샷이 `ok`인지 확인. `blocked`/`error`가 3회 이어지면 `ops:naver` 알림이 오고, 그때 브라우저 재시도(설계 D7)를 진행한다. 참고로 V1 Naver 수집은 2026-08-31부터 OCI에서 0건이었다(당시 원인 후보: 헤드리스 기본 UA — 새 provider는 데스크톱 UA로 직접 API 호출).
 
+## 2026-09-30 — Claude Code — M2 배포 확인
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` (master `6d579f5`에서 재시작) / `docs: M2 deployed, next-work order`
+- 한 일: 사용자가 배포 후 `/admin`에서 GF·Naver 6개 스냅샷 모두 ✓ 확인(CTS #2, OIT #4 수동 run). TODOS에서 OCI 확인·배포 메모 제거, 진행 순서 기록.
+- 다음 작업자에게: FE 대개편 brainstorming부터.
+
+## 2026-09-30 — Claude Code — FE 대개편 설계 (brainstorming)
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` / `docs: FE redesign design`
+- 한 일: 결정 — 전면 재설계(시각 > 정보 구조 > 모바일), shadcn/ui + 21st.dev·Mobbin 슬롯 교체, 제공자 배지 + 나란히 비교, Trip 상세 결정 우선 + 데스크톱 2단, 자잘한 변경 11개 전부, 메인 대시보드 카드 + 전체 다시 확인, 제자리 교체 + Vite 6·Tailwind v4, 모던 뉴트럴 테마(zinc+sky, Pretendard). 백엔드는 키 추가만(목록 API 필드, `POST /api/trips/refresh`, 조회 단위 스냅샷 저장·run 진행, next_auto_at, admin error).
+- 다음 작업자에게: 사용자 설계 검토 후 writing-plans.
+- FE 구현 계획 작성: 9 tasks (1–2 백엔드 API → 3 도구·shadcn·시드/스냅샷 스크립트 → 4 공용 컴포넌트·골격 → 5 대시보드 → 6 새 Trip → 7·8 Trip 상세 → 9 admin·정리).
+
+## 2026-09-30 — Claude Code — FE 대개편 Task 1: 목록·상세 API 필드
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` / `feat(fe-api): dashboard fields on trip list, next_auto_at`
+- 한 일: `GET /api/trips` 항목에 best_combo, provider_totals, series, low, low_day, is_low_now, target_price, next_auto_at, provider_status, open_run_id 추가. `trip.next_auto_at`(상세)도 추가. 기존 키 유지.
+- 검증: `pytest tests/ -q` 전체 통과, `python -m ruff check .` 통과.
+- 결정 / 발견: `low`/`is_low_now`는 추적 일수가 MIN_TRACKING_DAYS 미만이면 null/False(기존 tracking_stats 동작). `series`는 기존 `_day_point` 형식(out_min/in_min 포함).
+- 다음 작업자에게: Task 2(백엔드 refresh API) 진행.
+
+## 2026-09-30 — Claude Code — FE 대개편 Task 2: 전체 다시 확인, 조회 단위 저장, admin 오류
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` / `feat(fe-api): refresh-all endpoint, per-call snapshot saves, admin snapshot errors`
+- 한 일: `POST /api/trips/refresh`(보관 Trip 제외, running/cooldown skip, 나머지 manual run 적재; `/api/trips/{trip_id}`보다 먼저 선언). worker `_execute`가 조회 task마다 끝나는 즉시 자기 observed_at으로 스냅샷 저장(타임아웃 시 남은 task만 error "timeout"). `recent_runs` 스냅샷에 `error`.
+- 검증: `pytest tests/ -q -W error::RuntimeWarning` 201 passed, `python -m ruff check .` 통과.
+- 결정 / 발견: 스냅샷 observed_at이 호출별로 달라져 `test_execute_run_saves_six_snapshots`의 "observed_at 1개" 단언 제거.
+- 다음 작업자에게: Task 3 진행.
+
+## 2026-09-30 — Claude Code — FE 대개편 Task 3: 도구 업그레이드·shadcn 초기화·검증 스크립트
+- 브랜치 / 커밋: claude/dazzling-shannon-4x04v7 / `chore(fe): vite 6, tailwind v4, shadcn/ui base, seed and snapshot scripts`
+- 한 일: Vite 6.4 + @vitejs/plugin-react 5.2(6.x는 vite 8 요구) + Tailwind 4.3 + @tailwindcss/vite. tailwind/postcss config 삭제, `apple-*` 토큰·그림자·radius를 `index.css`의 `@theme`로 이전(클래스 다크모드 `@custom-variant dark` 유지, v3 border 기본색 복원). shadcn CLI(React 18 유지, new-york/zinc, sky primary, `--provider-google_flights/naver`)로 컴포넌트 추가(+dialog는 calendar/command 의존). `@/` 별칭, `cn`. Pretendard CDN 링크. `scripts/dev_seed.py`, `scripts/ui_snap.py`.
+- 검증: 브라우저 확인 — `npm run build` 통과, uvicorn+시드 후 `/ /trips/1 /trips/new /admin` 라이트·다크 1200/390 스크린샷으로 옛 화면 유지 확인, 390px 오버플로 없음. 코드만 — Pretendard 적용(샌드박스에서 CDN 미로드, 화면은 Roboto 폴백), sonner 테마 연동. pytest 201 passed, ruff 통과.
+- 결정 / 발견: `sonner.tsx`는 next-themes `useTheme`를 쓰지만 Provider가 없어 항상 "system" — Toaster 사용 시 `.dark` 클래스 기준으로 고쳐야 함. `TooltipProvider`는 앱 루트에 감싸야 함. 번들 587kB(경고만).
+- 다음 작업자에게: 개발 DB는 `python scripts/dev_seed.py --reset`로 재시드(a/b/c/d = trip 1~4). 스크린샷은 `.superpowers/`(gitignore).
+
+## 2026-09-30 — Claude Code — FE 대개편 Task 4: 공용 컴포넌트와 앱 골격
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7`, `feat(fe): shared provider/price components and app shell`
+- 한 일: `src/components/common/*`(ProviderBadge/PriceRow, CondPriceTag, StaleBadge, Money, Sparkline, EmptyState, ErrorState), `layout/AppShell`(상단 바 + TooltipProvider + Toaster), `providers.ts`→`src/lib/providers.ts`(PROVIDERS/providerMeta), ThemeToggle을 shadcn Button으로, App.tsx를 AppShell로 감쌈. Task 3 리뷰 반영: ui/*의 `cn`을 `@/lib/utils`로 통일, `cn`/`next-themes`/`autoprefixer`/`postcss` 제거, Toaster가 `.dark` 클래스 관찰, `dev_seed.py --reset`은 localhost/127.0.0.1 외 거부.
+- 검증(브라우저): 시드 후 `ui_snap.py`로 `/ /trips/1 /trips/new /admin` 1200/390 라이트·다크 캡처 — 새 상단 바(제목, 새 여행, 관리, 테마 토글)와 다크 전환, 기존 페이지 동작 확인(홈 390, 상세 1200 다크, 관리 1200 열람).
+- 검증(코드만): `npm run build` 통과, ruff 통과, pytest 201 passed. 신규 공용 컴포넌트(ProviderPriceRow 등)는 아직 어느 화면에서도 쓰이지 않아 렌더 미확인. `--reset` 원격 호스트 거부는 명령으로 확인.
+- 다음 작업자에게: 공용 컴포넌트는 Task 5 이후 화면에서 사용. 기존 페이지는 아직 apple-* 스타일.
+
+## 2026-09-30 — Claude Code — FE 대개편 Task 5: 메인 대시보드
+
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7`, `feat(fe): dashboard home with trip cards and refresh-all`
+- 한 일: `pages/Dashboard.tsx`(자체 AppShell + `새 Trip`·`전체 다시 확인`, 3초 폴링, 지난 여행 Collapsible, Skeleton/Empty/Error), `components/dashboard/DashboardTripCard.tsx`(spec §4.2 1–7), `data/airports.ts`(`AIRPORTS`, `cityName`), `types.ts`/`api.ts`(`refreshAll`), `TripList.tsx` 삭제, App은 `/`만 Dashboard, 나머지 라우트는 로컬 Shell로 기존 유지. 다른 제공자 비교 줄은 `GF보다 N원 쌈`/`Naver보다`(짧은 라벨), CondPriceTag는 label=null(목록 API에 cond 라벨 없음).
+- 검증(브라우저): 시드 4종 + `ui_snap.py /` 1200/390 라이트·다크 — 카드 a(7개 영역, `GF보다 4,000원 쌈`, 목표 달성), b(`GF보다` 줄 없음), c(`확인 중…` 스피너 — 시드에 열린 run 있음), 보관 d는 접힌 `지난 여행 (1)` 안, 가로 스크롤 없음. `전체 다시 확인` 클릭 시 토스트 `2개 확인 요청 · 1개 진행 중` 확인.
+- 검증(코드만): `npm run build`, ruff, pytest 201 passed. `아직 확인 전`/`첫 확인 중…` 문구, `지금이 최저` 배지, CondPriceTag 긴 라벨 말줄임은 시드에 해당 상태가 없어 렌더 미확인(Task 7–8에서 실제 라벨로 확인).
+- 다음 작업자에게: 390px에서 상단 바 `Flight Friend`가 두 줄로 접힘(AppShell, Task 4 소관). 상세·새 Trip 페이지는 아직 기존 스타일.
+- (Task 5 fix round 1) 카드·스켈레톤 `rounded-2xl`, 추이 차트 카드 폭 전체·h-16(Sparkline에 `className` 옵션), 정렬(추적 중 먼저 → 미추적, 각 출발일순; 보관은 접힘), best_combo 없으면 `가격 확인 중`/`아직 확인 전` 텍스트, AppShell 제목 `whitespace-nowrap` + 390px에서 액션 아이콘만 표시, 문구 `새 Trip` 통일. 검증(브라우저): `ui_snap.py /` 라이트·다크 exit 0, OVERFLOW 출력 없음(390 포함), 스크린샷 확인. 검증(코드만): build, pytest 201, ruff.
+
+## 2026-09-30 — Claude Code — FE 대개편 Task 6: 새 Trip과 공용 조건 입력
+
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7`, `feat(fe): new trip with range calendar, destination search, time sliders`
+- 한 일: `components/inputs/{DateRangePicker,DestinationCombobox,TimeWindowSlider,AirlineChips}.tsx`, `components/trip/ConditionFields.tsx`(순수 props, Task 8 시트 재사용), `pages/NewTrip.tsx` 재작성(spec §5 순서, 640px 카드, 추적 Switch 기본 on, 만들기 → `/trips/{id}` + 토스트), `utils.ts`에 `minutesToHHMM/hhmmToMinutes/windowToSlider/sliderToWindow`(0–1440 ↔ null, 끝 1440 ↔ "23:59"). 추적 off로 만들면 생성 후 `patchTrip({tracking:false})`(POST에 tracking 필드 없음). 서버 422는 날짜 옆 문구로.
+- 검증(브라우저): 시드 후 `ui_snap.py /trips/new` 1200/390 라이트·다크 확인, 390 콤보박스 목록("후쿠" → 후쿠오카 FUK)·캘린더 열림 스크린샷. Playwright: FUK 검색 선택 → 10.20·10.24 클릭(요약 `10.20(화) – 10.24(토) · 4박 5일`) → 가는 편 슬라이더 06:00–12:00 → 만들기 → `/trips/5`, `GET /api/trips/5`의 `prefs.out_dep_window == ["06:00","12:00"]`, `in_dep_window == null` 확인 후 Trip 5 삭제(DB).
+- 검증(코드만): `npm run build`, ruff, pytest 201 passed. `직접 입력`(표에 없는 3글자 코드), AirlineChips, 상세 조건 Collapsible 펼침, 422 필드 문구, 추적 off 경로, 슬라이더 끝 1440 → "23:59"는 화면에서 확인하지 않음.
+- 결정 / 발견: React 18에서 shadcn `Button`이 ref를 전달하지 않아 `PopoverTrigger asChild`(앵커 미설정)로 팝오버가 화면 밖(`translate(0,-200%)`)에 고정됨 → `ui/button.tsx`를 `forwardRef`로 수정. 번들 587→910kB(경고만).
+- 다음 작업자에게: 다른 shadcn ui 컴포넌트를 `asChild` 트리거에 쓸 때도 React 18 ref 전달 확인. Trip 상세 시트(Task 8)는 `ConditionFields`를 그대로 사용.
+- (Task 6 fix round 1) NewTrip: createTrip 성공 후엔 항상 `/trips/{id}`로 이동, 추적 끄기 PATCH 실패 시 에러 토스트만(중복 생성 방지). 필드 편집 시 해당 오류 지움. 검증(브라우저): 추적 OFF로 생성 → `GET /api/trips/{id}` `tracking == false`. 검증(코드만): PATCH 실패 분기(토스트+이동)는 try/catch 구조 확인만.
+
+## 2026-09-30 — Claude Code — FE 개편 Task 7: Trip 상세 머리·지금 최선·진행 표시
+- 브랜치 / 커밋: claude/dazzling-shannon-4x04v7 / `feat(fe): trip header, run progress, best-combo hero`
+- 한 일: TripHeader, RunProgress(6칸 칩, 2초 폴링), BestComboHero(추적 요약·Sparkline 포함), CandidateChips, NearMissLine, TripSettingsSheet 추가. TripPage 재구성, `TripInfo.next_auto_at` 타입 추가. StatusHeader/TrackingSummary/Candidates/NearMissHint/TripSettings 삭제(Results에서 Candidates·NearMissHint 제거, 상단 jump 요청 prop 추가). dev_seed.py에 `--fake-run <trip_id>` 추가.
+- 검증: 브라우저 확인 — ui_snap 1200/390 라이트·다크(trips 1,2,3), OVERFLOW 없음, 설정 시트, fake-run 진행 칩 중간/완료 캡처(shots/task-7). 코드만 확인 — 쿨다운(429) 표시, near-miss 문구(시드에 near_miss 없음), 후보 칩 스크롤 동작. `npm run build`, `ruff check .`, pytest 201 passed.
+- 결정 / 발견: NearMissLine은 문구 생성을 위해 `legs` prop 추가. TripSettingsSheet는 open/onOpenChange prop 추가. RunProgress 제공자 목록 = trip.providers ∪ snapshot ∪ 알려진 제공자.
+- 다음 작업자에게: Results 안에 FilterBar/LegList 구 스타일 유지(Task 8 교체). pytest는 dev DB를 비우니 이후 reseed 필요.
+
+### 2026-09-30 — Claude Code — Task 7 리뷰 수정 1차
+- 커밋: `fix(fe): trip hero tooltips, cond label, failed-run empty state`
+- 한 일: 항공사 truncate에 title, 양 편 조건 라벨 동일 시 표시/다르면 `카드 조건 혼합`, 전 편 없음+providers 있음이면 "확인에 실패했어요", 폴링 실패 토스트 고정 id, providers.ts 미사용 헬퍼 삭제, 도시명 미매핑 시 코드 중복 제거, current==null이면 `확인가 없음`.
+- 검증: 빌드 OK. 브라우저 — ui_snap /trips/1, /trips/3 1200/390 (shots/task-7/fix1), OVERFLOW 없음. 코드만 — 실패 빈 상태·혼합 라벨(시드에 해당 케이스 없음).
+
+## 2026-09-30 — Claude Code — FE 대개편 Task 8: Trip 상세 항공편 목록·선택 패널·가격 추이
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7`, `feat(fe): leg tabs, selection panel, condition sheet, price history`
+- 한 일: `LegCard` 재작성(슬롯, 기본 접힘, `상세 ▾/▴`, ProviderPriceRow·CondPriceTag·StaleBadge, 조건부 줄 말줄임+툴팁), `LegTabs`(가는/오는 편 탭, 가격순, `조건 밖 N개` Collapsible), `ConditionSheet`(요약 칩 → ConditionFields 시트 → patchTrip, seq·trip.id 가드), `SelectionPanel`(lg sticky / 모바일 하단 한 줄 바 `합계 · N박 ›` → 바텀 시트), `PriceHistoryChart`(Collapsible, 조합 최저 라인, 최저점, 목표가 기준선, 부분 데이터 속 빈 점). TripPage 2단(`lg:grid-cols-[1fr_360px]`). 삭제: LegList/FilterBar/SelectionBar/HistoryChart/Results, 고아 `isInvertedWindow`/`WINDOW_ORDER_MESSAGE`. `utils.nightsBetween` 추가.
+- 이월 이슈: jump는 TripPage 한 곳에서 처리(effect 1회 스크롤 → 3초 뒤 null), LegTabs는 렌더 중 탭·조건 밖 펼침을 맞춤 → 재마운트 시 재생 없음. history 중복: Hero props 고정이라 `api.getHistory`에 같은 id 동시 요청 합치기(in-flight Map) 추가 → 상세 로드 시 `/history` 1회(브라우저 확인).
+- 검증(브라우저): ui_snap `/trips/1 /trips/2 /trips/3` 1200/390 라이트·다크 exit 0, OVERFLOW 없음. Playwright(390): 하단 바 한 줄(390×56, 뷰포트 하단 고정), 긴 라벨 `현대 M2/M3 Edition2(이용실적 충족시)` 펼침 줄에서 말줄임(scrollW 225 > clientW 143) + hover 툴팁 표시, 바텀 시트 내용, Hero `↓`로 오는 편 탭 전환 + 스크롤 + amber 강조(390·1200, 반복 클릭도 재스크롤), 조건 시트에서 직항 저장 → 칩 `직항`, 탭 `가는 편 (5)`, `조건 밖 1개`(KE2201 경유), 토스트 `저장했어요`. 가격 추이 펼침 1200/390 라이트·다크. b(Naver 단독)는 배지 1개·왕복 참고 줄 없음.
+- 검증(코드만): 조건 밖 편으로의 jump(시드에 near_miss 없음 — LegTabs가 Collapsible을 열도록 구현), stale 가격만 있는 편(“최신 가격 없음”, 선택 불가), 선택 없음 시 데스크톱 안내 문구/모바일 바 숨김, 저장 실패 문구.
+- 결정 / 발견: Radix Tabs/Collapsible 내용은 Presence가 layout effect 뒤에 붙여 같은 커밋의 passive effect에선 DOM에 없음 → 스크롤을 rAF로 한 프레임 미룸. 탭 숫자는 조건 안 편 수. 옛 목록의 `출발시각` 정렬 토글·출국/귀국/조합 3계열 차트는 명세에 없어 뺌(가격순, 조합 최저 1계열).
+- 다음 작업자에게: npm build, pytest 201 passed(이후 재시드). ui_snap 전체 페이지 캡처에서는 fixed 하단 바가 중간에 찍힘(캡처 특성).
+
+## 2026-09-30 — Claude Code — FE 대개편 Task 9: /admin·마무리·정리
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7`, `feat(fe): admin redesign, remove legacy tokens and components`
+- 한 일: `pages/Admin.tsx` 재작성 — 최근 실행(ProviderBadge + 상태 칩 `✓/차단 의심/결과 없음/오류`, 실패 칩 Radix 툴팁 + 네이티브 title에 `error`), 제공자별 일자 성공률(표 + 막대, 기간 7/14/30일), `<640px`는 표 대신 카드 목록(모바일은 툴팁이 탭으로 안 열리므로 오류 문구를 카드 안에 그대로 표시), Skeleton/ErrorState(다시 시도)/EmptyState. `types.ts` `AdminRunSnapshot.error`. `index.css`에서 `apple-*`·`--c-*`·`shadow-apple*`·`.tnum`·radius 덮어쓰기 제거, base를 shadcn 토큰(`--border`, `--background`/`--foreground`)으로, 폰트 스택 `-apple-system` → `system-ui`. `utils.formatDuration`(미사용) 삭제. 옛 컴포넌트는 Task 5–8에서 이미 모두 삭제돼 남은 것 없음.
+- 이월 리뷰 항목: `api.getHistory` in-flight 공유를 `getTrip`/`patchTrip` 응답 시 해당 id 무효화(+ 늦게 끝난 옛 요청이 새 항목을 지우지 않게 identity 확인). 말줄임 요소에 네이티브 `title` 추가(LegCard 조건부 라벨, CondPriceTag, StaleBadge, DashboardTripCard 항공사·바닥줄, DestinationCombobox 공항명). SelectionPanel은 `pair`가 null이 되면 `sheetOpen=false`.
+- 검증(브라우저): 재시드 후 `ui_snap.py` `/ /trips/new /trips/1 /trips/2 /trips/3 /admin` 1200/390 라이트·다크 exit 0, OVERFLOW 없음(shots/task-9). /admin 390 카드 목록·다크 확인, KIX #2 GF `출국 오류` 칩 hover 툴팁 `TimeoutError: page load`, title 문자열 확인. Playwright route로 /admin 로딩 Skeleton·500 ErrorState(`불러오지 못했습니다: boom` + 다시 시도)·빈 목록 EmptyState 캡처. body 배경/글자/카드 테두리 계산값이 라이트 `oklch(1 0 0)`/`oklch(0.141…)`/`oklch(0.92…)`, 다크 `oklch(0.141…)`/`oklch(0.985 0 0)`/`oklch(1 0 0 / 0.1)`로 shadcn 토큰을 따름.
+- 검증(코드만): `차단 의심`·`결과 없음` 칩(시드에 blocked/empty 스냅샷 없음), getHistory 무효화, SelectionPanel 시트 리셋 — 동작은 화면에서 재현하지 않음. `rg "apple-" src` 0건, `npm run build`(500kB 청크 경고만 — recharts만 분리해도 515kB라 해결 안 됨), `python -m ruff check .`, pytest 201 passed(이후 재시드).
+- 다음 작업자에게: 21st.dev 슬롯 교체는 TODOS에. `package.json`의 `@radix-ui/react-slot`·`date-fns`는 src에서 직접 import하지 않음(ui는 `radix-ui` 사용) — 정리 여부 판단 필요.
+
+## 2026-09-30 — Claude Code — FE 대개편 최종 리뷰 수정
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7`, `fix: dev_seed localhost guard for all modes`, `fix(fe): stale-only trips, stale window, view seq guards`, `perf(fe): lazy-load route pages to split the main bundle`
+- 한 일: dev_seed 로컬 DB 가드를 모든 모드에 적용(flight_friend.db가 import 시점에 DATABASE_URL을 읽으므로 import 전에 검사, `::1` 허용, 탈출구 없음). API `trip_list_item.last_checked_at`(최신 스냅샷 시각, 키 추가만) + 테스트. 대시보드 카드: 확인 이력은 있으나 신선한 가격 없음 → `최신 가격 없음 · 다시 확인 필요`, 바닥줄은 `last_checked_at`, 실패 사유는 `STATUS_REASON` + 작은 빨간 글씨로 표시. BestComboHero: 모든 편 `best_price == null` → `최신 가격이 없어요`, 진짜 조건 불일치엔 `조건 시트 열기`(window 이벤트 `ff:open-condition-sheet`, Hero props 불변). StaleBadge는 `StaleWindowContext`(TripPage가 `window_minutes` 제공)로 신선도 기준을 받음 — LegCard 슬롯 props 불변. TripPage/Dashboard 응답 순서 가드(seq ref). `nextAutoLabel`(지났으면 `곧`, 다음 날이면 `내일 HH:MM`)을 utils로 통합. 라우트 페이지 `React.lazy` → 메인 청크 931kB → 315kB, 500kB 경고 사라짐.
+- 검증(브라우저): 재시드 후 ui_snap `/ /trips/1 /trips/4 /admin` 1200/390 exit 0, OVERFLOW 없음(shots/final-fix). `/trips/4`(보관·stale) Hero `최신 가격이 없어요`. 대시보드 `지난 여행` 펼침 → (d) 카드 `최신 가격 없음 · 다시 확인 필요`, 바닥줄 `12일 전 확인`. KIX 카드에 `GF 오류` 표시(390에서 넘침 없음), `다음 자동 곧`. `/trips/4` 조건 밖 StaleBadge title `신선도 기준 2시간`(window 120분 반영). trip 1에 max_price 1000 임시 PATCH → `조건에 맞는 조합이 없어요` + `조건 시트 열기` 클릭 시 시트 열림, 이후 prefs 원복 확인.
+- 검증(코드만): TripPage/Dashboard seq 가드(경합 재현 안 함), `내일 HH:MM` 분기(시드 next_auto_at이 같은 날), Suspense fallback 표시.
+- 다음 작업자에게: pytest 202 passed, ruff OK, build OK. 시트 저장은 응답 시점에 seq를 받으므로 저장 요청 뒤·응답 전에 보낸 getTrip 결과는 버려짐(다음 재조회에서 회복).

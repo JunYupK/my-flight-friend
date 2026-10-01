@@ -7,11 +7,6 @@ export function formatDate(d: string) {
   return `${parts[1]}.${parts[2]}(${DAY_NAMES[dt.getDay()]})`;
 }
 
-export function formatDuration(min: number | null) {
-  if (min == null) return "-";
-  return `${Math.floor(min / 60)}h ${min % 60}m`;
-}
-
 /** ISO 시각 → 현재까지 경과 시간(시간 단위, 소수). 파싱 실패 시 Infinity. */
 export function hoursSince(iso: string): number {
   const t = new Date(iso).getTime();
@@ -27,6 +22,16 @@ export function timeAgo(iso: string): string {
   if (h < 1) return `${Math.max(1, Math.round(h * 60))}분 전`;
   if (h < 24) return `${Math.floor(h)}시간 전`;
   return `${Math.floor(h / 24)}일 전`;
+}
+
+/** 다음 자동 확인 시각 → "HH:MM" (지났으면 "곧", 오늘 이후 날짜면 "내일 HH:MM"). 브라우저 로컬 시각 기준. */
+export function nextAutoLabel(iso: string, now: Date = new Date()): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "-";
+  if (d.getTime() <= now.getTime()) return "곧";
+  const hm = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  const day = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  return day(d) > day(now) ? `내일 ${hm}` : hm;
 }
 
 /** 12345 → "12,345원" */
@@ -46,6 +51,11 @@ export function dday(n: number): string {
 
 function utcDay(d: string): number {
   return Date.UTC(parseInt(d.slice(0, 4), 10), parseInt(d.slice(5, 7), 10) - 1, parseInt(d.slice(8, 10), 10));
+}
+
+/** 두 "YYYY-MM-DD" 사이 박 수. */
+export function nightsBetween(outDate: string, retDate: string): number {
+  return Math.round((utcDay(retDate) - utcDay(outDate)) / 86_400_000);
 }
 
 function hhmmToMin(t: string): number {
@@ -73,9 +83,22 @@ export function formatStay(min: number): string {
   return sign + parts.join(" ");
 }
 
-export const WINDOW_ORDER_MESSAGE = "시간대의 시작이 끝보다 늦을 수 없습니다.";
+export function minutesToHHMM(m: number): string {
+  return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+}
 
-/** 둘 다 채워졌고 시작이 끝보다 늦으면 true ("HH:MM" 문자열 비교). */
-export function isInvertedWindow(from: string, to: string): boolean {
-  return from !== "" && to !== "" && from > to;
+export function hhmmToMinutes(s: string): number {
+  return hhmmToMin(s);
+}
+
+/** 백엔드 시간대(["HH:MM","HH:MM"] | null) → 슬라이더 분 값. null·"23:59"는 전체/끝(1440). */
+export function windowToSlider(v: [string, string] | null): [number, number] {
+  if (!v) return [0, 1440];
+  return [hhmmToMinutes(v[0]), v[1] === "23:59" ? 1440 : hhmmToMinutes(v[1])];
+}
+
+/** 슬라이더 분 값 → 백엔드 시간대. [0,1440]은 제한 없음(null), 끝 1440은 "23:59". */
+export function sliderToWindow([a, b]: [number, number]): [string, string] | null {
+  if (a === 0 && b === 1440) return null;
+  return [minutesToHHMM(a), b === 1440 ? "23:59" : minutesToHHMM(b)];
 }

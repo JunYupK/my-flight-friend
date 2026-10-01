@@ -21,6 +21,39 @@ export interface TripSummary {
   current_observed_at: string | null;
   change_vs_start_pct: number | null;
   archived: boolean;
+  best_combo: BestCombo | null;
+  provider_totals: Record<string, number>;
+  series: DayPoint[];
+  low: number | null;
+  low_day: string | null;
+  is_low_now: boolean;
+  target_price: number | null;
+  next_auto_at: string | null;
+  provider_status: Record<string, string>;
+  open_run_id: number | null;
+  last_checked_at: string | null;
+}
+
+export interface LegSummary {
+  airline_iata: string | null;
+  airline_name: string | null;
+  dep_time: string | null;
+  arr_time: string | null;
+  stops: number | null;
+  flight_numbers: string[];
+  best_provider: string | null;
+}
+
+export interface BestCombo {
+  out: LegSummary;
+  in: LegSummary;
+  total: number;
+  cond_total: number | null;
+}
+
+export interface RefreshResult {
+  queued: number[];
+  skipped: { trip_id: number; reason: "running" | "cooldown" }[];
 }
 
 export interface TripInfo {
@@ -37,6 +70,7 @@ export interface TripInfo {
   archived: boolean;
   days_to_departure: number;
   created_at: string;
+  next_auto_at: string | null;
 }
 
 export interface ProviderPriceView {
@@ -186,7 +220,11 @@ export interface AdminRun {
   requested_at: string;
   started_at: string | null;
   finished_at: string | null;
-  snapshots: RunSnapshotStatus[];
+  snapshots: AdminRunSnapshot[];
+}
+
+export interface AdminRunSnapshot extends RunSnapshotStatus {
+  error: string | null;
 }
 
 // GET /api/admin/providers — repo.provider_stats 그대로 (day는 KST 날짜 "YYYY-MM-DD").

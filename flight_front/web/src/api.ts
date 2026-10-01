@@ -2,6 +2,7 @@ import type {
   AdminRun,
   DayPoint,
   ProviderDay,
+  RefreshResult,
   RunStatus,
   StartRunResult,
   TripCreateInput,
@@ -49,16 +50,20 @@ export function listTrips(): Promise<TripSummary[]> {
   return request<TripSummary[]>("/api/trips");
 }
 
+export function refreshAll(): Promise<RefreshResult> {
+  return request<RefreshResult>("/api/trips/refresh", { method: "POST" });
+}
+
 export function createTrip(input: TripCreateInput): Promise<{ id: number; run_id: number }> {
   return request<{ id: number; run_id: number }>("/api/trips", jsonInit("POST", input));
 }
 
 export function getTrip(id: number): Promise<TripView> {
-  return request<TripView>(`/api/trips/${id}`);
+  return request<TripView>(`/api/trips/${id}`).then((v) => forgetHistory(id, v));
 }
 
 export function patchTrip(id: number, patch: TripPatchInput): Promise<TripView> {
-  return request<TripView>(`/api/trips/${id}`, jsonInit("PATCH", patch));
+  return request<TripView>(`/api/trips/${id}`, jsonInit("PATCH", patch)).then((v) => forgetHistory(id, v));
 }
 
 /** 202 → started, 429 → cooldown. 그 외 오류는 throw. */
@@ -79,8 +84,25 @@ export function getRun(id: number): Promise<RunStatus> {
   return request<RunStatus>(`/api/runs/${id}`);
 }
 
+const historyInFlight = new Map<number, Promise<DayPoint[]>>();
+
+/** Trip이 바뀐 뒤(getTrip·patchTrip 응답) 오는 getHistory가 바뀌기 전 요청을 공유하지 않게 한다. */
+function forgetHistory<T>(id: number, v: T): T {
+  historyInFlight.delete(id);
+  return v;
+}
+
+/** 같은 Trip에 대한 동시 요청(상세의 Hero·가격 추이)은 한 번만 보낸다. */
 export function getHistory(id: number): Promise<DayPoint[]> {
-  return request<DayPoint[]>(`/api/trips/${id}/history`);
+  let p = historyInFlight.get(id);
+  if (!p) {
+    const mine: Promise<DayPoint[]> = request<DayPoint[]>(`/api/trips/${id}/history`).finally(() => {
+      if (historyInFlight.get(id) === mine) historyInFlight.delete(id);
+    });
+    p = mine;
+    historyInFlight.set(id, p);
+  }
+  return p;
 }
 
 export function getAdminRuns(): Promise<AdminRun[]> {
