@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { Hourglass } from "lucide-react";
 import { toast } from "sonner";
-import { getHistory, getRun, getTrip, startRun } from "../api";
-import type { DayPoint, RunStatus, TripView } from "../types";
+import { getRun, getRunHistory, getTrip, startRun } from "../api";
+import type { RunPoint, RunStatus, TripView } from "../types";
 import EmptyState from "@/components/common/EmptyState";
 import { StaleWindowContext } from "@/components/common/StaleWindowContext";
 import ErrorState from "@/components/common/ErrorState";
@@ -40,7 +40,7 @@ export default function TripPage() {
   const [cooldown, setCooldown] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [jump, setJump] = useState<{ dir: "out" | "in"; key: string; n: number } | null>(null);
-  const [points, setPoints] = useState<DayPoint[]>([]);
+  const [points, setPoints] = useState<RunPoint[]>([]);
   const [selOut, setSelOut] = useState<string | null>(null);
   const [selIn, setSelIn] = useState<string | null>(null);
   // TripView를 세팅하는 모든 경로(로드·run 완료 재조회·시트 저장)가 번호를 받고, 이미 반영된 번호보다 오래된 응답은 버린다
@@ -132,14 +132,14 @@ export default function TripPage() {
     };
   }, [runId, id, setTripIfLatest]);
 
-  // 가격 추이: 조건·현재가·run 상태가 바뀌면 다시 불러온다 (Hero의 동시 요청과는 api에서 합쳐짐)
+  // 가격 추이(수집별): 조건·현재가·run 상태가 바뀌면 다시 불러온다
   const historyKey = trip
     ? `${JSON.stringify(trip.trip.prefs)}|${trip.stats.current ?? ""}|${trip.run ? `${trip.run.id}:${trip.run.status}` : ""}`
     : null;
   useEffect(() => {
     if (historyKey === null) return;
     let cancelled = false;
-    getHistory(id)
+    getRunHistory(id)
       .then((d) => {
         if (!cancelled) setPoints(d);
       })

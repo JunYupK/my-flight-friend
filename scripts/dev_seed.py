@@ -105,9 +105,13 @@ def seed_a(rng: random.Random) -> int:
     out_date, ret_date = TODAY + timedelta(days=60), TODAY + timedelta(days=64)
     trip = repo.create_trip("FUK", out_date, ret_date, Preferences(), target_price=250000)
     now = datetime.now(UTC)
-    for i in range(14):
-        days_ago = 13 - i
-        observed = now - timedelta(days=days_ago, hours=1)
+    # 하루 1회(13~3일 전) + 최근 3일은 6시간마다 — 수집별 추이 차트 확인용
+    offsets = [timedelta(days=d, hours=1) for d in range(13, 2, -1)]
+    offsets += [timedelta(hours=h) for h in range(66, 0, -6)]
+    partial_at = offsets[-5]  # 이 수집은 Naver 가는 편이 실패한 부분 데이터
+    for back in offsets:
+        observed = now - back
+        days_ago = back.total_seconds() / 86400
         drift = 1.0 + (days_ago - 6) * 0.012 + rng.uniform(-0.03, 0.03)
         run_id = repo.enqueue_run(trip, "schedule")
         for direction, flights, d in (("out", OUT_FLIGHTS, out_date), ("in", IN_FLIGHTS, ret_date)):
@@ -124,7 +128,10 @@ def seed_a(rng: random.Random) -> int:
                     cond = (base - 6000, "KB국민 트래블러스")
                 nv_legs.append(leg(f, "FUK", direction, base + rng.choice([-2000, 0, 1000]), cond))
             repo.save_snapshot(run_id, trip, "google_flights", "oneway", direction, d, ok(gf_legs), observed)
-            repo.save_snapshot(run_id, trip, "naver", "oneway", direction, d, ok(nv_legs), observed)
+            nv_result = ok(nv_legs)
+            if back == partial_at and direction == "out":
+                nv_result = ProviderResult(status="error", legs=[], rts=[], error="dev seed: partial", seconds=1.0)
+            repo.save_snapshot(run_id, trip, "naver", "oneway", direction, d, nv_result, observed)
         rts = [
             RtQuote("7C", "7C1401", int(232000 * drift / 100) * 100),
             RtQuote("LJ", "LJ281", int(226000 * drift / 100) * 100, int(214000 * drift / 100) * 100, LONG_LABEL),

@@ -357,6 +357,24 @@ def history_view(trip: Trip) -> list[JsonDict]:
     return [_day_point(p) for p in series]
 
 
+def run_history_view(trip: Trip) -> list[JsonDict]:
+    """수집(run)마다 조건 내 최저 조합 — 진행 중인 run은 일부 결과뿐이라 뺀다."""
+    latest = repo.latest_run(trip.id)
+    open_id = latest.id if latest is not None and latest.status in ("queued", "running") else None
+    return [
+        {
+            "run_id": v.run_id,
+            "at": _iso(v.observed_at),
+            "combo": v.combo,
+            "out_min": v.out_min,
+            "in_min": v.in_min,
+            "partial": v.partial,
+        }
+        for v in run_values(repo.load_snapshots(trip.id), trip.prefs)
+        if v.run_id != open_id
+    ]
+
+
 def admin_runs_view(limit: int = 50) -> list[JsonDict]:
     return [
         {

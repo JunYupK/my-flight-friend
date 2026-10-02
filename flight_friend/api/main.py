@@ -168,6 +168,11 @@ def get_history(trip_id: int) -> list[views.JsonDict]:
     return views.history_view(_require_trip(trip_id))
 
 
+@app.get("/api/trips/{trip_id}/history/runs")
+def get_run_history(trip_id: int) -> list[views.JsonDict]:
+    return views.run_history_view(_require_trip(trip_id))
+
+
 @app.get("/api/admin/runs")
 def admin_runs() -> list[views.JsonDict]:
     return views.admin_runs_view()

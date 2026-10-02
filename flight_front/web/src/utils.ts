@@ -44,6 +44,18 @@ export function shortMd(d: string): string {
   return `${parseInt(d.slice(5, 7), 10)}/${parseInt(d.slice(8, 10), 10)}`;
 }
 
+/** ISO 시각 → "10/2 14:05" (브라우저 로컬 시간). */
+export function mdHm(iso: string | number): string {
+  const d = new Date(iso);
+  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+/** ISO 시각 또는 epoch ms → "10/2" (브라우저 로컬 날짜). */
+export function md(iso: string | number): string {
+  const d = new Date(iso);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
 export function dday(n: number): string {
   if (n === 0) return "D-day";
   return n > 0 ? `D-${n}` : `D+${-n}`;

@@ -293,6 +293,21 @@ def test_history_daily_points() -> None:
     assert [p["combo"] for p in pts] == [170000, 160000]
 
 
+def test_history_runs_points_per_run() -> None:
+    trip_id = make_trip()
+    now = datetime.now(UTC)
+    first = add_run(trip_id, [quote("A", 80000)], [quote("C", 90000)], now - timedelta(hours=3))
+    second = add_run(trip_id, [quote("A", 70000)], [quote("C", 90000)], now - timedelta(hours=1))
+    repo.finish_run(first, "done")
+    repo.finish_run(second, "done")
+    add_run(trip_id, [quote("A", 50000)], [quote("C", 50000)], now)  # 진행 중(queued) run은 제외
+    pts = client.get(f"/api/trips/{trip_id}/history/runs").json()
+    assert [p["run_id"] for p in pts] == [first, second]
+    assert set(pts[0]) == {"run_id", "at", "combo", "out_min", "in_min", "partial"}
+    assert [p["combo"] for p in pts] == [170000, 160000]
+    assert pts[0]["at"] < pts[1]["at"]
+
+
 def test_trip_list_items() -> None:
     trip_id = make_trip()
     add_run(trip_id, [quote("A", 80000)], [quote("C", 90000)], datetime.now(UTC))
@@ -392,6 +407,7 @@ def test_unknown_ids_404() -> None:
     assert client.patch("/api/trips/999", json={"tracking": False}).status_code == 404
     assert client.post("/api/trips/999/runs").status_code == 404
     assert client.get("/api/trips/999/history").status_code == 404
+    assert client.get("/api/trips/999/history/runs").status_code == 404
     assert client.delete("/api/trips/999").status_code == 404
     assert client.get("/api/runs/999").status_code == 404
 
