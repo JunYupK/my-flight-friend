@@ -1,7 +1,7 @@
 # 작업 로그 (Work Log)
 
-> Claude Code와 Codex가 task 단위로 번갈아 작업한다. **작업을 시작하기 전에 이 파일의 최신 항목과
-> "현재 상태"를 먼저 읽고, 작업이 끝나면 항목을 추가한다.** 최신 항목이 맨 아래.
+> 작업 단위 기록. 이전 결정·맥락이 필요할 때 "현재 상태"와 관련 최신 항목만 참고하면 된다(전부 읽을 필요 없음).
+> **작업이 끝나면 항목을 추가한다.** 최신 항목이 맨 아래.
 >
 > 항목 형식:
 > ```
@@ -15,16 +15,14 @@
 
 ## 현재 상태
 
-- 설계: `docs/superpowers/specs/2026-09-28-flight-friend-v2-design.md` (합의 완료)
-- 구현 계획: `docs/superpowers/plans/2026-09-28-flight-friend-v2-m1.md` (M1, 17 tasks)
-- M1 완료: PR #62 머지·배포 (2026-09-29), OCI에서 자동 추적 정상 확인. Task 17(V1 은퇴) 코드 작업 완료 — V1 코드는 커밋 `d8e0422` (태그는 생략 — 필요하면 `git tag v1-final d8e0422`로 나중에).
-- **사용자 서버 작업 (Task 17 머지 후):** `pg_dump` 백업 → `scripts/v1_freeze.sql` 실행, 1회 `docker compose --profile full up -d --remove-orphans`로 mcp/redis 컨테이너 정리.
-- M2(Naver 제공자) 완료: PR #64 머지·배포 (2026-09-30). OCI에서 Naver 편도·왕복 스냅샷 ok 확인.
-- 다음 순서(사용자 결정): FE 대개편 → Skyscanner 소스 → V1 테이블 동결 → README. FE 설계: `docs/superpowers/specs/2026-09-30-flight-friend-fe-redesign-design.md` (승인), 계획: `docs/superpowers/plans/2026-09-30-flight-friend-fe-redesign.md` (9 tasks, 사용자 검토 대기).
-- 작업 브랜치: `claude/dazzling-shannon-4x04v7`
-- 문서 위치(2026-10-01~): 이 로그·`TODOS.md`·`ISSUES.md`·`PORTFOLIO.md`는 `docs/`, README는 루트 `README.md`.
+_갱신: 2026-10-02_
 
----
+- **운영 중 (V2):** Trip 중심 추적, 제공자 Google Flights + Naver, OCI 단일 서버 배포. 설계 `docs/superpowers/specs/2026-09-28-flight-friend-v2-design.md`.
+- **완료:** M1(PR #62), V1 은퇴(#63, V1 코드는 커밋 `d8e0422`), M2 Naver(#64), FE 대개편(#65), Trip 삭제(#66), 문서 정리·README(#67), 전 세계 공항 검색(#68), 수집별 가격 추이(#69).
+- **보류:** Skyscanner(PerimeterX 차단, 근거·재개 조건은 `TODOS.md`).
+- **사용자 서버 작업 대기:** `pg_dump` 백업 → `scripts/v1_freeze.sql` (로컬 리허설 통과).
+- **다음 후보:** V1 데이터 활용(서버에서 V1 규모 쿼리 결과 대기), DB 커넥션 풀 + 대시보드 쿼리 묶기(측정: 상세 요청의 ~43%가 DB 접속).
+- 작업 브랜치: `claude/dazzling-shannon-4x04v7`. 문서는 `docs/`, README는 루트.
 
 ## 2026-09-28 — Claude Code — superpowers 스킬 벤더링 + SessionStart 훅 수정
 
@@ -495,3 +493,9 @@
 - 확인: 2026-10-01 배포 후 사용자가 나트랑(CXR) Trip 수집 정상 확인 — 공항 확장(#68) 마무리.
 - 검증: pytest 205 passed(신규: run 2개 → 점 2개·시각순·진행 중 run 제외, 없는 id 404), `ruff check .`, `npm run build`. 브라우저(1200/390, 390 다크): 시드 (a) 수집 22점(일 단위 14점), 날짜 눈금 중복 없음, 툴팁 시각 표시, 속 빈 점, 캡션 최저 표기, 가로 넘침 없음.
 - 결정 / 발견: 처음엔 날짜 눈금 중복(`10/1 10/1`)과 우측 끝 "최저" 라벨 잘림, 곡선 보간이 관측 사이 값을 암시하는 문제가 있어 자정 눈금·캡션·직선으로 바꿈.
+
+## 2026-10-02 — Claude Code — 에이전트 지시문 정리 (프롬프트 팁 적용)
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` / `docs: trim agent instructions`
+- 한 일: 스킬 14→11 (`using-superpowers`·`writing-skills`·`dispatching-parallel-agents` 제거 — 미사용, `using-superpowers`는 "모든 응답 전 스킬 호출 강제"라 오호출 원인). CLAUDE.md: 없는 gstack 스킬 안내 삭제, "불명확하면 멈추고 물어라" → 사용자 결정 사항만 묻고 나머지는 가정을 밝히고 진행. AGENTS.md: §3 "물어본다" → 가장 가까운 레이어 + 보고, §9 끝난 V1 cron 메모 삭제, §10은 테스트가 못 잡는 금지만 남김, §11 작업 전 체크리스트 → 완료 기준(DoD). log.md: "작업 전 전부 읽어라" → 필요할 때 현재 상태·최신 항목만, 현재 상태 갱신.
+- 검증: pytest 206 passed, `ruff check .` 통과. 제거한 스킬 참조는 벤더링 원본 2곳의 언급뿐(원본 비수정 원칙으로 유지).
+- 결정 / 발견: `.claude/settings.local.json`(gitignore)에 은퇴한 V1 MCP 서버 토큰이 남아 있음 — 사용자가 서버 측 폐기 진행.

@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 > **프로젝트 명세 / 아키텍처 / 인터페이스 / 금지사항은 [`AGENTS.md`](./AGENTS.md) 로 이전됨.**
-> 본 파일은 LLM 행동 규범과 포트폴리오만 담는다. 충돌 시 AGENTS.md 우선.
+> 본 파일은 LLM 행동 규범과 프로젝트 요약만 담는다. 충돌 시 AGENTS.md 우선.
 
 ---
 
@@ -14,10 +14,10 @@ Behavioral guidelines to reduce common LLM coding mistakes. **Tradeoff:** These 
 **Don't assume. Don't hide confusion. Surface tradeoffs.**
 
 Before implementing:
-- State your assumptions explicitly. If uncertain, ask.
+- State your assumptions explicitly.
 - If multiple interpretations exist, present them - don't pick silently.
 - If a simpler approach exists, say so. Push back when warranted.
-- If something is unclear, stop. Name what's confusing. Ask.
+- Ask only about decisions that are the user's to make (scope, product behavior, irreversible or outward-facing actions). Otherwise name what's unclear, state the assumption you're taking, and proceed.
 
 ## 2. Simplicity First
 
@@ -78,13 +78,3 @@ ICN 출발 해외 항공권 추적 서비스(V2). 사용자가 만든 Trip(목�
 상세 명세(레이어, 인터페이스, DB 규칙, 환경변수, 명령어 등)는 `AGENTS.md` 참고.
 
 포트폴리오 서술은 [`docs/PORTFOLIO.md`](./docs/PORTFOLIO.md), 작업 로그·보류 항목·이슈는 `docs/log.md`·`docs/TODOS.md`·`docs/ISSUES.md`.
-
----
-
-## gstack
-
-Use `/browse` from gstack for all web browsing. Never use `mcp__claude-in-chrome__*` tools.
-
-Available skills: `/office-hours`, `/plan-ceo-review`, `/plan-eng-review`, `/plan-design-review`, `/design-consultation`, `/review`, `/ship`, `/land-and-deploy`, `/canary`, `/benchmark`, `/browse`, `/qa`, `/qa-only`, `/design-review`, `/setup-browser-cookies`, `/setup-deploy`, `/retro`, `/investigate`, `/document-release`, `/codex`, `/cso`, `/autoplan`, `/careful`, `/freeze`, `/guard`, `/unfreeze`, `/gstack-upgrade`.
-
-If gstack skills aren't working, run `cd .claude/skills/gstack && ./setup` to build the binary and register skills.

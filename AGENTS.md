@@ -48,7 +48,7 @@ types/config → db/repo → providers → domain → worker / api views → api
 
 ## 3. 파일 위치 규칙
 
-위치가 불명확하면 **파일 생성 전에 물어본다.**
+표에 없는 경우 가장 가까운 레이어에 두고, 그 선택을 작업 보고에 적는다.
 
 | 무엇을 만드는가 | 위치 |
 |----------------|------|
@@ -158,7 +158,6 @@ ruff check .            # CI는 ruff==0.16.9 고정
 - CI(`ci.yml`): `pytest tests/` + `ruff check .` + React build. 실패 시 배포(`deploy.yml`) 미트리거. master push + CI 성공 → SSH 자동 배포.
 - 알림 채널은 Telegram 1순위 → Discord 2순위 fallback, 첫 성공 채널만 발송 (`flight_friend/notifier.py`).
 - 운영 알림(수집 실패·차단)은 제공자별로 `alerts.kind = ops:{provider}`, 제공자마다 6시간 쿨다운.
-- 호스트 crontab의 **V1 수집 cron과 spike cron은 제거**해야 한다 (worker가 대체).
 
 ### 환경 변수
 
@@ -174,29 +173,31 @@ PUBLIC_BASE_URL=                            # 선택 — 알림의 Trip 링크 �
 
 ---
 
-## 10. 금지사항 (절대 위반 금지)
+## 10. 금지사항
+
+레이어 import 규칙(web 프레임워크·providers·db/repo import)은 `tests/test_architecture.py`가 검사한다. 그 밖에 테스트로 잡히지 않는 것:
 
 ```
 ❌ V1 테이블(v1 스키마) 쓰기 — 동결된 분석용 데이터
-❌ api/main.py 에 SQL 직접 작성, providers import
-❌ views.py / domain/* / providers/* / db·repo 에서 fastapi·starlette import, domain/* 에서 db·repo import
-❌ snapshots / leg_quotes / rt_quotes 의 UPDATE·DELETE (append-only)
-❌ 하드코딩된 DATABASE_URL 문자열
+❌ api/main.py 에 SQL 직접 작성 (repo.py 경유)
+❌ React 컴포넌트에서 직접 fetch() 호출 (api.ts 경유)
+❌ snapshots / leg_quotes / rt_quotes 의 UPDATE·DELETE (append-only, 행 삭제는 Trip 삭제 CASCADE만)
+❌ 하드코딩된 DATABASE_URL·크리덴셜
 ❌ 테스트에서 실제 외부 API 호출 (크롤러/알림 mock 필수)
-❌ React 컴포넌트에서 직접 fetch() 호출 (api.ts 경유 필수)
 ❌ 크롤러 코드에서 asyncio.run() 중첩
 ❌ notifier 에 비즈니스 로직(메시지 포맷 외) 추가
 ```
 
 ---
 
-## 11. 작업 시작 전 체크리스트
+## 11. 완료 기준 (Definition of Done)
 
-1. 어느 레이어 변경인가? → 해당 레이어 파일에만 손댄다.
-2. 스키마 변경? → `init_schema()` 멱등성 유지, 관련 테스트 통과.
-3. 새 repo 함수/provider? → 테스트 먼저(TDD), 어댑터 인터페이스 충족.
-4. API 응답 변경? → `types.ts` 동시 갱신.
-5. 잠정 상수 변경? → 코드 상수 한 곳 + §7 갱신.
+작업은 아래를 모두 만족해야 끝이다. 구현 → 실행 → 실패 수정까지가 한 작업이다.
+
+1. `DATABASE_URL=... python -m pytest tests/ -q`, `python -m ruff check .`, `cd flight_front/web && npm run build` 통과.
+2. 화면을 바꿨으면 `scripts/dev_seed.py` + `scripts/ui_snap.py`로 1200/390px 스크린샷을 찍어 직접 확인하고, 390px 가로 넘침이 없다.
+3. API를 바꿨으면 키·엔드포인트 추가만 하고(기존 의미 불변) `types.ts`를 함께 갱신, 스키마를 바꿨으면 `init_schema()` 멱등.
+4. `docs/log.md`에 항목 추가(한 일·검증·결정, 화면 작업은 브라우저로 본 것과 코드로만 본 것 구분), 작업 브랜치에 커밋·푸시.
 
 ---
 
