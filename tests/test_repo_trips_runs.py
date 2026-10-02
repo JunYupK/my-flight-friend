@@ -199,3 +199,14 @@ def test_has_open_run():
 
     repo.finish_run(run_id, "done")
     assert repo.has_open_run(trip_id) is False
+
+
+def test_open_run_ids():
+    trip_id = _make_trip()
+    assert repo.open_run_ids(trip_id) == set()
+    first = repo.enqueue_run(trip_id, "manual")
+    second = repo.enqueue_run(trip_id, "manual")
+    repo.claim_next_run()
+    assert repo.open_run_ids(trip_id) == {first, second}
+    repo.finish_run(first, "done")
+    assert repo.open_run_ids(trip_id) == {second}

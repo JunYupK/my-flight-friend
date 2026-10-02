@@ -300,8 +300,11 @@ def test_history_runs_points_per_run() -> None:
     second = add_run(trip_id, [quote("A", 70000)], [quote("C", 90000)], now - timedelta(hours=1))
     repo.finish_run(first, "done")
     repo.finish_run(second, "done")
-    add_run(trip_id, [quote("A", 50000)], [quote("C", 50000)], now)  # 진행 중(queued) run은 제외
+    running = add_run(trip_id, [quote("A", 40000)], [quote("C", 40000)], now - timedelta(minutes=5))
+    add_run(trip_id, [quote("A", 50000)], [quote("C", 50000)], now)  # 진행 중(queued)인 최신 run
+    assert repo.claim_next_run() is not None  # 앞선 run은 running — 최신 run만이 아니라 열린 run 전부 제외
     pts = client.get(f"/api/trips/{trip_id}/history/runs").json()
+    assert running not in [p["run_id"] for p in pts]
     assert [p["run_id"] for p in pts] == [first, second]
     assert set(pts[0]) == {"run_id", "at", "combo", "out_min", "in_min", "partial"}
     assert [p["combo"] for p in pts] == [170000, 160000]

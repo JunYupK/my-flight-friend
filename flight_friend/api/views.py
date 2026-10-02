@@ -359,8 +359,7 @@ def history_view(trip: Trip) -> list[JsonDict]:
 
 def run_history_view(trip: Trip) -> list[JsonDict]:
     """수집(run)마다 조건 내 최저 조합 — 진행 중인 run은 일부 결과뿐이라 뺀다."""
-    latest = repo.latest_run(trip.id)
-    open_id = latest.id if latest is not None and latest.status in ("queued", "running") else None
+    open_ids = repo.open_run_ids(trip.id)
     return [
         {
             "run_id": v.run_id,
@@ -371,7 +370,7 @@ def run_history_view(trip: Trip) -> list[JsonDict]:
             "partial": v.partial,
         }
         for v in run_values(repo.load_snapshots(trip.id), trip.prefs)
-        if v.run_id != open_id
+        if v.run_id not in open_ids
     ]
 
 
