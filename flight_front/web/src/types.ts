@@ -146,6 +146,16 @@ export interface Stats {
   comparable: boolean;
 }
 
+/** 수집(run) 한 번의 조건 내 최저 조합 — `/api/trips/{id}/history/runs`. */
+export interface RunPoint {
+  run_id: number;
+  at: string;
+  combo: number | null;
+  out_min: number | null;
+  in_min: number | null;
+  partial: boolean;
+}
+
 export interface DayPoint {
   day: string;
   combo: number | null;

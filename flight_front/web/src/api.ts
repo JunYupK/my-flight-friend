@@ -1,6 +1,7 @@
 import type {
   AdminRun,
   DayPoint,
+  RunPoint,
   ProviderDay,
   RefreshResult,
   RunStatus,
@@ -112,6 +113,11 @@ export function getHistory(id: number): Promise<DayPoint[]> {
     historyInFlight.set(id, p);
   }
   return p;
+}
+
+/** 수집별 추이 (상세 화면 가격 추이 차트용, 진행 중인 run 제외). */
+export function getRunHistory(id: number): Promise<RunPoint[]> {
+  return request<RunPoint[]>(`/api/trips/${id}/history/runs`);
 }
 
 export function getAdminRuns(): Promise<AdminRun[]> {

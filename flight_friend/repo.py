@@ -211,6 +211,17 @@ def expire_stuck_runs(older_than: timedelta) -> int:
         return cur.rowcount
 
 
+def open_run_ids(trip_id: int) -> set[int]:
+    """아직 끝나지 않은(queued/running) run id 전부."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id FROM search_runs WHERE trip_id = %s AND status IN ('queued', 'running')",
+            (trip_id,),
+        )
+        return {row[0] for row in cur.fetchall()}
+
+
 def has_open_run(trip_id: int) -> bool:
     with get_conn() as conn:
         cur = conn.cursor()
