@@ -141,10 +141,10 @@ def _rt_view(r: RtReference) -> JsonDict:
     }
 
 
-def _next_auto_at(trip: Trip, now: datetime) -> str | None:
+def _next_auto_at(trip: Trip, now: datetime, run: Run | None) -> str | None:
+    """run은 그 Trip의 최신 run (호출부가 이미 읽어 둔 값)."""
     if not trip.tracking or is_archived(trip, now):
         return None
-    run = repo.latest_run(trip.id)
     if run is None:
         return now.isoformat()
     return (run.requested_at + refresh_interval(days_to_departure(trip.out_date, _today(now)))).isoformat()
@@ -208,7 +208,7 @@ def _cond_total(out: MergedLeg, inn: MergedLeg) -> int | None:
     return cheapest(out) + cheapest(inn)
 
 
-def _trip_dict(trip: Trip, now: datetime) -> JsonDict:
+def _trip_dict(trip: Trip, now: datetime, run: Run | None) -> JsonDict:
     return {
         "id": trip.id,
         "origin": trip.origin,
@@ -223,7 +223,7 @@ def _trip_dict(trip: Trip, now: datetime) -> JsonDict:
         "archived": is_archived(trip, now),
         "days_to_departure": days_to_departure(trip.out_date, _today(now)),
         "created_at": trip.created_at.isoformat(),
-        "next_auto_at": _next_auto_at(trip, now),
+        "next_auto_at": _next_auto_at(trip, now, run),
     }
 
 
@@ -268,9 +268,10 @@ def trip_view(trip: Trip, now: datetime) -> JsonDict:
     candidates = pareto_candidates(
         in_condition(legs, trip.prefs), trip.out_date, trip.ret_date, trip.prefs.max_price
     )
+    run = repo.latest_run(trip.id)
     return {
-        "trip": _trip_dict(trip, now),
-        "run": _run_summary(repo.latest_run(trip.id)),
+        "trip": _trip_dict(trip, now, run),
+        "run": _run_summary(run),
         "providers": _providers_view(snaps),
         "stats": _stats_view(stats),
         "legs": {d: [_leg_view(m, d, trip) for m in legs[d]] for d in ("out", "in")},
@@ -281,8 +282,8 @@ def trip_view(trip: Trip, now: datetime) -> JsonDict:
     }
 
 
-def trip_list_item(trip: Trip, now: datetime) -> JsonDict:
-    snaps = repo.load_snapshots(trip.id)
+def trip_list_item(trip: Trip, now: datetime, snaps: list[Snapshot], run: Run | None) -> JsonDict:
+    """snaps·run은 trip_list가 모든 Trip에 대해 한 번에 읽어 넘긴다."""
     window = _window(trip, now)
     current = current_value(snaps, trip.prefs, now, window)
     series = daily_series(run_values(snaps, trip.prefs))
@@ -293,7 +294,6 @@ def trip_list_item(trip: Trip, now: datetime) -> JsonDict:
     if stats.comparable and stats.start and current is not None:
         change = round((current / stats.start - 1) * 100, 1)
     combo = cheapest_combo(in_condition(legs, trip.prefs), trip.prefs.max_price)
-    run = repo.latest_run(trip.id)
     return {
         "id": trip.id,
         "destination": trip.destination,
@@ -319,7 +319,7 @@ def trip_list_item(trip: Trip, now: datetime) -> JsonDict:
         "low_day": _iso(stats.low_day),
         "is_low_now": current is not None and stats.low is not None and current <= stats.low,
         "target_price": trip.target_price,
-        "next_auto_at": _next_auto_at(trip, now),
+        "next_auto_at": _next_auto_at(trip, now, run),
         "provider_status": _provider_status(snaps),
         "open_run_id": run.id if run is not None and run.status in ("queued", "running") else None,
         "last_checked_at": _iso(max(s.observed_at for s in snaps) if snaps else None),
@@ -327,7 +327,11 @@ def trip_list_item(trip: Trip, now: datetime) -> JsonDict:
 
 
 def trip_list(now: datetime) -> list[JsonDict]:
-    return [trip_list_item(t, now) for t in repo.list_trips()]
+    trips = repo.list_trips()
+    ids = [t.id for t in trips]
+    snaps = repo.load_snapshots_for_trips(ids)
+    runs = repo.latest_runs(ids)
+    return [trip_list_item(t, now, snaps[t.id], runs[t.id]) for t in trips]
 
 
 def run_view(run: Run) -> JsonDict:

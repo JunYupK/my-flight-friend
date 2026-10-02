@@ -118,7 +118,7 @@ class ProviderResult:
 - `snapshots`/`leg_quotes`/`rt_quotes`는 UPDATE·DELETE 금지 (이력 = 가격 추이의 원천).
 - 스키마 진입점은 `flight_friend/db.py`의 `init_schema()` (V1의 `init_db()` 아님). **API 기동(lifespan)과 worker 시작(`main_loop` 최상단)이 호출**하며, advisory lock으로 동시 실행에 안전하다. 변경은 `IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS`로 추가, 멱등 필수.
 - `/healthz`는 `db.schema_ready()`로 스키마·DB 연결을 확인해 실패 시 503을 돌려준다.
-- 모든 DB 접근은 `repo.py` 경유. 테스트는 `tests/conftest.py`의 `clean_db` fixture로 격리.
+- 모든 DB 접근은 `repo.py` 경유. `db.get_conn()`은 프로세스 단위 커넥션 풀(최대 10, 고갈 시 대기, 시간대 Asia/Seoul)에서 빌려 쓴다. 여러 Trip을 한 화면에 그릴 때는 Trip마다 조회하지 말고 `load_snapshots_for_trips`·`latest_runs`처럼 묶어서 읽는다. 테스트는 `tests/conftest.py`의 `clean_db` fixture로 격리.
 - **V1 테이블(`raw_legs`, `flight_legs`, `deals`, `price_events`, `price_history`, `alert_state`, `collection_runs` 등)은 동결.**
   `scripts/v1_freeze.sql`이 `v1` 스키마로 옮긴다 (분석용 읽기만). V2는 읽지도 쓰지도 않는다.
 

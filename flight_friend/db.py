@@ -1,30 +1,56 @@
 # flight_friend/db.py
 
 import os
+import threading
 from collections.abc import Generator
 from contextlib import contextmanager
 
 import psycopg2
 import psycopg2.extensions
+import psycopg2.pool
 from dotenv import load_dotenv
 
 load_dotenv()
 
 _DSN = os.environ["DATABASE_URL"]
+_POOL_MAX = 10
+
+# 요청마다 새로 접속하던 비용(~7ms)을 없애는 프로세스 단위 풀. 처음 쓸 때 만든다.
+# psycopg2 풀은 고갈되면 기다리지 않고 PoolError를 내므로 세마포어로 빈 연결을 기다린다.
+_pool: psycopg2.pool.ThreadedConnectionPool | None = None
+_pool_lock = threading.Lock()
+_slots = threading.BoundedSemaphore(_POOL_MAX)
+
+
+def _get_pool() -> psycopg2.pool.ThreadedConnectionPool:
+    global _pool
+    if _pool is None:
+        with _pool_lock:
+            if _pool is None:
+                _pool = psycopg2.pool.ThreadedConnectionPool(
+                    1, _POOL_MAX, _DSN, options="-c timezone=Asia/Seoul"
+                )
+    return _pool
 
 
 @contextmanager
 def get_conn() -> Generator[psycopg2.extensions.connection, None, None]:
-    conn = psycopg2.connect(_DSN)
-    conn.cursor().execute("SET TIME ZONE 'Asia/Seoul'")
+    _slots.acquire()
+    pool = _get_pool()
+    conn = pool.getconn()
+    broken = False
     try:
         yield conn
         conn.commit()
     except Exception:
-        conn.rollback()
+        try:
+            conn.rollback()
+        except psycopg2.Error:
+            broken = True  # 끊긴 연결은 풀에 돌려놓지 않는다
         raise
     finally:
-        conn.close()
+        pool.putconn(conn, close=broken or conn.closed != 0)
+        _slots.release()
 
 
 def init_schema() -> None:
