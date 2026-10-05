@@ -163,6 +163,26 @@ def latest_run(trip_id: int) -> Run | None:
         return _row_to_run(row) if row else None
 
 
+def latest_runs(trip_ids: list[int]) -> dict[int, Run | None]:
+    """Trip별 최신 run (없으면 None) — latest_run을 Trip마다 부르지 않게 한 번에 읽는다."""
+    runs: dict[int, Run | None] = {tid: None for tid in trip_ids}
+    if not trip_ids:
+        return runs
+    with get_conn() as conn:
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute(
+            """
+            SELECT DISTINCT ON (trip_id) * FROM search_runs
+            WHERE trip_id = ANY(%s)
+            ORDER BY trip_id, requested_at DESC
+            """,
+            (list(trip_ids),),
+        )
+        for row in cur.fetchall():
+            runs[row["trip_id"]] = _row_to_run(row)
+    return runs
+
+
 def claim_next_run() -> Run | None:
     with get_conn() as conn:
         cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -236,35 +256,39 @@ def has_open_run(trip_id: int) -> bool:
         return cur.fetchone() is not None
 
 
-def _row_to_leg(row: RealDictRow) -> LegQuote:
+# 대량 조회(load_snapshots)는 dict 행 대신 튜플로 읽는다 — 행마다 dict를 만드는 비용이 응답 시간의 큰 몫이었다.
+_LEG_COLS = (
+    "snapshot_id, flight_key, airline_iata, airline_name, flight_numbers, dep_airport, arr_airport, "
+    "dep_time, arr_time, duration_min, stops, price, booking_url, search_url, "
+    "cond_price, cond_label, cond_booking_url"
+)
+_RT_COLS = "snapshot_id, airline_iata, out_flight_key, total_price, cond_total_price, cond_label"
+_SNAPSHOT_COLS = "id, run_id, trip_id, provider, kind, direction, date, status, card_count, observed_at, error"
+
+
+def _leg_from_tuple(r: tuple) -> LegQuote:
     return LegQuote(
-        flight_key=row["flight_key"],
-        airline_iata=row["airline_iata"],
-        airline_name=row["airline_name"],
-        flight_numbers=list(row["flight_numbers"]) if row["flight_numbers"] else [],
-        dep_airport=row["dep_airport"],
-        arr_airport=row["arr_airport"],
-        dep_time=row["dep_time"],
-        arr_time=row["arr_time"],
-        duration_min=row["duration_min"],
-        stops=row["stops"],
-        price=row["price"],
-        booking_url=row["booking_url"],
-        search_url=row["search_url"],
-        cond_price=row["cond_price"],
-        cond_label=row["cond_label"],
-        cond_booking_url=row["cond_booking_url"],
+        flight_key=r[1],
+        airline_iata=r[2],
+        airline_name=r[3],
+        flight_numbers=list(r[4]) if r[4] else [],
+        dep_airport=r[5],
+        arr_airport=r[6],
+        dep_time=r[7],
+        arr_time=r[8],
+        duration_min=r[9],
+        stops=r[10],
+        price=r[11],
+        booking_url=r[12],
+        search_url=r[13],
+        cond_price=r[14],
+        cond_label=r[15],
+        cond_booking_url=r[16],
     )
 
 
-def _row_to_rt(row: RealDictRow) -> RtQuote:
-    return RtQuote(
-        airline_iata=row["airline_iata"],
-        out_flight_key=row["out_flight_key"],
-        total_price=row["total_price"],
-        cond_total_price=row["cond_total_price"],
-        cond_label=row["cond_label"],
-    )
+def _rt_from_tuple(r: tuple) -> RtQuote:
+    return RtQuote(airline_iata=r[1], out_flight_key=r[2], total_price=r[3], cond_total_price=r[4], cond_label=r[5])
 
 
 def save_snapshot(
@@ -362,68 +386,65 @@ def save_snapshot(
         return snapshot_id
 
 
-def load_snapshots(trip_id: int, since: datetime | None = None) -> list[Snapshot]:
+def _load_snapshots(where: str, params: tuple) -> list[Snapshot]:
     with get_conn() as conn:
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-        if since is not None:
-            cur.execute(
-                """
-                SELECT * FROM snapshots
-                WHERE trip_id = %s AND observed_at >= %s
-                ORDER BY observed_at ASC
-                """,
-                (trip_id, since),
-            )
-        else:
-            cur.execute(
-                """
-                SELECT * FROM snapshots
-                WHERE trip_id = %s
-                ORDER BY observed_at ASC
-                """,
-                (trip_id,),
-            )
+        cur = conn.cursor()
+        cur.execute(f"SELECT {_SNAPSHOT_COLS} FROM snapshots WHERE {where} ORDER BY observed_at ASC, id ASC", params)
         snapshot_rows = cur.fetchall()
-        snapshot_ids = [row["id"] for row in snapshot_rows]
+        snapshot_ids = [row[0] for row in snapshot_rows]
 
         legs_by_snapshot: dict[int, list[LegQuote]] = {sid: [] for sid in snapshot_ids}
         rts_by_snapshot: dict[int, list[RtQuote]] = {sid: [] for sid in snapshot_ids}
 
         if snapshot_ids:
             cur.execute(
-                "SELECT * FROM leg_quotes WHERE snapshot_id = ANY(%s) ORDER BY id ASC",
+                f"SELECT {_LEG_COLS} FROM leg_quotes WHERE snapshot_id = ANY(%s) ORDER BY id ASC",
                 (snapshot_ids,),
             )
-            for leg_row in cur.fetchall():
-                legs_by_snapshot[leg_row["snapshot_id"]].append(_row_to_leg(leg_row))
+            for r in cur.fetchall():
+                legs_by_snapshot[r[0]].append(_leg_from_tuple(r))
 
             cur.execute(
-                "SELECT * FROM rt_quotes WHERE snapshot_id = ANY(%s) ORDER BY id ASC",
+                f"SELECT {_RT_COLS} FROM rt_quotes WHERE snapshot_id = ANY(%s) ORDER BY id ASC",
                 (snapshot_ids,),
             )
-            for rt_row in cur.fetchall():
-                rts_by_snapshot[rt_row["snapshot_id"]].append(_row_to_rt(rt_row))
+            for r in cur.fetchall():
+                rts_by_snapshot[r[0]].append(_rt_from_tuple(r))
 
-        snapshots: list[Snapshot] = []
-        for row in snapshot_rows:
-            snapshots.append(
-                Snapshot(
-                    id=row["id"],
-                    run_id=row["run_id"],
-                    trip_id=row["trip_id"],
-                    provider=row["provider"],
-                    kind=row["kind"],
-                    direction=row["direction"],
-                    date=row["date"],
-                    status=row["status"],
-                    card_count=row["card_count"],
-                    observed_at=row["observed_at"],
-                    error=row["error"],
-                    legs=legs_by_snapshot[row["id"]],
-                    rts=rts_by_snapshot[row["id"]],
-                )
+        return [
+            Snapshot(
+                id=r[0],
+                run_id=r[1],
+                trip_id=r[2],
+                provider=r[3],
+                kind=r[4],
+                direction=r[5],
+                date=r[6],
+                status=r[7],
+                card_count=r[8],
+                observed_at=r[9],
+                error=r[10],
+                legs=legs_by_snapshot[r[0]],
+                rts=rts_by_snapshot[r[0]],
             )
-        return snapshots
+            for r in snapshot_rows
+        ]
+
+
+def load_snapshots(trip_id: int, since: datetime | None = None) -> list[Snapshot]:
+    if since is not None:
+        return _load_snapshots("trip_id = %s AND observed_at >= %s", (trip_id, since))
+    return _load_snapshots("trip_id = %s", (trip_id,))
+
+
+def load_snapshots_for_trips(trip_ids: list[int]) -> dict[int, list[Snapshot]]:
+    """여러 Trip의 스냅샷을 쿼리 3개로 한 번에 읽는다 (대시보드용). 각 Trip은 load_snapshots와 같은 결과."""
+    if not trip_ids:
+        return {}
+    by_trip: dict[int, list[Snapshot]] = {tid: [] for tid in trip_ids}
+    for snap in _load_snapshots("trip_id = ANY(%s)", (list(trip_ids),)):
+        by_trip[snap.trip_id].append(snap)
+    return by_trip
 
 
 def record_alert(trip_id: int | None, kind: str, price: int | None) -> None:

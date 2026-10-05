@@ -402,3 +402,34 @@ def test_recent_runs_includes_snapshot_error():
         observed_at=datetime.now(UTC),
     )
     assert repo.recent_runs()[0]["snapshots"][0]["error"] == "http 403"
+
+
+def test_load_snapshots_for_trips_matches_per_trip_load():
+    a = _make_trip()
+    b = _make_trip(destination="NRT")
+    empty = _make_trip(destination="OKA")
+    for trip_id, price in ((a, 150_000), (b, 170_000), (a, 140_000)):
+        run_id = repo.enqueue_run(trip_id, "manual")
+        rt = RtQuote(airline_iata="TW", out_flight_key="TW123-2026-10-01", total_price=price * 2)
+        result = ProviderResult(status="ok", legs=[_leg(price=price)], rts=[rt], error=None, seconds=1.0)
+        repo.save_snapshot(run_id, trip_id, "google_flights", "oneway", "out", date(2026, 10, 1), result,
+                           datetime(2026, 9, 28, 12, 0, tzinfo=UTC) + timedelta(hours=price // 10_000))
+    batched = repo.load_snapshots_for_trips([a, b, empty])
+    assert set(batched) == {a, b, empty}
+    for trip_id in (a, b, empty):
+        assert batched[trip_id] == repo.load_snapshots(trip_id)
+    assert batched[empty] == []
+    assert repo.load_snapshots_for_trips([]) == {}
+
+
+def test_latest_runs_per_trip():
+    a = _make_trip()
+    b = _make_trip(destination="NRT")
+    none = _make_trip(destination="OKA")
+    repo.enqueue_run(a, "manual")
+    last_a = repo.enqueue_run(a, "schedule")
+    last_b = repo.enqueue_run(b, "manual")
+    runs = repo.latest_runs([a, b, none])
+    assert runs[a] == repo.latest_run(a) and runs[a] is not None and runs[a].id == last_a
+    assert runs[b] is not None and runs[b].id == last_b
+    assert runs[none] is None

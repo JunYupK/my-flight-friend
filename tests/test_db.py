@@ -2,6 +2,9 @@
 
 
 
+import psycopg2
+import pytest
+
 from flight_friend import db
 
 
@@ -86,3 +89,30 @@ def test_cond_columns_exist():
         ("rt_quotes", "cond_total_price"),
         ("rt_quotes", "cond_label"),
     }
+
+
+def test_get_conn_reuses_pooled_connection():
+    with db.get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT pg_backend_pid()")
+        first = cur.fetchone()[0]
+    with db.get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT pg_backend_pid()")
+        assert cur.fetchone()[0] == first
+
+
+def test_get_conn_uses_seoul_timezone():
+    with db.get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SHOW TIME ZONE")
+        assert cur.fetchone()[0] == "Asia/Seoul"
+
+
+def test_get_conn_rolls_back_and_recovers_after_error():
+    with pytest.raises(psycopg2.Error), db.get_conn() as conn:
+        conn.cursor().execute("SELECT * FROM no_such_table")
+    with db.get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT 1")
+        assert cur.fetchone()[0] == 1

@@ -21,7 +21,7 @@ _갱신: 2026-10-02_
 - **완료:** M1(PR #62), V1 은퇴(#63, V1 코드는 커밋 `d8e0422`), M2 Naver(#64), FE 대개편(#65), Trip 삭제(#66), 문서 정리·README(#67), 전 세계 공항 검색(#68), 수집별 가격 추이(#69).
 - **보류:** Skyscanner(PerimeterX 차단, 근거·재개 조건은 `TODOS.md`).
 - **사용자 서버 작업 대기:** `pg_dump` 백업 → `scripts/v1_freeze.sql` (로컬 리허설 통과).
-- **다음 후보:** V1 데이터 활용(서버에서 V1 규모 쿼리 결과 대기), DB 커넥션 풀 + 대시보드 쿼리 묶기(측정: 상세 요청의 ~43%가 DB 접속).
+- **다음 후보:** V1 데이터 활용(서버에서 V1 규모 쿼리 결과 대기). 성능: 남은 큰 몫은 run별 병합 계산(도메인).
 - 작업 브랜치: `claude/dazzling-shannon-4x04v7`. 문서는 `docs/`, README는 루트.
 
 ## 2026-09-28 — Claude Code — superpowers 스킬 벤더링 + SessionStart 훅 수정
@@ -499,3 +499,11 @@ _갱신: 2026-10-02_
 - 한 일: 스킬 14→11 (`using-superpowers`·`writing-skills`·`dispatching-parallel-agents` 제거 — 미사용, `using-superpowers`는 "모든 응답 전 스킬 호출 강제"라 오호출 원인). CLAUDE.md: 없는 gstack 스킬 안내 삭제, "불명확하면 멈추고 물어라" → 사용자 결정 사항만 묻고 나머지는 가정을 밝히고 진행. AGENTS.md: §3 "물어본다" → 가장 가까운 레이어 + 보고, §9 끝난 V1 cron 메모 삭제, §10은 테스트가 못 잡는 금지만 남김, §11 작업 전 체크리스트 → 완료 기준(DoD). log.md: "작업 전 전부 읽어라" → 필요할 때 현재 상태·최신 항목만, 현재 상태 갱신.
 - 검증: pytest 206 passed, `ruff check .` 통과. 제거한 스킬 참조는 벤더링 원본 2곳의 언급뿐(원본 비수정 원칙으로 유지).
 - 결정 / 발견: `.claude/settings.local.json`(gitignore)에 은퇴한 V1 MCP 서버 토큰이 남아 있음 — 사용자가 서버 측 폐기 진행.
+
+## 2026-10-02 — Claude Code — DB 커넥션 풀 · 스냅샷 로딩 경량화 · 대시보드 쿼리 묶기
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` / `perf: connection pool, tuple rows, batched dashboard queries`
+- 측정 근거(변경 전 프로파일, 대시보드): dict 행 변환 41% · 병합 계산 24% · DB 접속 14%(쿼리마다 새 접속 ~7ms, 요청당 25회) · 쿼리 실행 9%.
+- 한 일: `db.get_conn()`을 psycopg2 `ThreadedConnectionPool`(최대 10, 세마포어로 고갈 시 대기, 접속 옵션으로 시간대 지정, 끊긴 연결은 반납 안 함)로 교체 — 인터페이스 동일. `repo.load_snapshots`는 명시 컬럼 + 튜플 행으로 읽고(정렬에 `id` 동순위 기준 추가), `load_snapshots_for_trips`·`latest_runs`(DISTINCT ON) 추가. `views.trip_list`가 Trip 전체를 한 번에 읽어 `trip_list_item(trip, now, snaps, run)`에 넘기고, `trip_view`는 `latest_run` 2회 → 1회. 대시보드 쿼리 수: Trip 수 비례(8개 기준 ~33) → 고정 5.
+- 검증: pytest 211 passed(신규: 풀 연결 재사용·시간대·오류 후 복구, 묶음 조회 = Trip별 조회, Trip별 최신 run), `ruff check .`. 고정 시드(Trip 8 × 120 run, 스냅샷 3,840·편도 견적 30,720)에서 이전 코드(master 워크트리)와 새 코드의 응답 25종(목록·상세·두 추이) 바이트 동일. 동시 120요청(40스레드) 전부 200.
+- 결과(같은 데이터, TestClient 중앙값 2회): `/api/trips` 806 → 333ms(2.4배), `/api/trips/1` 111 → 39ms(2.9배), `/history/runs` 106 → 38ms. 테스트 스위트 14s → 6s.
+- 다음 작업자에게: 남은 몫은 run별 병합(`run_values` → `current_legs`) 계산 — 도메인 로직이라 별도 작업으로.
