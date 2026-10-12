@@ -37,6 +37,7 @@ types/config → db/repo → providers → domain → worker / api views → api
 | **Providers** | `flight_friend/providers/` (`google_flights.py`, `naver.py`) | 외부 수집(크롤링·API), 결과를 `ProviderResult`로 정규화 | DB 접근, 웹 프레임워크 |
 | **Domain** | `flight_friend/domain/` (`results`, `schedule`, `tracking`) | 순수 로직: 결과 조합·후보·near-miss, 갱신 주기, 알림 판정 | `fastapi`/`starlette`, `db`/`repo` import |
 | **Worker** | `flight_friend/worker.py`, `notifier.py` | run 소비, provider 호출, snapshot 저장, 알림 판정·발송 | 웹 프레임워크 |
+| **History** | `flight_friend/history.py` | 이력 읽기(worker·views 공용): 수집별 요약 캐시(`run_summaries`), 현재 상태용 스냅샷(최신 것에만 견적) | 웹 프레임워크 |
 | **Views** | `flight_friend/api/views.py` | repo + domain → JSON 직렬화 dict | `fastapi`/`starlette` import |
 | **API** | `flight_friend/api/main.py` | HTTP 엔드포인트(`/api/*`, `/healthz`), SPA 서빙 | `providers` import, SQL 직접 작성 |
 | **Web** | `flight_front/web/src/` | React SPA (Vite·Tailwind v4·shadcn/ui, 경로 별칭 `@/` → `src/`). 컴포넌트는 `components/{ui,common,layout,dashboard,inputs,trip}`, 모든 호출은 `api.ts` 경유 | 백엔드 모듈 import, 컴포넌트에서 `fetch()` 직접 호출 |
@@ -114,11 +115,12 @@ class ProviderResult:
 | `leg_quotes` | snapshot에 딸린 편도 견적 | **append-only** |
 | `rt_quotes` | snapshot에 딸린 왕복 견적 | **append-only** |
 | `alerts` | 알림 발송 이력(dedup/쿨다운 기준) | 갱신/기록 |
+| `run_summaries` | 끝난 run의 조건 내 최저값 캐시(`RunValue`), snapshots에서 파생 — prefs·스냅샷 수가 바뀌면 `history`가 다시 계산 | 캐시(upsert) |
 
 - `snapshots`/`leg_quotes`/`rt_quotes`는 UPDATE·DELETE 금지 (이력 = 가격 추이의 원천).
 - 스키마 진입점은 `flight_friend/db.py`의 `init_schema()` (V1의 `init_db()` 아님). **API 기동(lifespan)과 worker 시작(`main_loop` 최상단)이 호출**하며, advisory lock으로 동시 실행에 안전하다. 변경은 `IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS`로 추가, 멱등 필수.
 - `/healthz`는 `db.schema_ready()`로 스키마·DB 연결을 확인해 실패 시 503을 돌려준다.
-- 모든 DB 접근은 `repo.py` 경유. `db.get_conn()`은 프로세스 단위 커넥션 풀(최대 10, 고갈 시 대기, 시간대 Asia/Seoul)에서 빌려 쓴다. 여러 Trip을 한 화면에 그릴 때는 Trip마다 조회하지 말고 `load_snapshots_for_trips`·`latest_runs`처럼 묶어서 읽는다. 테스트는 `tests/conftest.py`의 `clean_db` fixture로 격리.
+- 모든 DB 접근은 `repo.py` 경유. `db.get_conn()`은 프로세스 단위 커넥션 풀(최대 10, 고갈 시 대기, 시간대 Asia/Seoul)에서 빌려 쓴다. 이력 전체(`load_snapshots`)를 화면·알림 경로에서 읽지 않는다 — 추이·통계는 `history.run_values_for(_trips)`, 현재 상태는 `history.current_snapshots`(여러 Trip은 묶어서, `latest_runs`도 동일). 테스트는 `tests/conftest.py`의 `clean_db` fixture로 격리.
 - **V1 테이블(`raw_legs`, `flight_legs`, `deals`, `price_events`, `price_history`, `alert_state`, `collection_runs` 등)은 동결.**
   `scripts/v1_freeze.sql`이 `v1` 스키마로 옮긴다 (분석용 읽기만). V2는 읽지도 쓰지도 않는다.
 

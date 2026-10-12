@@ -11,7 +11,7 @@ from datetime import UTC, date, datetime, timedelta
 from functools import partial
 from typing import Literal
 
-from flight_friend import db, repo
+from flight_friend import db, history, repo
 from flight_friend.config import ORIGIN, RUN_TIMEOUT, STUCK_RUN_AFTER
 from flight_friend.domain.results import (
     MergedLeg,
@@ -24,7 +24,6 @@ from flight_friend.domain.schedule import days_to_departure, freshness_window, i
 from flight_friend.domain.tracking import (
     KST,
     daily_series,
-    run_values,
     should_alert_new_low,
     should_alert_target,
 )
@@ -166,12 +165,12 @@ def evaluate_alerts(trip: Trip, now: datetime, send: Sender = send_alert) -> lis
     if not trip.tracking or trip.archived_at is not None or trip.out_date < today:
         return []
     window = freshness_window(days_to_departure(trip.out_date, today))
-    snaps = repo.load_snapshots(trip.id)
+    snaps = history.current_snapshots([trip.id])[trip.id]
     best = cheapest_combo(in_condition(current_legs(snaps, now, window), trip.prefs), trip.prefs.max_price)
     if best is None:
         return []
     out_leg, in_leg, current = best
-    series = daily_series(run_values(snaps, trip.prefs))
+    series = daily_series(history.run_values_for(trip))
     head = f"[Flight Friend] {trip.destination} {trip.out_date:%m/%d}→{trip.ret_date:%m/%d}"
     extras = [f"현지 체류 {_stay_text(stay_minutes(out_leg.leg, trip.out_date, in_leg.leg, trip.ret_date))}"]
     conds = [m.best_cond for m in (out_leg, in_leg) if m.best_cond is not None]
@@ -245,6 +244,11 @@ def evaluate_ops(
 
 async def main_loop() -> None:
     db.init_schema()
+    try:
+        # run_summaries 채우기 (배포 직후 첫 화면이 이력 전체를 계산하지 않게). 멱등.
+        history.run_values_for_trips(repo.list_trips())
+    except Exception:
+        logger.exception("run summary backfill failed")
     import httpx
     from crawl4ai import AsyncWebCrawler, BrowserConfig
 

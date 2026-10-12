@@ -4,6 +4,7 @@ import json
 from datetime import date, datetime, timedelta
 from typing import Literal
 
+import psycopg2.extensions
 from psycopg2.extras import RealDictCursor, RealDictRow, execute_values
 
 from flight_friend.db import get_conn
@@ -386,65 +387,107 @@ def save_snapshot(
         return snapshot_id
 
 
-def _load_snapshots(where: str, params: tuple) -> list[Snapshot]:
+def _snapshot_from_tuple(r: tuple) -> Snapshot:
+    return Snapshot(
+        id=r[0],
+        run_id=r[1],
+        trip_id=r[2],
+        provider=r[3],
+        kind=r[4],
+        direction=r[5],
+        date=r[6],
+        status=r[7],
+        card_count=r[8],
+        observed_at=r[9],
+        error=r[10],
+        legs=[],
+        rts=[],
+    )
+
+
+def _attach_quotes(cur: psycopg2.extensions.cursor, snapshots: list[Snapshot]) -> None:
+    """snapshots(같은 객체)에 leg_quotes·rt_quotes를 붙인다."""
+    if not snapshots:
+        return
+    by_id = {s.id: s for s in snapshots}
+    ids = list(by_id)
+    cur.execute(f"SELECT {_LEG_COLS} FROM leg_quotes WHERE snapshot_id = ANY(%s) ORDER BY id ASC", (ids,))
+    for r in cur.fetchall():
+        by_id[r[0]].legs.append(_leg_from_tuple(r))
+    cur.execute(f"SELECT {_RT_COLS} FROM rt_quotes WHERE snapshot_id = ANY(%s) ORDER BY id ASC", (ids,))
+    for r in cur.fetchall():
+        by_id[r[0]].rts.append(_rt_from_tuple(r))
+
+
+def _load_snapshots(where: str, params: tuple, with_quotes: bool = True) -> list[Snapshot]:
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute(f"SELECT {_SNAPSHOT_COLS} FROM snapshots WHERE {where} ORDER BY observed_at ASC, id ASC", params)
-        snapshot_rows = cur.fetchall()
-        snapshot_ids = [row[0] for row in snapshot_rows]
+        snapshots = [_snapshot_from_tuple(r) for r in cur.fetchall()]
+        if with_quotes:
+            _attach_quotes(cur, snapshots)
+        return snapshots
 
-        legs_by_snapshot: dict[int, list[LegQuote]] = {sid: [] for sid in snapshot_ids}
-        rts_by_snapshot: dict[int, list[RtQuote]] = {sid: [] for sid in snapshot_ids}
 
-        if snapshot_ids:
-            cur.execute(
-                f"SELECT {_LEG_COLS} FROM leg_quotes WHERE snapshot_id = ANY(%s) ORDER BY id ASC",
-                (snapshot_ids,),
-            )
-            for r in cur.fetchall():
-                legs_by_snapshot[r[0]].append(_leg_from_tuple(r))
+def load_snapshot_meta(trip_ids: list[int]) -> list[Snapshot]:
+    """견적 없이 스냅샷 행만 (legs·rts 빈 목록). 대시보드처럼 이력 전체의 상태·시각만 필요할 때."""
+    if not trip_ids:
+        return []
+    return _load_snapshots("trip_id = ANY(%s)", (list(trip_ids),), with_quotes=False)
 
-            cur.execute(
-                f"SELECT {_RT_COLS} FROM rt_quotes WHERE snapshot_id = ANY(%s) ORDER BY id ASC",
-                (snapshot_ids,),
-            )
-            for r in cur.fetchall():
-                rts_by_snapshot[r[0]].append(_rt_from_tuple(r))
 
-        return [
-            Snapshot(
-                id=r[0],
-                run_id=r[1],
-                trip_id=r[2],
-                provider=r[3],
-                kind=r[4],
-                direction=r[5],
-                date=r[6],
-                status=r[7],
-                card_count=r[8],
-                observed_at=r[9],
-                error=r[10],
-                legs=legs_by_snapshot[r[0]],
-                rts=rts_by_snapshot[r[0]],
-            )
-            for r in snapshot_rows
-        ]
+def attach_quotes(snapshots: list[Snapshot]) -> None:
+    """load_snapshot_meta로 읽은 스냅샷 중 필요한 것에만 견적을 채운다 (제자리 변경)."""
+    with get_conn() as conn:
+        _attach_quotes(conn.cursor(), snapshots)
+
+
+def load_run_snapshots(run_ids: list[int]) -> list[Snapshot]:
+    if not run_ids:
+        return []
+    return _load_snapshots("run_id = ANY(%s)", (list(run_ids),))
+
+
+def load_run_summaries(trip_ids: list[int]) -> dict[int, tuple]:
+    """run_id → (trip_id, prefs_key, snapshot_count, observed_at, combo, out_min, in_min, partial)."""
+    if not trip_ids:
+        return {}
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT run_id, trip_id, prefs_key, snapshot_count, observed_at, combo, out_min, in_min, partial
+            FROM run_summaries WHERE trip_id = ANY(%s)
+            """,
+            (list(trip_ids),),
+        )
+        return {r[0]: r[1:] for r in cur.fetchall()}
+
+
+def save_run_summaries(rows: list[tuple]) -> None:
+    """(run_id, trip_id, prefs_key, snapshot_count, observed_at, combo, out_min, in_min, partial) upsert."""
+    if not rows:
+        return
+    with get_conn() as conn:
+        execute_values(
+            conn.cursor(),
+            """
+            INSERT INTO run_summaries
+                (run_id, trip_id, prefs_key, snapshot_count, observed_at, combo, out_min, in_min, partial)
+            VALUES %s
+            ON CONFLICT (run_id) DO UPDATE SET
+                prefs_key = EXCLUDED.prefs_key, snapshot_count = EXCLUDED.snapshot_count,
+                observed_at = EXCLUDED.observed_at, combo = EXCLUDED.combo, out_min = EXCLUDED.out_min,
+                in_min = EXCLUDED.in_min, partial = EXCLUDED.partial
+            """,
+            rows,
+        )
 
 
 def load_snapshots(trip_id: int, since: datetime | None = None) -> list[Snapshot]:
     if since is not None:
         return _load_snapshots("trip_id = %s AND observed_at >= %s", (trip_id, since))
     return _load_snapshots("trip_id = %s", (trip_id,))
-
-
-def load_snapshots_for_trips(trip_ids: list[int]) -> dict[int, list[Snapshot]]:
-    """여러 Trip의 스냅샷을 쿼리 3개로 한 번에 읽는다 (대시보드용). 각 Trip은 load_snapshots와 같은 결과."""
-    if not trip_ids:
-        return {}
-    by_trip: dict[int, list[Snapshot]] = {tid: [] for tid in trip_ids}
-    for snap in _load_snapshots("trip_id = ANY(%s)", (list(trip_ids),)):
-        by_trip[snap.trip_id].append(snap)
-    return by_trip
 
 
 def record_alert(trip_id: int | None, kind: str, price: int | None) -> None:

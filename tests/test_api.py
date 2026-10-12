@@ -439,7 +439,7 @@ def test_lifespan_creates_schema_when_tables_missing():
 
     with db.get_conn() as conn:
         conn.cursor().execute(
-            "DROP TABLE IF EXISTS alerts, rt_quotes, leg_quotes, snapshots, search_runs, trips CASCADE"
+            "DROP TABLE IF EXISTS run_summaries, alerts, rt_quotes, leg_quotes, snapshots, search_runs, trips CASCADE"
         )
     assert db.schema_ready() is False
     with TestClient(app) as c:

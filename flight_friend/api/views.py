@@ -4,7 +4,7 @@
 from dataclasses import replace
 from datetime import date, datetime, timedelta
 
-from flight_friend import repo
+from flight_friend import history, repo
 from flight_friend.domain.results import (
     Candidate,
     MergedLeg,
@@ -26,10 +26,10 @@ from flight_friend.domain.schedule import (
 )
 from flight_friend.domain.tracking import (
     DayPoint,
+    RunValue,
     Stats,
     current_value,
     daily_series,
-    run_values,
     tracking_stats,
 )
 from flight_friend.types import Preferences, Run, Snapshot, Trip
@@ -260,11 +260,11 @@ def _run_summary(run: Run | None) -> JsonDict | None:
 
 
 def trip_view(trip: Trip, now: datetime) -> JsonDict:
-    snaps = repo.load_snapshots(trip.id)
+    snaps = history.current_snapshots([trip.id])[trip.id]
     window = _window(trip, now)
     legs = current_legs(snaps, now, window)
     current = current_value(snaps, trip.prefs, now, window)
-    stats = tracking_stats(daily_series(run_values(snaps, trip.prefs)), current)
+    stats = tracking_stats(daily_series(history.run_values_for(trip)), current)
     candidates = pareto_candidates(
         in_condition(legs, trip.prefs), trip.out_date, trip.ret_date, trip.prefs.max_price
     )
@@ -282,11 +282,13 @@ def trip_view(trip: Trip, now: datetime) -> JsonDict:
     }
 
 
-def trip_list_item(trip: Trip, now: datetime, snaps: list[Snapshot], run: Run | None) -> JsonDict:
-    """snaps·run은 trip_list가 모든 Trip에 대해 한 번에 읽어 넘긴다."""
+def trip_list_item(
+    trip: Trip, now: datetime, snaps: list[Snapshot], values: list[RunValue], run: Run | None
+) -> JsonDict:
+    """snaps(현재 상태용)·values(수집별 요약)·run은 trip_list가 모든 Trip에 대해 한 번에 읽어 넘긴다."""
     window = _window(trip, now)
     current = current_value(snaps, trip.prefs, now, window)
-    series = daily_series(run_values(snaps, trip.prefs))
+    series = daily_series(values)
     stats = tracking_stats(series, current)
     legs = current_legs(snaps, now, window)
     used = [p.observed_at for d in legs.values() for m in d for p in m.prices if not p.stale]
@@ -329,9 +331,10 @@ def trip_list_item(trip: Trip, now: datetime, snaps: list[Snapshot], run: Run | 
 def trip_list(now: datetime) -> list[JsonDict]:
     trips = repo.list_trips()
     ids = [t.id for t in trips]
-    snaps = repo.load_snapshots_for_trips(ids)
+    snaps = history.current_snapshots(ids)
+    values = history.run_values_for_trips(trips)
     runs = repo.latest_runs(ids)
-    return [trip_list_item(t, now, snaps[t.id], runs[t.id]) for t in trips]
+    return [trip_list_item(t, now, snaps[t.id], values[t.id], runs[t.id]) for t in trips]
 
 
 def run_view(run: Run) -> JsonDict:
@@ -340,7 +343,7 @@ def run_view(run: Run) -> JsonDict:
         "status": run.status,
         "snapshots": [
             {"provider": s.provider, "kind": s.kind, "direction": s.direction, "status": s.status}
-            for s in repo.load_snapshots(run.trip_id)
+            for s in repo.load_snapshot_meta([run.trip_id])
             if s.run_id == run.id
         ],
     }
@@ -357,7 +360,7 @@ def _day_point(p: DayPoint) -> JsonDict:
 
 
 def history_view(trip: Trip) -> list[JsonDict]:
-    series = daily_series(run_values(repo.load_snapshots(trip.id), trip.prefs))
+    series = daily_series(history.run_values_for(trip))
     return [_day_point(p) for p in series]
 
 
@@ -373,7 +376,7 @@ def run_history_view(trip: Trip) -> list[JsonDict]:
             "in_min": v.in_min,
             "partial": v.partial,
         }
-        for v in run_values(repo.load_snapshots(trip.id), trip.prefs)
+        for v in history.run_values_for(trip)
         if v.run_id not in open_ids
     ]
 
