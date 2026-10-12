@@ -519,3 +519,4 @@ _갱신: 2026-10-02_
 - 검증: pytest 216 passed(신규 `test_history.py` 6: 전체 계산과 동일·캐시 저장, prefs 변경 재계산, 진행 중 run 미저장, 늦게 붙은 스냅샷 재계산, 현재 상태 동일, 묶음 = 개별), `ruff check .`, `npm run build`. 운영 규모 시드(+진행 중 run 1개)에서 master 워크트리와 새 코드의 응답 20종(목록·상세 6·추이 12·run 진행) 1.6MB 바이트 동일.
 - 결과(같은 데이터, TestClient 중앙값 2회): `/api/trips` 6,060 → 126ms(48배), 상세 849 → 55ms, `/history/runs` 790 → 11ms, `/history` 780 → 10ms. 요약이 비어 있는 첫 요청은 7.3초(1회 백필, 배포 후엔 worker 시작 시 채움). gzip 추정: 상세 665KB → 33KB, JS 315KB → 102KB.
 - 결정 / 발견: `test_worker`의 Trip 삭제 테스트가 남기는 "Task exception was never retrieved" 로그는 master에서도 동일(기존 minor). Caddy는 로컬에 없어 `encode` 설정은 배포 후 응답 헤더(`content-encoding`)로 확인 필요.
+- 배포 후 확인(2026-10-12, 외부에서 curl, 서버 시간 = TTFB − TLS 연결): `/api/trips` 약 4.1초 → 약 0.37초(그중 `/healthz` 기준 왕복 ~0.23초), 상세 ~0.28초. `content-encoding: zstd` 적용 — 상세 JSON 388KB → 20KB, `/api/trips` 10.7KB → 1.8KB, JS 315KB → 107KB. 사용자 체감 "메인페이지 빨라짐".
