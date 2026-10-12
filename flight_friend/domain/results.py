@@ -50,7 +50,7 @@ class NearMiss:
     saving: int
 
 
-def _latest_ok(snapshots: list[Snapshot]) -> dict[tuple[str, str], Snapshot]:
+def latest_ok(snapshots: list[Snapshot]) -> dict[tuple[str, str], Snapshot]:
     latest: dict[tuple[str, str], Snapshot] = {}
     for s in snapshots:
         if s.kind != "oneway" or s.status != "ok" or s.direction is None:
@@ -143,7 +143,7 @@ def current_legs(
 ) -> dict[str, list[MergedLeg]]:
     """(provider, direction)별 최신 ok 편도 스냅샷만 병합한다."""
     cutoff = now - window
-    latest = _latest_ok(snapshots)
+    latest = latest_ok(snapshots)
     result: dict[str, list[MergedLeg]] = {}
     for direction in DIRECTIONS:
         entries = [(s, q) for (_, d), s in sorted(latest.items()) if d == direction for q in s.legs]

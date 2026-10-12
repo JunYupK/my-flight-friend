@@ -21,7 +21,7 @@ _갱신: 2026-10-02_
 - **완료:** M1(PR #62), V1 은퇴(#63, V1 코드는 커밋 `d8e0422`), M2 Naver(#64), FE 대개편(#65), Trip 삭제(#66), 문서 정리·README(#67), 전 세계 공항 검색(#68), 수집별 가격 추이(#69).
 - **보류:** Skyscanner(PerimeterX 차단, 근거·재개 조건은 `TODOS.md`).
 - **사용자 서버 작업 대기:** `pg_dump` 백업 → `scripts/v1_freeze.sql` (로컬 리허설 통과).
-- **다음 후보:** V1 데이터 활용(서버에서 V1 규모 쿼리 결과 대기). 성능: 남은 큰 몫은 run별 병합 계산(도메인).
+- **다음 후보:** V1 데이터 활용(서버에서 V1 규모 쿼리 결과 대기).
 - 작업 브랜치: `claude/dazzling-shannon-4x04v7`. 문서는 `docs/`, README는 루트.
 
 ## 2026-09-28 — Claude Code — superpowers 스킬 벤더링 + SessionStart 훅 수정
@@ -507,3 +507,15 @@ _갱신: 2026-10-02_
 - 검증: pytest 211 passed(신규: 풀 연결 재사용·시간대·오류 후 복구, 묶음 조회 = Trip별 조회, Trip별 최신 run), `ruff check .`. 고정 시드(Trip 8 × 120 run, 스냅샷 3,840·편도 견적 30,720)에서 이전 코드(master 워크트리)와 새 코드의 응답 25종(목록·상세·두 추이) 바이트 동일. 동시 120요청(40스레드) 전부 200.
 - 결과(같은 데이터, TestClient 중앙값 2회): `/api/trips` 806 → 333ms(2.4배), `/api/trips/1` 111 → 39ms(2.9배), `/history/runs` 106 → 38ms. 테스트 스위트 14s → 6s.
 - 다음 작업자에게: 남은 몫은 run별 병합(`run_values` → `current_legs`) 계산 — 도메인 로직이라 별도 작업으로.
+
+## 2026-10-12 — Claude Code — 메인페이지 지연: 수집별 요약 캐시 · 응답 압축 · 폴링 겹침 방지
+- 브랜치 / 커밋: `claude/dazzling-shannon-4x04v7` / `perf: run summary cache, current-only quotes, compression`
+- 진단: 운영(약 2주, Trip 6개)에서 `/api/trips` 서버 처리 약 4초, 상세 JSON 220~665KB 비압축, JS 315KB 비압축. 로컬 재현(Trip 6 × run 130, 편도 견적 31.2만 행)에서 5.8초 — 요청마다 이력 전체 견적을 읽고(~4.6초) 과거 run 792개를 매번 다시 병합(~4.4초, 프로파일러 기준). 이력에 비례해 계속 느려지는 구조. 확인 중엔 대시보드가 3초마다 폴링해 4초짜리 요청이 겹쳤다.
+- 한 일:
+  - `run_summaries` 테이블(끝난 run의 `RunValue` 캐시, run·trip CASCADE) + `flight_friend/history.py`: `run_values_for(_trips)`는 캐시를 쓰고 없거나 prefs_key·스냅샷 수가 다르면 그 run만 다시 계산·저장, 진행 중 run은 저장하지 않고 즉석 계산. `current_snapshots`는 스냅샷 행 전체 + 견적은 제공자·방향별 최신 ok 편도와 제공자별 최신 ok 왕복에만.
+  - views(목록·상세·두 추이·run 진행)와 worker 알림이 history 사용, `run_view`는 견적 없이. worker 시작 시 요약 백필(멱등). `results._latest_ok` → `latest_ok`(공개). 쓰이지 않게 된 `repo.load_snapshots_for_trips` 제거.
+  - Caddyfile `encode zstd gzip`, 대시보드 폴링을 `setInterval` → 응답 후 3초 `setTimeout` 연쇄.
+  - `test_lifespan_creates_schema_when_tables_missing`의 DROP 목록에 `run_summaries` 추가 (CASCADE가 FK만 지워 이후 테스트가 격리를 잃던 문제).
+- 검증: pytest 216 passed(신규 `test_history.py` 6: 전체 계산과 동일·캐시 저장, prefs 변경 재계산, 진행 중 run 미저장, 늦게 붙은 스냅샷 재계산, 현재 상태 동일, 묶음 = 개별), `ruff check .`, `npm run build`. 운영 규모 시드(+진행 중 run 1개)에서 master 워크트리와 새 코드의 응답 20종(목록·상세 6·추이 12·run 진행) 1.6MB 바이트 동일.
+- 결과(같은 데이터, TestClient 중앙값 2회): `/api/trips` 6,060 → 126ms(48배), 상세 849 → 55ms, `/history/runs` 790 → 11ms, `/history` 780 → 10ms. 요약이 비어 있는 첫 요청은 7.3초(1회 백필, 배포 후엔 worker 시작 시 채움). gzip 추정: 상세 665KB → 33KB, JS 315KB → 102KB.
+- 결정 / 발견: `test_worker`의 Trip 삭제 테스트가 남기는 "Task exception was never retrieved" 로그는 master에서도 동일(기존 minor). Caddy는 로컬에 없어 `encode` 설정은 배포 후 응답 헤더(`content-encoding`)로 확인 필요.

@@ -169,6 +169,22 @@ def init_schema() -> None:
                 ON alerts (trip_id, kind, sent_at)
         """)
 
+        # 끝난 run의 조건 내 최저값 캐시 (snapshots에서 파생, prefs·스냅샷 수가 바뀌면 다시 계산)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS run_summaries (
+                run_id INT PRIMARY KEY REFERENCES search_runs(id) ON DELETE CASCADE,
+                trip_id INT NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+                prefs_key TEXT NOT NULL,
+                snapshot_count INT NOT NULL,
+                observed_at TIMESTAMPTZ NOT NULL,
+                combo INT,
+                out_min INT,
+                in_min INT,
+                partial BOOLEAN NOT NULL
+            )
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_run_summaries_trip_id ON run_summaries (trip_id)")
+
 
 def schema_ready() -> bool:
     """V2 스키마가 존재하고 DB에 닿는지. 어떤 실패든 False."""

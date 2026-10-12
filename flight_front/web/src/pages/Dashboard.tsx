@@ -57,10 +57,23 @@ export default function Dashboard() {
   }, [load]);
 
   const polling = trips?.some((t) => t.open_run_id != null) ?? false;
+  // 이전 응답을 받은 뒤 3초 후 다시 부른다 — 응답이 3초보다 느려도 요청이 겹쳐 쌓이지 않게
   useEffect(() => {
     if (!polling) return;
-    const id = window.setInterval(() => void load(), 3000);
-    return () => window.clearInterval(id);
+    let stopped = false;
+    let id = 0;
+    const tick = () => {
+      id = window.setTimeout(() => {
+        void load().finally(() => {
+          if (!stopped) tick();
+        });
+      }, 3000);
+    };
+    tick();
+    return () => {
+      stopped = true;
+      window.clearTimeout(id);
+    };
   }, [polling, load]);
 
   async function onRefreshAll() {
