@@ -2,3 +2,30 @@
 	encode zstd gzip
 	reverse_proxy app:8000
 }
+
+# Fateweave MCP. Source of truth: JunYupK/Fateweave deploy/caddy-fateweave.caddy (keep identical).
+# Upstream by container name (fateweave-api joins this compose project's frontend network).
+# /mcp/<key> MUST be forwarded: the Claude connector authenticates with the key in the URL path.
+# No `log` directive on purpose: the path holds the secret key, so no access log.
+fateweave.flight-friend.com {
+	request_body {
+		max_size 1MB
+	}
+	@mcp path_regexp ^/mcp(/[A-Za-z0-9_-]{32,128})?$
+	handle @mcp {
+		reverse_proxy fateweave-api:8080 {
+			flush_interval -1
+			transport http {
+				read_timeout 300s
+				write_timeout 300s
+			}
+		}
+	}
+	@healthz path /healthz
+	handle @healthz {
+		reverse_proxy fateweave-api:8080
+	}
+	handle {
+		respond 404
+	}
+}
